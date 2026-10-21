@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@nestjs/swagger": "^12.0.2",
+    "@nestjs/typeorm": "^12.0.2",
+    "mysql2": "^3.24.6",
+    "typeorm": "^1.1.2"
+  }
+}
