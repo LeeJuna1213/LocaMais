@@ -8,7 +8,9 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { Client } from './client.entity.js';
+// A entidade Client pertence ao módulo `client`. De `address/entities`
+// subimos dois níveis até `src` e descemos em `client/entities`.
+import { Client } from '../../client/entities/client.entity.js';
 
 /**
  * Endereco do cliente.

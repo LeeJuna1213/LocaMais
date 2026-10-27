@@ -47,6 +47,15 @@ lerna-debug.log*
 
 # banco SQLite de desenvolvimento
 data/
+*.sqlite
+*.sqlite3
+
+# caches de ferramentas
+.cache/
+.vite/
+
+# o arquivo de exemplo deve ser versionado
+!.env.example
 
 # temp directory
 .temp

@@ -1,30 +1,49 @@
-# dependencies
+# Dependencias
 node_modules/
 
-# local env files
+# Variaveis de ambiente (segredos) ------------------------------------------
+# Nao versione arquivos .env reais. O .env.example e mantido de proposito.
 .env
-.env.local
+.env.*
+!.env.example
 
-# build outputs
+# Saidas de build e cache do TypeScript -------------------------------------
 dist/
 build/
+dist-ssr/
+*.tsbuildinfo
 
-# IDE
+# Logs ----------------------------------------------------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Bancos locais (SQLite) ----------------------------------------------------
+data/
+*.sqlite
+*.sqlite3
+
+# Testes e cobertura --------------------------------------------------------
+coverage/
+.nyc_output/
+
+# Caches e temporarios ------------------------------------------------------
+.cache/
+.vite/
+.parcel-cache/
+.tmp/
+.temp/
+
+# IDEs e editores -----------------------------------------------------------
 .idea/
 .vscode/
 *.swp
+*.sublime-workspace
 
-# OS
+# Sistema operacional -------------------------------------------------------
 .DS_Store
 Thumbs.db
-
-# logs
-*.log
-npm-debug.log*
-
-# test coverage
-coverage/
-
-# temp
-.tmp/
-.temp/
+desktop.ini

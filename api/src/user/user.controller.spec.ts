@@ -1,21 +1,31 @@
 import { Test, TestingModule } from '@nestjs/testing';
+
+import type { AuthenticatedUser } from '../common/interfaces/authenticated-user.interface.js';
+import { User } from './entities/user.entity.js';
+import { UserType } from './enums/user.enum.js';
 import { UserController } from './user.controller.js';
 import { UserService } from './user.service.js';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
-import { ConfigService } from '@nestjs/config';
-import { User } from './entities/user.entity.js';
 
-const mockUser = {
+// `Object.assign(new User(), ...)` garante que o mock tenha também o método
+// toJSON() da entidade, e não apenas os campos.
+const mockUser = Object.assign(new User(), {
   id: 1,
   name: 'Test User',
   email: 'test@exemplo.com',
   password: '$2b$10$hash',
   active: true,
-  type: 'cliente',
+  type: UserType.CLIENTE,
+  client: null,
   created_at: new Date(),
   updated_at: new Date(),
-} as User;
+});
+
+const admin: AuthenticatedUser = {
+  id: 99,
+  email: 'admin@exemplo.com',
+  name: 'Admin',
+  type: UserType.ADMIN,
+};
 
 const mockUserService = {
   create: vi.fn().mockResolvedValue(mockUser),
@@ -42,26 +52,6 @@ describe('UserController', () => {
           provide: UserService,
           useValue: mockUserService,
         },
-        {
-          provide: getRepositoryToken(User),
-          useValue: {},
-        },
-        {
-          provide: DataSource,
-          useValue: {
-            getRepository: vi.fn().mockReturnValue({
-              exists: vi.fn().mockResolvedValue(false),
-            }),
-            transaction: vi.fn().mockImplementation((fn) => fn({ create: vi.fn(), save: vi.fn() })),
-          },
-        },
-        {
-          provide: ConfigService,
-          useValue: {
-            get: vi.fn().mockReturnValue('4'),
-            getOrThrow: vi.fn().mockReturnValue('test-secret'),
-          },
-        },
       ],
     }).compile();
 
@@ -78,14 +68,15 @@ describe('UserController', () => {
     expect(result).toEqual([mockUser]);
   });
 
-  it('findOne chama service.findOneForActor', async () => {
-    const result = await controller.findOne('1');
-    expect(mockUserService.findOneForActor).toHaveBeenCalled();
-    const calls = mockUserService.findOneForActor.mock.calls;
-    const [arg0, arg1] = calls[0] || [];
-    // Sem guards/pipes, o id vem como string e actor como undefined
-    expect(arg0).toBe('1');
-    expect(arg1).toBeUndefined();
+  it('findOne chama service.findOneForActor com o ator e o id', async () => {
+    const result = await controller.findOne(admin, 1);
+
+    expect(mockUserService.findOneForActor).toHaveBeenCalledWith(admin, 1);
     expect(result).toEqual(mockUser);
+  });
+
+  it('remove delega a desativacao ao service', async () => {
+    await controller.remove(admin, 1);
+    expect(mockUserService.remove).toHaveBeenCalledWith(admin, 1);
   });
 });

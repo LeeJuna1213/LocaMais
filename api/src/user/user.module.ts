@@ -32,11 +32,13 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 // Importa a entidade Address.
 // Representa o mapeamento dos endereços dos clientes.
-import { Address } from './entities/address.entity.js';
+import { Address } from '../address/entities/address.entity.js';
 
 // Importa a entidade Client.
 // Representa os dados específicos dos clientes.
-import { Client } from './entities/client.entity.js';
+// O arquivo foi movido para o módulo client, mas continua registrado
+// no UserModule para disponibilizar o Repository via TypeOrmModule.forFeature().
+import { Client } from '../client/entities/client.entity.js';
 
 // Importa a entidade User.
 // Representa os usuários cadastrados no sistema.
@@ -147,21 +149,26 @@ import { UserService } from './user.service.js';
    * neste módulo poderão ser utilizados por
    * outros módulos que importarem o UserModule.
    *
-   * Aqui estamos exportando o UserService.
+   * Aqui estamos exportando duas coisas:
    *
-   * Por exemplo, se o AuthModule importar
-   * o UserModule, ele poderá injetar o UserService
-   * para consultar um usuário durante o login.
+   * 1) UserService
+   *    Por exemplo, se o AuthModule importar o UserModule,
+   *    ele poderá injetar o UserService para consultar um
+   *    usuário durante o login.
    *
-   * Sem essa exportação, o UserService não fica
-   * automaticamente disponível para outros módulos.
+   * 2) TypeOrmModule
+   *    O `forFeature` acima é privado do módulo que o declara.
+   *    Para que ClientModule e AddressModule possam injetar os
+   *    Repositories de User, Client e Address sem registrar as
+   *    mesmas entidades outra vez, reexportamos o TypeOrmModule.
    *
    * OBSERVAÇÃO:
-   * Exportar o UserService não significa exportar
-   * automaticamente os Repositories das entidades.
+   * Exportar o UserService, sozinho, NÃO disponibiliza os
+   * Repositories. Por isso o TypeOrmModule também aparece aqui.
    */
   exports: [
     UserService,
+    TypeOrmModule,
   ],
 })
 

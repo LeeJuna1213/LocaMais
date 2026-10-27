@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsDefined,
   IsEmail,
   IsNotEmpty,
   IsString,
@@ -8,7 +9,9 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
-import { CreateClientDto } from '../../user/dto/create-client.dto.js';
+// O DTO de cliente pertence ao módulo `client`. A extensão `.js` é a
+// convenção do projeto (moduleResolution: nodenext), mesmo para fontes `.ts`.
+import { CreateClientDto } from '../../client/dto/create-client.dto.js';
 
 /**
  * Auto-cadastro de cliente.
@@ -38,7 +41,11 @@ export class RegisterDto {
   @MaxLength(72, { message: 'password deve ter no maximo 72 caracteres' })
   password: string;
 
+  // `@IsDefined` impede que o auto-cadastro chegue sem o bloco `cliente`:
+  // sem ele, `@ValidateNested` simplesmente ignora `undefined` e o Service
+  // quebraria ao ler `cliente.tipo_pessoa`.
   @ApiProperty({ type: CreateClientDto })
+  @IsDefined({ message: 'cliente e obrigatorio' })
   @ValidateNested()
   @Type(() => CreateClientDto)
   cliente: CreateClientDto;

@@ -40,17 +40,19 @@ import { DataSource, Repository } from 'typeorm';
 // AuthenticatedUser representa o usuário que fez login.
 // Funções normalize... padronizam e-mail e documentos.
 // Entities mapeiam tabelas; enums definem valores permitidos.
-import { RegisterDto } from '../auth/dto/register.dto.js';
+// `import type` evita um import de runtime do módulo auth, que por sua vez
+// importa o UserModule. Assim não há ciclo entre user e auth em execução.
+import type { RegisterDto } from '../auth/dto/register.dto.js';
 import type { AuthenticatedUser } from '../common/interfaces/authenticated-user.interface.js';
 import {
   normalizeDocument,
   normalizeEmail,
 } from '../common/utils/normalize.utility.js';
-import { CreateClientDto } from './dto/create-client.dto.js';
+import type { CreateClientDto } from '../client/dto/create-client.dto.js';
 import { CreateUserDto } from './dto/create-user.dto.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
-import { Address } from './entities/address.entity.js';
-import { Client } from './entities/client.entity.js';
+import { Address } from '../address/entities/address.entity.js';
+import { Client } from '../client/entities/client.entity.js';
 import { User } from './entities/user.entity.js';
 import { TipoPessoa, UserType } from './enums/user.enum.js';
 
@@ -379,8 +381,14 @@ export class UserService {
       throw new BadRequestException('nao e possivel remover o unico admin');
     }
 
-    // Executa a exclusão após as verificações de negócio.
-    await this.usersRepository.delete({ id });
+    // DESATIVAÇÃO LÓGICA (soft delete).
+    //
+    // Não usamos `delete`: apagar a linha de `users` acionaria o CASCADE em
+    // `clients` e apagaria também o cliente e o endereço, perdendo histórico
+    // e quebrando referências futuras (locações). Marcando `active = false`,
+    // o login e o JwtStrategy bloqueiam o acesso, mas os dados continuam
+    // íntegros e auditáveis.
+    await this.usersRepository.update({ id }, { active: false });
   }
 
   // Transforma uma senha em texto em um hash bcrypt.

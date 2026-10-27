@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
 
@@ -58,8 +59,7 @@ export async function post<T = Json>(
   body: unknown,
   token?: string,
 ): Promise<{ status: number; body: T }> {
-  const response = await app
-    .getHttpServer()
+  const response = await request(app.getHttpServer())
     .post(`/api${path}`)
     .set('Content-Type', 'application/json')
     .set('Authorization', `Bearer ${token ?? ''}`)
@@ -129,3 +129,45 @@ export const ENDERECO = {
   uf: 'SP',
   cep: '01001000',
 };
+
+/** `GET` com bearer token opcional. */
+export async function get<T = Json>(
+  app: INestApplication,
+  path: string,
+  token?: string,
+): Promise<{ status: number; body: T }> {
+  const req = request(app.getHttpServer()).get(`/api${path}`);
+  if (token) req.set('Authorization', `Bearer ${token}`);
+
+  const response = await req;
+  return { status: response.status, body: response.body as T };
+}
+
+/** `PATCH` com JSON e bearer token opcional. */
+export async function patch<T = Json>(
+  app: INestApplication,
+  path: string,
+  body: unknown,
+  token?: string,
+): Promise<{ status: number; body: T }> {
+  const req = request(app.getHttpServer())
+    .patch(`/api${path}`)
+    .set('Content-Type', 'application/json');
+  if (token) req.set('Authorization', `Bearer ${token}`);
+
+  const response = await req.send(body as object);
+  return { status: response.status, body: response.body as T };
+}
+
+/** `DELETE` com bearer token opcional. */
+export async function del<T = Json>(
+  app: INestApplication,
+  path: string,
+  token?: string,
+): Promise<{ status: number; body: T }> {
+  const req = request(app.getHttpServer()).delete(`/api${path}`);
+  if (token) req.set('Authorization', `Bearer ${token}`);
+
+  const response = await req;
+  return { status: response.status, body: response.body as T };
+}

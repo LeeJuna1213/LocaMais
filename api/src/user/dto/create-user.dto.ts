@@ -11,7 +11,9 @@ import {
 } from 'class-validator';
 import { UserType } from '../enums/user.enum.js';
 import { UserConsistente } from '../validators/user-consistente.validator.js';
-import { CreateClientDto } from './create-client.dto.js';
+// O DTO de cliente mora no módulo `client`. De `user/dto` subimos dois
+// níveis até `src` e descemos em `client/dto`.
+import { CreateClientDto } from '../../client/dto/create-client.dto.js';
 
 /**
  * Criacao de usuario. `type` decide o que pode ser enviado junto:

@@ -1,7 +1,12 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "rootDir": "./src"
+    "rootDir": "./src",
+    // O `nest build` apaga o `dist/` antes de compilar. Se o modo incremental
+    // ficar ligado, um `tsconfig.build.tsbuildinfo` gerado por um typecheck
+    // anterior pode fazer o tsc acreditar que os arquivos já foram emitidos e
+    // pular a geração dos .js. Para o build de produção, sempre compile tudo.
+    "incremental": false
   },
   "include": ["src"],
   "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]

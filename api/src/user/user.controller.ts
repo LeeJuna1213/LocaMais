@@ -267,9 +267,13 @@ export class UserController {
   // @HttpCode define o código HTTP de resposta como 204
   // (No Content), indicando sucesso sem corpo de resposta.
   //
-  // O Service verifica as regras de exclusão, incluindo
-  // a proibição de remover a própria conta e a proteção
-  // contra a exclusão do último administrador.
+  // O Service verifica as regras de desativação, incluindo
+  // a proibição de desativar a própria conta e a proteção
+  // contra a desativação do último administrador.
+  //
+  // IMPORTANTE: a operação é uma DESATIVAÇÃO LÓGICA
+  // (`active = false`), não um DELETE físico. Assim o cliente,
+  // o endereço e o histórico permanecem no banco.
   //
   // async permite utilizar await para aguardar a conclusão
   // da operação assíncrona.
@@ -278,8 +282,9 @@ export class UserController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @Roles(UserType.ADMIN)
   @ApiOperation({
-    summary: 'Remove um usuario',
-    description: 'Somente admin, e nunca o proprio usuario.',
+    summary: 'Desativa um usuario',
+    description:
+      'Somente admin, e nunca o proprio usuario. Marca active=false sem apagar os dados.',
   })
   @ApiForbiddenResponse({
     description: 'Somente admin pode remover',

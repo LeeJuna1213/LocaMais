@@ -55,7 +55,12 @@ import { UserType } from '../enums/user.enum.js';
 //
 // Ela representa as informações específicas dos clientes
 // e será utilizada no relacionamento com a entidade User.
-import { Client } from './client.entity.js';
+//
+// A entidade Client mora no módulo `client`, que é o dono desse conceito.
+// O caminho relativo sobe dois níveis (user/entities -> src) e desce em
+// client/entities. A extensão `.js` é obrigatória porque o projeto usa
+// `moduleResolution: nodenext` com ESM ("type": "module" no package.json).
+import { Client } from '../../client/entities/client.entity.js';
 
 // ============================================================
 // DECORATOR @Entity()
@@ -441,20 +446,19 @@ export class User {
   // nem os cuidados com dados sensíveis.
 
   toJSON(): Omit<User, 'password' | 'toJSON'> {
-
-    // Separa password e toJSON das demais propriedades.
-    //
-    // Os nomes começam com "_" porque esses valores
-    // são extraídos, mas não serão utilizados.
-    const {
-      password: _password,
-      toJSON: _toJSON,
-      ...rest
-    } = this;
-
-    // Retorna as demais propriedades do usuário,
-    // sem incluir password e toJSON.
-    return rest;
+    // Montamos explicitamente o objeto público. Além de remover `password`,
+    // essa lista funciona como "allowlist": se um campo sensível novo for
+    // adicionado à entidade no futuro, ele não vaza por engano na resposta.
+    return {
+      id: this.id,
+      name: this.name,
+      email: this.email,
+      active: this.active,
+      type: this.type,
+      client: this.client,
+      created_at: this.created_at,
+      updated_at: this.updated_at,
+    };
   }
 }
 
