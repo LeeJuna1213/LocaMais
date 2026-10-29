@@ -7,7 +7,9 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-import { Reservation } from '../../reservation/entities/reservation.entity.js';
+// A coleção inversa usa o nome da entidade para evitar ciclo de runtime
+// Car -> Reservation -> Car. Reservation já importa Car apenas como tipo.
+import type { Reservation } from '../../reservation/entities/reservation.entity.js';
 import { StatusVeiculo } from '../enums/status-veiculo.enum.js';
 
 /**
@@ -62,7 +64,7 @@ export class Car {
   // Um carro pode aparecer em várias reservas ao longo do tempo. A chave
   // estrangeira fica em `reservations.car_id` (lado proprietário); esta
   // coleção é apenas de navegação e não é carregada automaticamente.
-  @OneToMany(() => Reservation, (reservation) => reservation.car)
+  @OneToMany('Reservation', 'car')
   reservations: Reservation[];
 
   @CreateDateColumn()

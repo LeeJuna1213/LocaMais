@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 
 import { Client } from '../client/entities/client.entity.js';
 
@@ -13,15 +13,16 @@ import { UpdateAddressDto } from './dto/update-address.dto.js';
 import { Address } from './entities/address.entity.js';
 
 /**
- * Regras de negócio do endereço.
+ * ADDRESS SERVICE — ENDEREÇO DO CLIENTE
  *
- * O endereço pertence ao cliente (relação 1:1) e é criado junto com o
- * cadastro completo em `UserService.createClient`. Este Service atende às
- * operações isoladas de endereço: consultar, criar para um cliente existente
- * e atualizar.
+ * O endereço pertence ao cliente (relação 1:1). Este Service atende às
+ * operações isoladas de endereço (consultar, criar para cliente existente e
+ * atualizar) e também fornece ao `ClientService` a criação do endereço dentro
+ * da transação que cria User + Client + Address.
  *
- * O `AddressModule` importa o `UserModule`, que exporta o `TypeOrmModule` com
- * os Repositories de Address e Client já registrados.
+ * O `AddressModule` registra apenas os Repositories que este Service usa
+ * diretamente (`Address` e `Client`). A entidade `User` continua carregada
+ * globalmente pelo `UserModule`, permitindo a relação `client.user`.
  */
 @Injectable()
 export class AddressService {
@@ -90,17 +91,35 @@ export class AddressService {
     }
 
     const address = this.addressesRepository.create({
-      logradouro: dto.logradouro.trim(),
-      numero: dto.numero.trim(),
-      complemento: dto.complemento?.trim() || null,
-      bairro: dto.bairro.trim(),
-      cidade: dto.cidade.trim(),
-      uf: dto.uf.toUpperCase(),
-      cep: dto.cep,
+      ...this.buildAddressFields(dto),
       client_id: clientId,
     });
 
     return this.addressesRepository.save(address);
+  }
+
+  /**
+   * Cria o endereço de um cliente recém-criado dentro da transação aberta
+   * pelo `ClientService`.
+   *
+   * Diferente de `create()`, não consulta a existência do cliente nem do
+   * endereço: o cliente acabou de ser inserido e ainda não possui endereço.
+   * O EntityManager recebido garante que o endereço será confirmado ou
+   * revertido junto com User e Client.
+   */
+  createForClientInTransaction(
+    manager: EntityManager,
+    clientId: number,
+    dto: CreateAddressDto,
+  ): Promise<Address> {
+    const repository = manager.getRepository(Address);
+
+    return repository.save(
+      repository.create({
+        ...this.buildAddressFields(dto),
+        client_id: clientId,
+      }),
+    );
   }
 
   /**
@@ -128,6 +147,35 @@ export class AddressService {
     }
 
     return this.findOne(id);
+  }
+
+  /**
+   * Centraliza a normalização dos campos do endereço.
+   *
+   * É usado tanto na criação isolada quanto na criação transacional do
+   * cliente, evitando duas regras diferentes para os mesmos dados.
+   */
+  private buildAddressFields(
+    dto: CreateAddressDto,
+  ): Pick<
+    Address,
+    | 'logradouro'
+    | 'numero'
+    | 'complemento'
+    | 'bairro'
+    | 'cidade'
+    | 'uf'
+    | 'cep'
+  > {
+    return {
+      logradouro: dto.logradouro.trim(),
+      numero: dto.numero.trim(),
+      complemento: dto.complemento?.trim() || null,
+      bairro: dto.bairro.trim(),
+      cidade: dto.cidade.trim(),
+      uf: dto.uf.toUpperCase(),
+      cep: dto.cep,
+    };
   }
 
   /**

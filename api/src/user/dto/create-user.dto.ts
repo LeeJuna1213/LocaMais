@@ -1,26 +1,21 @@
-import { Type } from 'class-transformer';
 import {
   IsEmail,
-  IsEnum,
+  IsIn,
   IsNotEmpty,
   IsString,
   MaxLength,
   MinLength,
-  ValidateIf,
-  ValidateNested,
 } from 'class-validator';
+
 import { UserType } from '../enums/user.enum.js';
-import { UserConsistente } from '../validators/user-consistente.validator.js';
-// O DTO de cliente mora no módulo `client`. De `user/dto` subimos dois
-// níveis até `src` e descemos em `client/dto`.
-import { CreateClientDto } from '../../client/dto/create-client.dto.js';
 
 /**
- * Criacao de usuario. `type` decide o que pode ser enviado junto:
- * `cliente` so e aceito (e obrigatorio) quando `type` = `cliente`.
+ * DTO de criação de conta administrativa ou de funcionário.
  *
- * Quem pode chamar e responsabilidade do `UserService`, com base no papel de
- * quem esta autenticado — o DTO nao limita o `type` de proposito.
+ * Clientes NÃO são criados por este DTO: o cadastro completo (conta + dados
+ * PF/PJ + endereço) pertence ao `CreateClientAccountDto`, em `client/dto`.
+ * Essa separação impede que uma conta de cliente seja criada sem o registro
+ * cadastral correspondente.
  */
 export class CreateUserDto {
   @IsString()
@@ -33,26 +28,17 @@ export class CreateUserDto {
   email: string;
 
   /**
-   * Maximo de 72 por causa do bcrypt: acima disso o hash passa a truncar
-   * silenciosamente a senha, o que faria duas senhas diferentes gerarem o
-   * mesmo hash.
+   * Máximo de 72 por causa do bcrypt: acima disso o hash trunca a senha
+   * silenciosamente, fazendo senhas diferentes gerarem o mesmo hash.
    */
   @IsString()
   @MinLength(8, { message: 'password deve ter ao menos 8 caracteres' })
   @MaxLength(72, { message: 'password deve ter no maximo 72 caracteres' })
   password: string;
 
-  /**
-   * O constraint vive em `type` mas le o DTO inteiro via `args.object`, para
-   * nao precisar de uma propriedade-fantasma (que o plugin do Swagger
-   * transformaria em referencia circular).
-   */
-  @IsEnum(UserType, { message: 'type deve ser admin, funcionario ou cliente' })
-  @UserConsistente()
+  @IsIn([UserType.ADMIN, UserType.FUNCIONARIO], {
+    message:
+      'type deve ser admin ou funcionario; clientes sao cadastrados em /api/clients',
+  })
   type: UserType;
-
-  @ValidateIf((o: CreateUserDto) => o.type === UserType.CLIENTE)
-  @ValidateNested()
-  @Type(() => CreateClientDto)
-  cliente?: CreateClientDto;
 }

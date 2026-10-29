@@ -216,6 +216,56 @@ describe('Fluxo principal (e2e)', () => {
     expect(body.numero).toBe('456');
   });
 
+  it('admin cria conta de funcionario pelo endpoint de usuarios', async () => {
+    const created = await post<{
+      id: number;
+      type: string;
+      client: unknown;
+    }>(
+      app,
+      '/users',
+      {
+        name: 'Funcionario E2E',
+        email: 'funcionario.e2e@exemplo.com',
+        password: 'senha-secreta',
+        type: 'funcionario',
+      },
+      adminToken,
+    );
+
+    expect(created.status).toBe(201);
+    expect(created.body.type).toBe('funcionario');
+    expect(created.body.client).toBeNull();
+  });
+
+  it('endpoint de usuarios recusa cadastro de cliente (400)', async () => {
+    const created = await post(
+      app,
+      '/users',
+      {
+        name: 'Cliente via Users',
+        email: 'cliente.users.e2e@exemplo.com',
+        password: 'senha-secreta',
+        type: 'cliente',
+      },
+      adminToken,
+    );
+
+    expect(created.status).toBe(400);
+  });
+
+  it('admin atualiza os dados cadastrais do cliente PJ', async () => {
+    const updated = await patch<ClientBody>(
+      app,
+      `/clients/${clientePjId}`,
+      { razao_social: 'Empresa Exemplo Atualizada LTDA' },
+      adminToken,
+    );
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.razao_social).toBe('Empresa Exemplo Atualizada LTDA');
+  });
+
   it('admin cria, lista, atualiza e remove um veículo disponível', async () => {
     const created = await post<CarBody>(
       app,

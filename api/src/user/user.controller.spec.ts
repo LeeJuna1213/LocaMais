@@ -35,7 +35,6 @@ const mockUserService = {
   update: vi.fn().mockResolvedValue(mockUser),
   remove: vi.fn().mockResolvedValue(undefined),
   findOneOrFail: vi.fn().mockResolvedValue(mockUser),
-  findAllClients: vi.fn().mockResolvedValue([mockUser]),
   findByEmailWithPassword: vi.fn().mockResolvedValue(mockUser),
   hashPassword: vi.fn().mockResolvedValue('$2b$10$new'),
   comparePassword: vi.fn().mockResolvedValue(true),

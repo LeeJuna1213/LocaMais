@@ -1,24 +1,24 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { UserModule } from '../user/user.module.js';
+import { Client } from '../client/entities/client.entity.js';
 
 import { AddressController } from './address.controller.js';
 import { AddressService } from './address.service.js';
+import { Address } from './entities/address.entity.js';
 
 /**
- * Módulo de endereço.
+ * ADDRESS MODULE — ENDEREÇOS DOS CLIENTES
  *
- * Responsabilidade: expor as rotas e as regras de manutenção do endereço do
- * cliente. O cadastro inicial do endereço continua acontecendo dentro da
- * transação de `UserService.createClient`, garantindo que um cliente nunca
- * fique sem endereço.
+ * Responsabilidade: expor as rotas de manutenção do endereço e fornecer ao
+ * `ClientModule` a criação transacional do endereço durante o cadastro.
  *
- * O UserModule é importado para reaproveitar os Repositories de Address e
- * Client já registrados (`exports: [TypeOrmModule]`), sem duplicar entidades
- * nem criar uma dependência circular com o ClientModule.
+ * O módulo registra `Address` e `Client` porque o AddressService usa os dois
+ * Repositories diretamente. Não importa o ClientModule para evitar o ciclo
+ * ClientModule -> AddressModule -> ClientModule.
  */
 @Module({
-  imports: [UserModule],
+  imports: [TypeOrmModule.forFeature([Address, Client])],
   controllers: [AddressController],
   providers: [AddressService],
   exports: [AddressService],

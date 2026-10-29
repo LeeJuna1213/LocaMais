@@ -13,17 +13,18 @@ import {
 // class-validator). Eles ficam em `common/validators`.
 import { IsCnpj, IsCpf } from '../../common/validators/document.validator.js';
 
-// TipoPessoa e o validador de coerência PF/PJ continuam no módulo `user`,
-// que é onde o enum de tipos e os validadores de cadastro vivem.
+// TipoPessoa continua no módulo `user`, que é onde o enum de papéis e tipos
+// compartilhados vive. O validador de coerência PF/PJ agora pertence ao
+// próprio módulo `client`, pois só é usado nos DTOs cadastrais de cliente.
 import { TipoPessoa } from '../../user/enums/user.enum.js';
-import { TipoPessoaCoerente } from '../../user/validators/tipo-pessoa-coerente.validator.js';
+import { TipoPessoaCoerente } from '../validators/tipo-pessoa-coerente.validator.js';
 
 // O endereço é um DTO do módulo `address`. O cliente apenas o referencia.
 import { CreateAddressDto } from '../../address/dto/create-address.dto.js';
 
 /**
- * Dados específicos de um cliente, usados dentro de `CreateUserDto` e de
- * `RegisterDto`.
+ * Dados específicos de um cliente, usados por `CreateClientAccountDto` e por
+ * `RegisterDto` (auto-cadastro público).
  *
  * A coerência entre `tipo_pessoa` e os documentos é validada pelo decorator
  * `@TipoPessoaCoerente()`; `@IsCpf`/`@IsCnpj` validam apenas o formato do que

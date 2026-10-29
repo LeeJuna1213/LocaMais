@@ -1,7 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
 
 import { User } from './entities/user.entity.js';
 import { UserType } from './enums/user.enum.js';
@@ -49,20 +48,6 @@ describe('UserService', () => {
         {
           provide: getRepositoryToken(User),
           useValue: repoMocks,
-        },
-        {
-          provide: DataSource,
-          useValue: {
-            getRepository: vi.fn().mockReturnValue({
-              exists: vi.fn().mockResolvedValue(false),
-            }),
-            transaction: vi.fn().mockImplementation((fn) =>
-              fn({
-                create: vi.fn().mockReturnValue(mockUser),
-                save: vi.fn().mockResolvedValue(mockUser),
-              }),
-            ),
-          },
         },
         {
           provide: ConfigService,

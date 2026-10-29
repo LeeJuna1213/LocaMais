@@ -123,9 +123,9 @@ locaMais/
 
 ### Responsabilidade de cada módulo
 
-- **user**: dono da entidade `User`, do enum de papéis, dos validadores de cadastro e das regras de criação/atualização/desativação de usuários. Registra os repositórios de `User`, `Client` e `Address` e os reexporta.
-- **client**: dono da entidade `Client` e dos DTOs PF/PJ. Expõe rotas específicas de cliente e delega a criação transacional ao `UserService`.
-- **address**: dono da entidade `Address`. Expõe consulta/criação/atualização do endereço de um cliente existente.
+- **user**: dono da entidade `User`, do enum de papéis, das credenciais e das regras de criação/consulta/atualização/desativação de contas. O `UserService` concentra conta, senha, permissões e situação ativa; o cadastro cadastral de cliente não fica aqui.
+- **client**: dono da entidade `Client` e dos DTOs PF/PJ. Concentra o cadastro completo do cliente (conta + dados cadastrais + endereço) em uma transação, reutilizando `UserService` para a conta e `AddressService` para o endereço.
+- **address**: dono da entidade `Address`. Expõe consulta/criação/atualização do endereço de um cliente existente e fornece a criação transacional usada pelo `ClientService`.
 - **auth**: login, auto-cadastro público, emissão de JWT, `JwtStrategy` e configuração do segredo.
 - **car**: CRUD de veículos e regra de remoção apenas de veículos disponíveis e sem reservas.
 - **reservation**: reservas com período, cálculo do valor no servidor, disponibilidade, transições de status e cancelamento lógico. Importa `ClientModule` e `CarModule` para reutilizar os serviços existentes.
@@ -315,9 +315,8 @@ Prefixo global: `/api`.
 | Método | Rota | Papéis | Finalidade |
 |---|---|---|---|
 | `GET` | `/api/auth/me` | qualquer | Dados do usuário autenticado. |
-| `POST` | `/api/users` | admin, funcionario | Cria usuário (funcionario só cria cliente). |
+| `POST` | `/api/users` | admin | Cria conta de admin ou funcionário. Clientes usam `/api/clients`. |
 | `GET` | `/api/users` | admin | Lista usuários. |
-| `GET` | `/api/users/clients` | admin, funcionario | Lista apenas clientes. |
 | `GET` | `/api/users/:id` | qualquer (cliente só o próprio) | Detalha usuário. |
 | `PATCH` | `/api/users/:id` | admin ou o próprio | Atualiza dados; `active` só admin. |
 | `DELETE` | `/api/users/:id` | admin | **Desativa** o usuário (não apaga). |
@@ -463,7 +462,8 @@ curl "http://localhost:3000/api/reservations/availability?car_id=1&dataRetirada=
 - **Validação global**: `whitelist`, `forbidNonWhitelisted` e `transform` rejeitam campos não declarados nos DTOs.
 - **Desativação lógica**: `DELETE /users/:id` e `DELETE /clients/:id` não apagam dados; marcam `active=false`.
 - **Endereço obrigatório**: o cadastro de cliente exige endereço; por isso o endereço não pode ser removido isoladamente (`409`).
-- **Repositórios**: `UserModule` registra `User`, `Client` e `Address` e reexporta o `TypeOrmModule`; `ClientModule` e `AddressModule` importam `UserModule`, evitando duplicação de entidades e dependências circulares.
+- **Repositórios e módulos**: cada módulo registra os Repositories que usa diretamente: `UserModule` registra `User`; `ClientModule` registra `Client`; `AddressModule` registra `Address` e `Client` (porque o AddressService valida o dono). `ClientModule` importa `UserModule` e `AddressModule` para reutilizar os Services, sem ciclos. A criação do cliente usa uma transação única: `UserService` cria a conta, `ClientService` cria o cliente e `AddressService` cria o endereço.
+- **Separação User x Client**: `UserService` cuida de conta, credenciais, papel e situação ativa; `ClientService` cuida dos dados cadastrais PF/PJ, CPF/CNPJ, endereço e desativação lógica. `POST /users` não cria clientes; `POST /clients` é a rota canônica para o cadastro completo.
 - **Reservas e concorrência**: criação/atualização usam transação. No MySQL, a linha do carro é travada com `pessimistic_write` antes da checagem de conflito; no SQLite não há `FOR UPDATE`, então a proteção fica limitada à transação/single-writer. A checagem de sobreposição usa intervalos semiabertos: uma reserva pode começar exatamente quando outra termina.
 - **Valor da reserva**: calculado no servidor em centavos, com `Math.ceil` sobre a duração em horas (qualquer fração de 24h conta como uma diária). `status` e `valorTotal` não são aceitos como fonte de verdade do cliente.
 - **Cancelamento lógico**: `PATCH /reservations/:id/cancel` só muda o status; a reserva continua no banco, mas `CANCELADA` deixa de bloquear o período. Reservas concluídas também não podem ser reabertas por PATCH genérico.
@@ -478,7 +478,7 @@ curl "http://localhost:3000/api/reservations/availability?car_id=1&dataRetirada=
 1. **Sem migrações**: o esquema é criado por `synchronize`. Antes de produção, gere migrações e desligue `synchronize`.
 2. **Módulo de locações ausente**: reservas não modelam check-in/check-out, contrato, devolução, multas ou cobranças. `Car.status = "alugado"` representa uma locação em andamento, mas não há vínculo com uma entidade de Locação; por isso, uma retirada futura é permitida para esse carro e o calendário de reservas é a fonte de verdade para o período.
 3. **Remoção de veículo é física**: permitida apenas para veículos `disponivel` e sem reservas. Com histórico de reservas, a remoção retorna `409`; uma futura desativação lógica de veículos pode ser avaliada.
-4. **Cobertura de testes parcial**: a suíte tem testes unitários de `UserController`/`UserService` e da entidade `Reservation`, além de 24 testes e2e (health check, fluxo principal e 12 cenários de reservas). Cenários de erro menos comuns e integrações com MySQL real ainda não têm cobertura dedicada.
+4. **Cobertura de testes parcial**: a suíte tem testes unitários de `UserController`/`UserService` e da entidade `Reservation`, além de 27 testes e2e (health check, fluxo principal de usuários/clientes/endereços/veículos e 12 cenários de reservas). Cenários de erro menos comuns e integrações com MySQL real ainda não têm cobertura dedicada.
 5. **JWT sem revogação**: um token válido continua válido até expirar; a desativação do usuário é verificada a cada requisição pelo `JwtStrategy`.
 6. **Frontend**: o diretório `front/` existe, mas não está documentado nem integrado por esta API além do CORS habilitado.
 7. **Observe opcional**: sem `OBSERVE_APP_KEY`/`OBSERVE_APP_SECRET`, nenhuma telemetria é enviada.
@@ -490,7 +490,7 @@ curl "http://localhost:3000/api/reservations/availability?car_id=1&dataRetirada=
 
 ## 17. Revisar e versionar as alterações
 
-O módulo de reservas foi implementado no working tree e **não foi commitado automaticamente** nesta etapa. Para revisar:
+O módulo de reservas foi commitado em uma etapa anterior. A refatoração atual dos módulos `user`, `client` e `address` está no working tree e **não foi commitada automaticamente** nesta etapa. Para revisar:
 
 ```bash
 cd locaMais
@@ -509,7 +509,7 @@ Depois de revisar, os comandos de commit ficam a seu critério, por exemplo:
 
 ```bash
 git add api/src api/test api/package.json api/package-lock.json api/.env.example api/.gitignore README.md .gitignore
-git commit -m "chore: organiza módulos, padroniza TypeScript e documenta a API"
+git commit -m "refactor(api): separa responsabilidades de user, client e address"
 ```
 
 > Não foram executados `git reset --hard`, `git clean -fd`, `git checkout` destrutivo, commit ou push.

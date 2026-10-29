@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ClientService } from '../client/client.service.js';
 import type { User } from '../user/entities/user.entity.js';
 import { UserService } from '../user/user.service.js';
 import { AuthResponseDto } from './dto/auth-response.dto.js';
@@ -17,13 +18,20 @@ export class AuthService {
 
   constructor(
     private readonly usersService: UserService,
+    private readonly clientsService: ClientService,
     private readonly jwtService: JwtService,
     @Inject(JWT_SETTINGS) private readonly jwtSettings: JwtSettings,
   ) {}
 
-  /** Auto-cadastro: sempre cria um cliente. */
+  /**
+   * Auto-cadastro público: sempre cria um cliente.
+   *
+   * A conta e o cadastro cadastral pertencem a modulos diferentes. O
+   * `ClientService` cria User + Client + Address na mesma transacao; o
+   * AuthService apenas recebe o usuario e emite o token.
+   */
   async register(dto: RegisterDto): Promise<AuthResponseDto> {
-    const user = await this.usersService.registerClient(dto);
+    const user = await this.clientsService.registerClient(dto);
     return this.issueToken(user);
   }
 

@@ -34,13 +34,15 @@ import { CreateClientAccountDto } from './dto/create-client-account.dto.js';
 import { UpdateClientDto } from './dto/update-client.dto.js';
 
 /**
- * Rotas focadas no cliente.
+ * Rotas de CADASTRO DO CLIENTE.
  *
- * O `ClientController` é uma porta de entrada alternativa ao `UserController`
- * para operações que só fazem sentido no contexto de cliente (dados PF/PJ +
- * endereço). O cadastro completo continua sendo feito em uma transação pelo
- * `UserService`, mas os dados específicos de cliente são validados aqui pelo
- * `CreateClientAccountDto`.
+ * O `ClientController` concentra as operações cadastrais de clientes PF/PJ:
+ * criação da conta + dados cadastrais + endereço, listagem, consulta,
+ * atualização e desativação.
+ *
+ * O `ClientService` é o único responsável por essas regras. Ele reutiliza o
+ * `UserService` apenas para a conta/credenciais e o `AddressService` para o
+ * endereço, mantendo a separação entre usuário, cliente e endereço.
  *
  * Todas as rotas exigem autenticação (guard global). As permissões finas são
  * aplicadas com `@Roles` e com verificações no `ClientService`.

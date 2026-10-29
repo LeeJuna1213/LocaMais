@@ -10,7 +10,11 @@ import {
 } from 'typeorm';
 // A entidade Client pertence ao módulo `client`. De `address/entities`
 // subimos dois níveis até `src` e descemos em `client/entities`.
-import { Client } from '../../client/entities/client.entity.js';
+//
+// `import type` + alvo por nome ('Client') evitam o ciclo de runtime
+// Address -> Client -> Address. O TypeORM resolve a entidade pelo nome
+// registrado no DataSource, e o relacionamento continua exatamente o mesmo.
+import type { Client } from '../../client/entities/client.entity.js';
 
 /**
  * Endereco do cliente.
@@ -26,7 +30,7 @@ export class Address {
   @Column({ nullable: false })
   client_id: number;
 
-  @OneToOne(() => Client, (client) => client.address, { onDelete: 'CASCADE' })
+  @OneToOne('Client', 'address', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'client_id' })
   client: Client;
 

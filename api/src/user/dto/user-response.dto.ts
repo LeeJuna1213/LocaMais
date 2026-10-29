@@ -1,29 +1,12 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
+
+import { ClientResponseDto } from '../../client/dto/client-response.dto.js';
 import { UserType } from '../enums/user.enum.js';
 
-export class AddressResponseDto {
-  @ApiProperty() id: number;
-  @ApiProperty() logradouro: string;
-  @ApiProperty() numero: string;
-  @ApiPropertyOptional({ nullable: true }) complemento: string | null;
-  @ApiProperty() bairro: string;
-  @ApiProperty() cidade: string;
-  @ApiProperty() uf: string;
-  @ApiProperty() cep: string;
-  @ApiProperty() pais: string;
-}
-
-export class ClientResponseDto {
-  @ApiProperty() id: number;
-  @ApiProperty({ enum: ['PF', 'PJ'] }) tipo_pessoa: string;
-  @ApiPropertyOptional({ nullable: true }) cpf: string | null;
-  @ApiPropertyOptional({ nullable: true }) cnpj: string | null;
-  @ApiPropertyOptional({ nullable: true }) data_nascimento: string | null;
-  @ApiPropertyOptional({ nullable: true }) razao_social: string | null;
-  @ApiProperty({ type: AddressResponseDto }) address: AddressResponseDto | null;
-}
-
-/** `user` + `cliente` + `endereco` aninhado. Nunca inclui `password`. */
+/**
+ * `user` + bloco `client` (quando existir) + endereço aninhado.
+ * Nunca inclui `password`.
+ */
 export class UserResponseDto {
   @ApiProperty({ example: 1 })
   id: number;

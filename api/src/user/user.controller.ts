@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiForbiddenResponse,
@@ -87,37 +88,39 @@ export class UserController {
   ) {}
 
   // ==========================================================
-  // CREATE - CADASTRAR USUÁRIO
+  // CREATE - CADASTRAR CONTA DE USUÁRIO
   // ==========================================================
   //
   // Rota: POST /users
   //
-  // POST é utilizado para enviar dados e criar um recurso.
+  // Esta rota gerencia CONTAS administrativas/funcionários. O cadastro de
+  // cliente (CPF/CNPJ + endereço + conta) fica em POST /clients, que é a
+  // responsabilidade do ClientController.
   //
-  // @Roles define quais tipos de usuário podem acessar a rota.
-  // Neste caso, ADMIN e FUNCIONARIO.
+  // @Roles restringe a criação de contas ao ADMIN. Funcionários continuam
+  // podendo cadastrar clientes pela rota específica de clientes.
   //
-  // @CurrentUser() obtém o usuário autenticado que está
-  // realizando a requisição.
-  //
-  // @Body() obtém os dados enviados no corpo da requisição.
-  //
-  // CreateUserDto define a estrutura esperada desses dados.
-  //
-  // O Service verifica as regras de negócio e realiza
-  // o cadastro propriamente dito.
+  // @CurrentUser() obtém o usuário autenticado que está realizando a
+  // requisição e @Body() recebe o CreateUserDto.
 
   @Post()
-  @Roles(UserType.ADMIN, UserType.FUNCIONARIO)
+  @Roles(UserType.ADMIN)
   @ApiOperation({
-    summary: 'Cria um usuario',
+    summary: 'Cria uma conta de admin ou funcionario',
     description:
-      'Admin pode criar admin, funcionario ou cliente. Funcionario so pode criar cliente.',
+      'Somente admin. Clientes sao cadastrados em POST /api/clients com os dados PF/PJ e o endereco.',
   })
 
   // Documenta a resposta HTTP 201 (Created).
   // UserResponseDto descreve o formato esperado da resposta.
   @ApiCreatedResponse({ type: UserResponseDto })
+
+  // Clientes não são aceitos nesta rota: eles precisam dos dados PF/PJ e do
+  // endereço, que são validados por CreateClientAccountDto em POST /clients.
+  @ApiBadRequestResponse({
+    description:
+      'Tipo cliente deve ser cadastrado em POST /api/clients; demais dados invalidos retornam 400.',
+  })
 
   // Documenta a resposta HTTP 403 (Forbidden), utilizada
   // quando o usuário autenticado não possui permissão.
@@ -159,27 +162,6 @@ export class UserController {
   @ApiOkResponse({ type: [UserResponseDto] })
   findAll() {
     return this.userService.findAll();
-  }
-
-  // ==========================================================
-  // READ - LISTAR SOMENTE OS CLIENTES
-  // ==========================================================
-  //
-  // Rota: GET /users/clients
-  //
-  // ADMIN e FUNCIONARIO podem acessar esta rota.
-  //
-  // A rota consulta somente os usuários cujo tipo é CLIENTE.
-  // O filtro e a consulta ao banco ficam no Service.
-
-  @Get('clients')
-  @Roles(UserType.ADMIN, UserType.FUNCIONARIO)
-  @ApiOperation({
-    summary: 'Lista apenas os clientes',
-  })
-  @ApiOkResponse({ type: [UserResponseDto] })
-  findAllClients() {
-    return this.userService.findAllClients();
   }
 
   // ==========================================================

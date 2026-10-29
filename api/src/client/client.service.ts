@@ -3,43 +3,54 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 
+import type { RegisterDto } from '../auth/dto/register.dto.js';
+import { AddressService } from '../address/address.service.js';
 import type { AuthenticatedUser } from '../common/interfaces/authenticated-user.interface.js';
 import { normalizeDocument } from '../common/utils/normalize.utility.js';
-import { CreateUserDto } from '../user/dto/create-user.dto.js';
-import { User } from '../user/entities/user.entity.js';
+import type { User } from '../user/entities/user.entity.js';
 import { TipoPessoa, UserType } from '../user/enums/user.enum.js';
 import { UserService } from '../user/user.service.js';
 
 import { CreateClientAccountDto } from './dto/create-client-account.dto.js';
+import type { CreateClientDto } from './dto/create-client.dto.js';
 import { UpdateClientDto } from './dto/update-client.dto.js';
 import { Client } from './entities/client.entity.js';
 
 /**
- * Regras de negócio do cliente.
+ * CLIENT SERVICE — CADASTRO DOS CLIENTES DA LOCADORA
  *
- * O `ClientService` NÃO recria usuários nem endereços: ele reaproveita o
- * `UserService` para o cadastro transacional (User + Client + Address) e os
- * Repositories registrados no `UserModule`.
+ * Responsabilidade deste Service:
+ * - cadastrar clientes PF/PJ com os dados cadastrais e o endereço;
+ * - consultar, listar e atualizar dados cadastrais;
+ * - validar CPF/CNPJ duplicado;
+ * - desativar o cadastro do cliente sem apagar registros.
  *
- * Injeção de dependência:
- * - `Repository<Client>` e `Repository<User>` vêm do `TypeOrmModule.forFeature`
- *   declarado no `UserModule`, que exporta o próprio `TypeOrmModule`.
- * - `UserService` é exportado pelo `UserModule` e concentra as regras de
- *   criação de usuário (permissões, hash de senha, transação).
+ * A conta de acesso continua pertencendo ao `UserService`: aqui apenas
+ * solicitamos a criação da conta com `type = cliente` dentro da mesma
+ * transação. O endereço é criado pelo `AddressService`, também na transação.
+ *
+ * Dependências:
+ * - `Repository<Client>` é registrado pelo `ClientModule`;
+ * - `DataSource` abre a transação de User + Client + Address;
+ * - `UserService` fornece as regras de conta, e-mail e senha;
+ * - `AddressService` fornece a criação do endereço.
  */
 @Injectable()
 export class ClientService {
+  private readonly logger = new Logger(ClientService.name);
+
   constructor(
     @InjectRepository(Client)
     private readonly clientsRepository: Repository<Client>,
-    @InjectRepository(User)
-    private readonly usersRepository: Repository<User>,
+    private readonly dataSource: DataSource,
     private readonly userService: UserService,
+    private readonly addressService: AddressService,
   ) {}
 
   /** Busca o cliente pelo ID do usuário associado (chave única 1:1). */
@@ -50,10 +61,7 @@ export class ClientService {
     });
   }
 
-  /**
-   * Busca um cliente pelo ID.
-   * Lança 404 quando não existe — o Controller não devolve `null`.
-   */
+  /** Busca um cliente pelo ID; lança 404 quando não existe. */
   async findOne(id: number): Promise<Client> {
     const client = await this.clientsRepository.findOne({
       where: { id },
@@ -67,7 +75,7 @@ export class ClientService {
     return client;
   }
 
-  /** Lista todos os clientes com o usuário e o endereço associados. */
+  /** Lista todos os clientes com a conta e o endereço associados. */
   findAll(): Promise<Client[]> {
     return this.clientsRepository.find({
       relations: { user: true, address: true },
@@ -75,13 +83,7 @@ export class ClientService {
     });
   }
 
-  /**
-   * Leitura com controle de acesso.
-   *
-   * Admin e funcionário podem ler qualquer cliente; um cliente autenticado
-   * só pode ler o próprio registro. A comparação é feita com `client.user_id`
-   * (e não com o ID do cliente), porque o token carrega o ID do usuário.
-   */
+  /** Admin/funcionário leem qualquer cliente; cliente lê apenas o próprio. */
   async findOneForActor(
     actor: AuthenticatedUser,
     id: number,
@@ -92,28 +94,29 @@ export class ClientService {
   }
 
   /**
-   * Cria uma conta completa de cliente:
-   * User + Client + Address, em uma única transação no `UserService`.
+   * Cadastro de cliente feito por admin/funcionário.
    *
-   * O `type` é imposto como CLIENTE aqui, nunca vem do body.
+   * O tipo da conta é imposto como `cliente`; nenhum papel privilegiado pode
+   * ser escolhido pelo payload.
    */
   async create(
     actor: AuthenticatedUser,
     dto: CreateClientAccountDto,
   ): Promise<Client> {
-    const payload: CreateUserDto = {
-      name: dto.name.trim(),
+    // Reaproveita a regra de permissão de criação de contas do UserService.
+    this.userService.assertCanCreate(actor, UserType.CLIENTE);
+
+    const user = await this.createClientAggregate({
+      name: dto.name,
       email: dto.email,
       password: dto.password,
-      type: UserType.CLIENTE,
       cliente: dto.cliente,
-    };
-
-    const user = await this.userService.create(actor, payload);
+    });
 
     const client = await this.findByUserId(user.id);
+
     if (!client) {
-      // Situação defensiva: o UserService acabou de criar o cliente.
+      // Defesa contra inconsistência entre as tabelas após a transação.
       throw new NotFoundException(
         `cliente do usuario ${user.id} nao encontrado apos o cadastro`,
       );
@@ -123,26 +126,36 @@ export class ClientService {
   }
 
   /**
+   * Auto-cadastro público de cliente.
+   *
+   * O módulo `auth` chama este método; a conta é sempre criada como `cliente`
+   * e o retorno é o `User` para que o AuthService emita o token.
+   */
+  async registerClient(dto: RegisterDto): Promise<User> {
+    return this.createClientAggregate({
+      name: dto.name,
+      email: dto.email,
+      password: dto.password,
+      cliente: dto.cliente,
+    });
+  }
+
+  /**
    * Atualização parcial dos atributos de cliente.
    *
-   * Além de aplicar apenas os campos enviados, o método mantém a coerência
-   * PF/PJ: ao virar PF, `cnpj` e `razao_social` são zerados; ao virar PJ,
-   * `cpf` e `data_nascimento` são zerados. Também valida CPF/CNPJ duplicado.
+   * Mantém a coerência PF/PJ: ao virar PF, `cnpj`/`razao_social` são
+   * anulados; ao virar PJ, `cpf`/`data_nascimento` são anulados. Também
+   * impede que o documento de um cliente pertença a outro.
    */
   async update(id: number, dto: UpdateClientDto): Promise<Client> {
     const client = await this.findOne(id);
 
-    // Valor final de cada campo: o enviado no PATCH ou o que já está no banco.
     const tipo = dto.tipo_pessoa ?? client.tipo_pessoa;
 
     const cpf =
-      dto.cpf !== undefined
-        ? normalizeDocument(dto.cpf)
-        : client.cpf;
+      dto.cpf !== undefined ? normalizeDocument(dto.cpf) : client.cpf;
     const cnpj =
-      dto.cnpj !== undefined
-        ? normalizeDocument(dto.cnpj)
-        : client.cnpj;
+      dto.cnpj !== undefined ? normalizeDocument(dto.cnpj) : client.cnpj;
     const dataNascimento =
       dto.data_nascimento !== undefined
         ? dto.data_nascimento
@@ -164,7 +177,9 @@ export class ClientService {
         );
       }
       if (!cpf) {
-        throw new BadRequestException('cpf e obrigatorio para clientes do tipo PF');
+        throw new BadRequestException(
+          'cpf e obrigatorio para clientes do tipo PF',
+        );
       }
       if (!dataNascimento) {
         throw new BadRequestException(
@@ -183,7 +198,9 @@ export class ClientService {
         );
       }
       if (!cnpj) {
-        throw new BadRequestException('cnpj e obrigatorio para clientes do tipo PJ');
+        throw new BadRequestException(
+          'cnpj e obrigatorio para clientes do tipo PJ',
+        );
       }
       if (!razaoSocial) {
         throw new BadRequestException(
@@ -192,10 +209,8 @@ export class ClientService {
       }
     }
 
-    // O documento relevante depende do tipo. A checagem abaixo também serve
-    // para o TypeScript estreitar `string | null` para `string` antes de usar
-    // o valor na consulta (o `where` do TypeORM não aceita `null`).
     const documento = tipo === TipoPessoa.PF ? cpf : cnpj;
+
     if (!documento) {
       throw new BadRequestException('documento e obrigatorio');
     }
@@ -212,8 +227,6 @@ export class ClientService {
       );
     }
 
-    // Ao trocar de tipo, os campos do outro tipo são anulados. O @Check do
-    // banco também impede que cpf e cnpj fiquem preenchidos ao mesmo tempo.
     await this.clientsRepository.update(
       { id },
       {
@@ -231,20 +244,107 @@ export class ClientService {
   /**
    * Desativação lógica do cliente.
    *
-   * Não apagamos o registro de `clients` nem o endereço: o histórico e a
-   * integridade dos relacionamentos são preservados. O que bloqueia o acesso
-   * é `users.active = false`, verificado no login e no `JwtStrategy`.
+   * O cadastro e o endereço permanecem no banco; a conta é marcada como
+   * inativa pelo `UserService`, o que bloqueia login e novas requisições.
    */
   async remove(id: number): Promise<void> {
     const client = await this.findOne(id);
-
-    await this.usersRepository.update(
-      { id: client.user_id },
-      { active: false },
-    );
+    await this.userService.deactivateAccount(client.user_id);
   }
 
-  /** Admin/funcionário leem qualquer cliente; cliente lê apenas o próprio. */
+  /**
+   * Cria User + Client + Address em uma única transação.
+   *
+   * A conta é criada por um método do `UserService` que recebe o EntityManager
+   * da transação; o endereço é criado pelo `AddressService` da mesma forma.
+   * Assim, uma falha em qualquer etapa desfaz tudo.
+   */
+  private async createClientAggregate(input: {
+    name: string;
+    email: string;
+    password: string;
+    cliente: CreateClientDto;
+  }): Promise<User> {
+    const email = await this.userService.ensureEmailAvailable(input.email);
+
+    const clientData = input.cliente;
+    const documento =
+      clientData.tipo_pessoa === TipoPessoa.PF
+        ? clientData.cpf
+        : clientData.cnpj;
+
+    if (documento) {
+      await this.assertDocumentoAvailable(
+        documento,
+        clientData.tipo_pessoa,
+      );
+    }
+
+    const passwordHash = await this.userService.hashPassword(
+      input.password,
+    );
+
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        const savedUser = await this.userService.createAccountInTransaction(
+          manager,
+          {
+            name: input.name,
+            email,
+            passwordHash,
+            type: UserType.CLIENTE,
+          },
+        );
+
+        const savedClient = await manager.save(
+          manager.create(Client, {
+            user_id: savedUser.id,
+            tipo_pessoa: clientData.tipo_pessoa,
+            cpf: clientData.cpf
+              ? normalizeDocument(clientData.cpf)
+              : null,
+            cnpj: clientData.cnpj
+              ? normalizeDocument(clientData.cnpj)
+              : null,
+            data_nascimento: clientData.data_nascimento ?? null,
+            razao_social: clientData.razao_social?.trim() ?? null,
+          }),
+        );
+
+        await this.addressService.createForClientInTransaction(
+          manager,
+          savedClient.id,
+          clientData.endereco,
+        );
+
+        return savedUser;
+      });
+    } catch (error) {
+      this.logger.error('falha ao criar cliente', error);
+      throw error;
+    }
+  }
+
+  /** Confere se o CPF/CNPJ já pertence a outro cliente. */
+  private async assertDocumentoAvailable(
+    documento: string,
+    tipo: TipoPessoa,
+  ): Promise<void> {
+    const normalized = normalizeDocument(documento);
+
+    const exists = await this.clientsRepository.exists({
+      where: [{ cpf: normalized }, { cnpj: normalized }],
+    });
+
+    if (exists) {
+      throw new ConflictException(
+        tipo === TipoPessoa.PF
+          ? 'ja existe um cliente com este CPF'
+          : 'ja existe um cliente com este CNPJ',
+      );
+    }
+  }
+
   private assertCanRead(actor: AuthenticatedUser, client: Client): void {
     if (
       actor.type === UserType.ADMIN ||

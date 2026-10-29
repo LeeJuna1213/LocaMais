@@ -16,12 +16,11 @@ import { CreateClientDto } from '../../client/dto/create-client.dto.js';
 /**
  * Auto-cadastro de cliente.
  *
- * Deliberadamente declarado sem `extends`: os metadados de validacao do
- * class-validator sao herdados pelo prototype chain, e reaproveitar
- * `CreateUserDto` aqui faria o `@ValidateIf` do pai (que depende de `type`)
- * continuar valendo num DTO que nao tem `type`.
+ * O DTO é separado de `CreateUserDto` porque o auto-cadastro não escolhe
+ * `type` (o servidor impõe `cliente`) e sempre exige o bloco `cliente` com os
+ * dados PF/PJ + endereço.
  *
- * O `type` e injetado pelo `AuthService` como `cliente` e nunca vem do body.
+ * A conta e o cadastro cadastral são criados juntos pelo `ClientService`.
  */
 export class RegisterDto {
   @ApiProperty({ example: 'Maria Silva' })

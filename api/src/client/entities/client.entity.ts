@@ -16,11 +16,13 @@ import {
 // a partir do módulo `user` (que o mantém em `user/enums`).
 import { TipoPessoa } from '../../user/enums/user.enum.js';
 
-// Address e User são importados de seus próprios módulos.
-// Repare no caminho: de `client/entities` subimos dois níveis até `src`.
-import { Address } from '../../address/entities/address.entity.js';
-import { User } from '../../user/entities/user.entity.js';
-import { Reservation } from '../../reservation/entities/reservation.entity.js';
+// Address, User e Reservation são importados apenas como tipos.
+// As relações usam o nome da entidade ('Address', 'User', 'Reservation')
+// para evitar ciclos de importação em runtime (ESM). O TypeORM resolve essas
+// entidades pelo nome no DataSource; o schema e as FKs não mudam.
+import type { Address } from '../../address/entities/address.entity.js';
+import type { User } from '../../user/entities/user.entity.js';
+import type { Reservation } from '../../reservation/entities/reservation.entity.js';
 
 /**
  * Dados específicos de cliente (Pessoa Física ou Jurídica).
@@ -53,7 +55,7 @@ export class Client {
 
   // Lado inverso do relacionamento User -> Client.
   // `@JoinColumn` marca ESTE lado como dono da chave estrangeira.
-  @OneToOne(() => User, (user) => user.client, { onDelete: 'CASCADE' })
+  @OneToOne('User', 'client', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
   user: User;
 
@@ -81,13 +83,13 @@ export class Client {
 
   // Lado inverso do relacionamento Client -> Address.
   // O lado proprietário (com client_id) está na entidade Address.
-  @OneToOne(() => Address, (address) => address.client)
+  @OneToOne('Address', 'client')
   address: Address | null;
 
   // Um cliente pode ter várias reservas ao longo do tempo. A chave
   // estrangeira fica em `reservations.client_id` (lado proprietário), então
   // esta coleção é apenas de navegação e não é carregada automaticamente.
-  @OneToMany(() => Reservation, (reservation) => reservation.client)
+  @OneToMany('Reservation', 'client')
   reservations: Reservation[];
 
   @CreateDateColumn()

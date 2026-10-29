@@ -1,5 +1,6 @@
 import { ValidationArguments, registerDecorator } from 'class-validator';
-import { TipoPessoa } from '../enums/user.enum.js';
+
+import { TipoPessoa } from '../../user/enums/user.enum.js';
 
 type ClientShape = {
   tipo_pessoa?: TipoPessoa;
@@ -12,10 +13,14 @@ type ClientShape = {
 const preenchido = (v: unknown) => v !== undefined && v !== null && v !== '';
 
 /**
- * Deriva os erros de coerencia do par PF/PJ.
+ * Deriva os erros de coerência do par PF/PJ.
  *
- * Exposto separadamente do decorator para poder ser testado sem
- * instanciar o class-validator.
+ * O validador vive no módulo `client` porque só é usado nos DTOs cadastrais
+ * de cliente. O enum `TipoPessoa` continua em `user/enums` por representar
+ * um conceito compartilhado entre usuário e cliente.
+ *
+ * Exposto separadamente do decorator para poder ser testado sem instanciar o
+ * class-validator.
  */
 export function checkTipoPessoaCoerencia(value: ClientShape): string[] {
   const errors: string[] = [];
@@ -35,7 +40,9 @@ export function checkTipoPessoaCoerencia(value: ClientShape): string[] {
       errors.push('cnpj nao deve ser informado para clientes do tipo PF');
     }
     if (preenchido(value.razao_social)) {
-      errors.push('razao_social nao deve ser informada para clientes do tipo PF');
+      errors.push(
+        'razao_social nao deve ser informada para clientes do tipo PF',
+      );
     }
   }
 
@@ -50,7 +57,9 @@ export function checkTipoPessoaCoerencia(value: ClientShape): string[] {
       errors.push('cpf nao deve ser informado para clientes do tipo PJ');
     }
     if (preenchido(value.data_nascimento)) {
-      errors.push('data_nascimento nao deve ser informada para clientes do tipo PJ');
+      errors.push(
+        'data_nascimento nao deve ser informada para clientes do tipo PJ',
+      );
     }
   }
 
@@ -58,11 +67,11 @@ export function checkTipoPessoaCoerencia(value: ClientShape): string[] {
 }
 
 /**
- * Valida a coerencia entre `tipo_pessoa` e os documentos enviados:
- * PF exige cpf + data_nascimento, PJ exige cnpj + razao_social, e os
- * atributos do outro tipo nao podem ser enviados.
+ * Valida a coerência entre `tipo_pessoa` e os documentos enviados:
+ * PF exige CPF + data de nascimento; PJ exige CNPJ + razão social, e os
+ * atributos do outro tipo não podem ser enviados.
  *
- * A leitura e feita em `args.object` para validar o DTO inteiro, e nao apenas
+ * A leitura é feita em `args.object` para validar o DTO inteiro, e não apenas
  * a propriedade ancoradora.
  */
 export function TipoPessoaCoerente() {
@@ -72,7 +81,7 @@ export function TipoPessoaCoerente() {
       target: object.constructor,
       propertyName,
       constraints: [],
-      // Sem `options.message`: no class-validator ela tem precedencia sobre o
+      // Sem `options.message`: no class-validator ela tem precedência sobre o
       // `defaultMessage` do validator e esconderia a lista de erros.
       validator: {
         validate: (_value: unknown, args: ValidationArguments) =>

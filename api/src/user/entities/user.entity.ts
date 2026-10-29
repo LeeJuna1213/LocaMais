@@ -51,16 +51,12 @@ import {
 // como ADMIN, FUNCIONARIO e CLIENTE.
 import { UserType } from '../enums/user.enum.js';
 
-// Importa a entidade Client.
+// Importa a entidade Client apenas como tipo.
 //
-// Ela representa as informações específicas dos clientes
-// e será utilizada no relacionamento com a entidade User.
-//
-// A entidade Client mora no módulo `client`, que é o dono desse conceito.
-// O caminho relativo sobe dois níveis (user/entities -> src) e desce em
-// client/entities. A extensão `.js` é obrigatória porque o projeto usa
-// `moduleResolution: nodenext` com ESM ("type": "module" no package.json).
-import { Client } from '../../client/entities/client.entity.js';
+// O relacionamento usa o alvo por nome ('Client') para evitar o ciclo de
+// runtime User -> Client -> User. O TypeORM resolve a entidade pelo nome
+// registrado no DataSource; a FK e o schema continuam iguais.
+import type { Client } from '../../client/entities/client.entity.js';
 
 // ============================================================
 // DECORATOR @Entity()
@@ -317,15 +313,17 @@ export class User {
   // A entidade Client contém informações específicas
   // de clientes, como CPF ou CNPJ.
   //
-  // @OneToOne(() => Client, (client) => client.user)
+  // @OneToOne('Client', 'user')
   //
   // Primeira parte:
-  // () => Client
+  // 'Client'
   //
-  // Informa qual entidade participa do relacionamento.
+  // Informa o nome da entidade que participa do relacionamento. O alvo por
+  // nome evita importar Client em runtime e, com isso, quebrar o ciclo
+  // User -> Client -> User no carregamento ESM.
   //
   // Segunda parte:
-  // (client) => client.user
+  // 'user'
   //
   // Indica a propriedade da entidade Client
   // que representa o outro lado do relacionamento.
@@ -346,10 +344,7 @@ export class User {
   // Esse relacionamento não significa que o TypeORM
   // carregará automaticamente Client em toda consulta.
 
-  @OneToOne(
-    () => Client,
-    (client) => client.user,
-  )
+  @OneToOne('Client', 'user')
   client: Client | null;
 
   // ==========================================================
