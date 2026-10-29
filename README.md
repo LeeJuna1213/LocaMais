@@ -18,16 +18,18 @@ API backend de uma locadora de veículos, construída com **NestJS** e **TypeORM
 - Consulta, atualização e desativação lógica de clientes.
 - Consulta e atualização de endereço vinculado ao cliente.
 - CRUD de veículos com validação de placa e status.
+- Reservas com cálculo de valor no servidor, verificação de disponibilidade por período e cancelamento lógico.
 - Documentação interativa com Swagger.
 - Banco configurável por ambiente: SQLite (padrão em desenvolvimento) ou MySQL.
 
 ### O que ainda não existe
 
-- Módulo de reservas/locações.
+- Módulo de locações (check-in/check-out, contrato e devolução).
 - Migrações formais do TypeORM (o projeto usa `synchronize` configurável).
+- Regras de multa ou cobrança de cancelamento (não definidas no projeto).
 - Refresh token, revogação de token ou lista de bloqueio.
 - Upload de documentos/fotos de veículos.
-- Testes de integração cobrindo todos os endpoints (a suíte atual é mínima).
+- Testes de todos os cenários de erro (a suíte cobre o fluxo principal e as reservas, mas não é exaustiva).
 
 ---
 
@@ -88,6 +90,13 @@ locaMais/
 │   │   │   ├── car.controller.ts
 │   │   │   ├── car.module.ts
 │   │   │   └── car.service.ts
+│   │   ├── reservation/        # Reservas, disponibilidade e cálculo de valor
+│   │   │   ├── dto/
+│   │   │   ├── entities/
+│   │   │   ├── enums/
+│   │   │   ├── reservation.controller.ts
+│   │   │   ├── reservation.module.ts
+│   │   │   └── reservation.service.ts
 │   │   ├── client/             # Dados PF/PJ do cliente
 │   │   │   ├── dto/
 │   │   │   ├── entities/
@@ -118,7 +127,8 @@ locaMais/
 - **client**: dono da entidade `Client` e dos DTOs PF/PJ. Expõe rotas específicas de cliente e delega a criação transacional ao `UserService`.
 - **address**: dono da entidade `Address`. Expõe consulta/criação/atualização do endereço de um cliente existente.
 - **auth**: login, auto-cadastro público, emissão de JWT, `JwtStrategy` e configuração do segredo.
-- **car**: CRUD de veículos e regra de remoção apenas de veículos disponíveis.
+- **car**: CRUD de veículos e regra de remoção apenas de veículos disponíveis e sem reservas.
+- **reservation**: reservas com período, cálculo do valor no servidor, disponibilidade, transições de status e cancelamento lógico. Importa `ClientModule` e `CarModule` para reutilizar os serviços existentes.
 - **common**: decorators (`@Public`, `@Roles`, `@CurrentUser`), guards globais, validação de CPF/CNPJ e normalização de dados.
 - **config/database**: monta as opções do TypeORM a partir de variáveis de ambiente.
 - **database**: aplica o seed idempotente do primeiro administrador quando ainda não existe admin.
@@ -127,10 +137,15 @@ locaMais/
 
 ```text
 User 1 ──── 1 Client 1 ──── 1 Address
+Client 1 ──── N Reservation
+Car    1 ──── N Reservation
 ```
 
 - A chave estrangeira de `Client` é `user_id` (única, com `ON DELETE CASCADE`).
 - A chave estrangeira de `Address` é `client_id` (única, com `ON DELETE CASCADE`).
+- `Reservation` guarda `client_id` e `car_id` com `ON DELETE RESTRICT`; assim, o histórico de reservas impede a exclusão física de cliente/carro.
+- Uma reserva `PENDENTE` ou `CONFIRMADA` bloqueia o período; `CANCELADA` e `CONCLUIDA` não bloqueiam.
+- `Reservation.valorTotal` é um snapshot calculado no servidor; mudanças posteriores no preço do carro não alteram reservas já criadas.
 - Funcionários e administradores existem apenas em `users`; não possuem `Client` nem `Address`.
 - A aplicação faz **desativação lógica** de usuários (`active = false`), preservando cliente, endereço e histórico.
 
@@ -320,7 +335,13 @@ Prefixo global: `/api`.
 | `GET` | `/api/cars` | qualquer autenticado | Lista veículos. |
 | `GET` | `/api/cars/:id` | qualquer autenticado | Detalha veículo. |
 | `PATCH` | `/api/cars/:id` | admin, funcionario | Atualiza veículo. |
-| `DELETE` | `/api/cars/:id` | admin, funcionario | Remove apenas veículo `disponivel`. |
+| `DELETE` | `/api/cars/:id` | admin, funcionario | Remove apenas veículo `disponivel` e sem reservas. |
+| `POST` | `/api/reservations` | qualquer (cliente só para si) | Cria reserva `pendente` e calcula o valor no servidor. |
+| `GET` | `/api/reservations` | qualquer (cliente só as próprias) | Lista reservas. |
+| `GET` | `/api/reservations/availability` | qualquer autenticado | Consulta disponibilidade de um carro em um período. |
+| `GET` | `/api/reservations/:id` | qualquer (cliente só as próprias) | Detalha reserva por UUID. |
+| `PATCH` | `/api/reservations/:id` | admin, funcionario | Atualiza período/cliente/carro e transições para `confirmada`/`concluida`. |
+| `PATCH` | `/api/reservations/:id/cancel` | qualquer (cliente só as próprias) | Cancela logicamente a reserva. |
 
 ---
 
@@ -407,6 +428,31 @@ curl -X DELETE http://localhost:3000/api/users/2 \
 
 Retorna `204 No Content`. O registro permanece no banco com `active=false`.
 
+### 14.6 Criar reserva
+
+```bash
+curl -X POST http://localhost:3000/api/reservations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access_token>" \
+  -d '{
+    "dataRetirada": "2026-11-10T10:00:00.000Z",
+    "dataDevolucao": "2026-11-12T10:00:00.000Z",
+    "client_id": 1,
+    "car_id": 1
+  }'
+```
+
+O status inicial é sempre `pendente`. O valor total é calculado pelo servidor
+com base no `valorDiaria` do carro e na quantidade de diárias; enviar
+`status` ou `valorTotal` no body retorna `400`.
+
+Para consultar disponibilidade antes de reservar:
+
+```bash
+curl "http://localhost:3000/api/reservations/availability?car_id=1&dataRetirada=2026-11-10T10:00:00.000Z&dataDevolucao=2026-11-12T10:00:00.000Z" \
+  -H "Authorization: Bearer <access_token>"
+```
+
 ---
 
 ## 15. Segurança e decisões de arquitetura
@@ -418,6 +464,10 @@ Retorna `204 No Content`. O registro permanece no banco com `active=false`.
 - **Desativação lógica**: `DELETE /users/:id` e `DELETE /clients/:id` não apagam dados; marcam `active=false`.
 - **Endereço obrigatório**: o cadastro de cliente exige endereço; por isso o endereço não pode ser removido isoladamente (`409`).
 - **Repositórios**: `UserModule` registra `User`, `Client` e `Address` e reexporta o `TypeOrmModule`; `ClientModule` e `AddressModule` importam `UserModule`, evitando duplicação de entidades e dependências circulares.
+- **Reservas e concorrência**: criação/atualização usam transação. No MySQL, a linha do carro é travada com `pessimistic_write` antes da checagem de conflito; no SQLite não há `FOR UPDATE`, então a proteção fica limitada à transação/single-writer. A checagem de sobreposição usa intervalos semiabertos: uma reserva pode começar exatamente quando outra termina.
+- **Valor da reserva**: calculado no servidor em centavos, com `Math.ceil` sobre a duração em horas (qualquer fração de 24h conta como uma diária). `status` e `valorTotal` não são aceitos como fonte de verdade do cliente.
+- **Cancelamento lógico**: `PATCH /reservations/:id/cancel` só muda o status; a reserva continua no banco, mas `CANCELADA` deixa de bloquear o período. Reservas concluídas também não podem ser reabertas por PATCH genérico.
+- **Remoção de carro**: além de exigir `disponivel`, o `CarService` bloqueia a remoção quando existe qualquer reserva, preservando o histórico; o banco também usa `ON DELETE RESTRICT`.
 - **Segredos**: `JWT_SECRET`, credenciais de banco e chaves do Observe vêm do ambiente. Não há credenciais reais no código.
 - **`synchronize`**: conveniente em desenvolvimento, mas deve ser `false` em produção com migrações.
 
@@ -426,20 +476,21 @@ Retorna `204 No Content`. O registro permanece no banco com `active=false`.
 ## 16. Problemas conhecidos e pendências
 
 1. **Sem migrações**: o esquema é criado por `synchronize`. Antes de produção, gere migrações e desligue `synchronize`.
-2. **Reservas/locações ausentes**: não há controle de disponibilidade por período nem histórico de locações.
-3. **Remoção de veículo é física**: permitida apenas para veículos `disponivel`. Quando existir histórico de locações, avaliar desativação lógica também para veículos.
-4. **Cobertura de testes parcial**: há testes unitários de `UserController`/`UserService` e e2e do health check + fluxo principal (registro, login, papéis, cliente PF/PJ, endereço e veículo). Cenários de erro menos comuns e os demais módulos ainda não têm cobertura dedicada.
+2. **Módulo de locações ausente**: reservas não modelam check-in/check-out, contrato, devolução, multas ou cobranças. `Car.status = "alugado"` representa uma locação em andamento, mas não há vínculo com uma entidade de Locação; por isso, uma retirada futura é permitida para esse carro e o calendário de reservas é a fonte de verdade para o período.
+3. **Remoção de veículo é física**: permitida apenas para veículos `disponivel` e sem reservas. Com histórico de reservas, a remoção retorna `409`; uma futura desativação lógica de veículos pode ser avaliada.
+4. **Cobertura de testes parcial**: a suíte tem testes unitários de `UserController`/`UserService` e da entidade `Reservation`, além de 24 testes e2e (health check, fluxo principal e 12 cenários de reservas). Cenários de erro menos comuns e integrações com MySQL real ainda não têm cobertura dedicada.
 5. **JWT sem revogação**: um token válido continua válido até expirar; a desativação do usuário é verificada a cada requisição pelo `JwtStrategy`.
 6. **Frontend**: o diretório `front/` existe, mas não está documentado nem integrado por esta API além do CORS habilitado.
 7. **Observe opcional**: sem `OBSERVE_APP_KEY`/`OBSERVE_APP_SECRET`, nenhuma telemetria é enviada.
 8. **CORS amplo**: `origin: true` reflete qualquer origem e permite credenciais. É conveniente para desenvolvimento e WebView/Capacitor, mas deve ser restringido por ambiente antes de produção.
 9. **Sem rate limiting/helmet**: não há limite de tentativas de login nem cabeçalhos de segurança HTTP configurados; avaliar `@nestjs/throttler` e `helmet` em produção.
+10. **Concorrência no SQLite**: a proteção contra duas reservas simultâneas para o mesmo carro usa transação e, no MySQL, lock pessimista na linha do carro. O SQLite não suporta `FOR UPDATE`; para várias instâncias em produção, valide o comportamento no banco escolhido.
 
 ---
 
 ## 17. Revisar e versionar as alterações
 
-O projeto foi preparado, mas **nenhum commit ou push foi feito automaticamente**. Para revisar:
+O módulo de reservas foi implementado no working tree e **não foi commitado automaticamente** nesta etapa. Para revisar:
 
 ```bash
 cd locaMais

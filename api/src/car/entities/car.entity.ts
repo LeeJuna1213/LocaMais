@@ -2,10 +2,12 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 
+import { Reservation } from '../../reservation/entities/reservation.entity.js';
 import { StatusVeiculo } from '../enums/status-veiculo.enum.js';
 
 /**
@@ -57,6 +59,12 @@ export class Car {
   })
   valorDiaria: number;
 
+  // Um carro pode aparecer em várias reservas ao longo do tempo. A chave
+  // estrangeira fica em `reservations.car_id` (lado proprietário); esta
+  // coleção é apenas de navegação e não é carregada automaticamente.
+  @OneToMany(() => Reservation, (reservation) => reservation.car)
+  reservations: Reservation[];
+
   @CreateDateColumn()
   created_at: Date;
 
@@ -64,7 +72,7 @@ export class Car {
   updated_at: Date;
 
   /** Controla o que é serializado na resposta HTTP. */
-  toJSON(): Omit<Car, 'toJSON'> {
+  toJSON(): Omit<Car, 'toJSON' | 'reservations'> {
     const {
       id,
       placa,

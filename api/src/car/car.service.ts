@@ -4,24 +4,29 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 
 import { Car } from './entities/car.entity.js';
 import { StatusVeiculo } from './enums/status-veiculo.enum.js';
 import { CreateCarDto } from './dto/create-car.dto.js';
 import { UpdateCarDto } from './dto/update-car.dto.js';
+import { Reservation } from '../reservation/entities/reservation.entity.js';
 
 /**
  * Regras de negócio do veículo.
  *
  * Injeção de dependência: `@InjectRepository(Car)` recebe o Repository<Car>
- * registrado por `TypeOrmModule.forFeature([Car])` no CarModule.
+ * registrado por `TypeOrmModule.forFeature([Car, Reservation])` no CarModule.
+ * O Repository<Reservation> é usado apenas para impedir a remoção de um carro
+ * que já possui histórico de reservas.
  */
 @Injectable()
 export class CarService {
   constructor(
     @InjectRepository(Car)
     private readonly carsRepository: Repository<Car>,
+    @InjectRepository(Reservation)
+    private readonly reservationsRepository: Repository<Reservation>,
   ) {}
 
   async create(dto: CreateCarDto): Promise<Car> {
@@ -105,6 +110,51 @@ export class CarService {
       );
     }
 
-    await this.carsRepository.delete({ id });
+    // A reserva guarda o histórico do veículo. Remover o carro fisicamente
+    // apagaria/órfãsaria esse histórico, então a remoção é bloqueada assim que
+    // existir qualquer reserva (inclusive cancelada ou concluída). O banco
+    // também usa ON DELETE RESTRICT como segunda barreira.
+    const possuiReservas = await this.reservationsRepository.exists({
+      where: { car_id: id },
+    });
+
+    if (possuiReservas) {
+      throw new ConflictException(
+        'veiculo possui reservas e nao pode ser removido fisicamente',
+      );
+    }
+
+    try {
+      await this.carsRepository.delete({ id });
+    } catch (error) {
+      // Corrida entre a checagem acima e uma reserva recém-criada: o banco
+      // bloqueia pela FK e convertemos a violação em 409, sem ocultar outros
+      // erros de persistência.
+      if (this.isForeignKeyViolation(error)) {
+        throw new ConflictException(
+          'veiculo possui reservas e nao pode ser removido fisicamente',
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  /** Identifica violação de FK sem depender de um único driver. */
+  private isForeignKeyViolation(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) return false;
+
+    const driverError = (error.driverError ?? {}) as {
+      code?: string;
+      errno?: number;
+      message?: string;
+    };
+
+    return (
+      driverError.code === 'ER_ROW_IS_REFERENCED_2' ||
+      driverError.code === 'SQLITE_CONSTRAINT_FOREIGNKEY' ||
+      driverError.errno === 1451 ||
+      /foreign key constraint/i.test(driverError.message ?? '')
+    );
   }
 }
