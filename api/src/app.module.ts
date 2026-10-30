@@ -16,6 +16,7 @@ import { AddressModule } from './address/address.module.js';
 import { CarModule } from './car/car.module.js';
 import { ReservationModule } from './reservation/reservation.module.js';
 import { LocacaoModule } from './locacao/locacao.module.js';
+import { VistoriaModule } from './vistoria/vistoria.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -52,6 +53,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     CarModule,
     ReservationModule,
     LocacaoModule,
+    VistoriaModule,
   ],
   controllers: [AppController],
   providers: [

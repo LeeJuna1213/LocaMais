@@ -5,12 +5,14 @@ import {
   Entity,
   Index,
   JoinColumn,
+  OneToMany,
   OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 
 import type { Reservation } from '../../reservation/entities/reservation.entity.js';
+import type { Vistoria } from '../../vistoria/entities/vistoria.entity.js';
 import { StatusLocacao } from '../enums/status-locacao.enum.js';
 
 /**
@@ -88,6 +90,17 @@ export class Locacao {
   @OneToOne('Reservation', { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'reservation_id' })
   reservation: Reservation;
+
+  /**
+   * Coleção inversa de vistorias associadas a esta locação.
+   *
+   * O lado proprietário da relação está na entidade `Vistoria` (`locacao_id`).
+   * Esta coleção serve apenas para navegação e não é carregada automaticamente.
+   * É opcional porque só está preenchida quando a relação é carregada
+   * explicitamente nas consultas.
+   */
+  @OneToMany('Vistoria', 'locacao')
+  vistorias?: Vistoria[];
 
   @CreateDateColumn()
   created_at: Date;
