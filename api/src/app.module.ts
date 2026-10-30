@@ -15,6 +15,7 @@ import { ClientModule } from './client/client.module.js';
 import { AddressModule } from './address/address.module.js';
 import { CarModule } from './car/car.module.js';
 import { ReservationModule } from './reservation/reservation.module.js';
+import { LocacaoModule } from './locacao/locacao.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -50,6 +51,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     AddressModule,
     CarModule,
     ReservationModule,
+    LocacaoModule,
   ],
   controllers: [AppController],
   providers: [
