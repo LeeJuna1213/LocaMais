@@ -3,7 +3,7 @@
  *
  * Os valores são textos em minúsculo para seguir o padrão dos demais enums
  * persistidos no projeto (`StatusLocacao`, `StatusReserva`, `StatusVeiculo`,
- * `UserType`). O TypeORM grava o texto no banco (`simple-enum`), então alterar
+ * `TipoUsuario`). O TypeORM grava o texto no banco (`simple-enum`), então alterar
  * um valor aqui exige tratamento dos dados já existentes.
  *
  * - RETIRADA: vistoria realizada antes da entrega do veículo ao cliente,

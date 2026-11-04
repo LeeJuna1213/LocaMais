@@ -11,7 +11,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-import type { Reservation } from '../../reservation/entities/reservation.entity.js';
+import type { Reserva } from '../../reserva/entities/reserva.entity.js';
 import type { Vistoria } from '../../vistoria/entities/vistoria.entity.js';
 import { StatusLocacao } from '../enums/status-locacao.enum.js';
 
@@ -87,9 +87,9 @@ export class Locacao {
   reservation_id: string;
 
   /** Lado proprietário da relação 1:1 com a reserva que originou esta locação. */
-  @OneToOne('Reservation', { nullable: false, onDelete: 'RESTRICT' })
+  @OneToOne('Reserva', { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'reservation_id' })
-  reservation: Reservation;
+  reservation: Reserva;
 
   /**
    * Coleção inversa de vistorias associadas a esta locação.
@@ -157,7 +157,7 @@ export class Locacao {
    * - Sem atraso ou devolução antecipada: adicional igual a zero.
    *
    * O arredondamento é feito em centavos para evitar imprecisão de ponto
-   * flutuante, seguindo o mesmo critério de `Reservation.calcularValor`.
+   * flutuante, seguindo o mesmo critério de `Reserva.calcularValor`.
    *
    * @param dataDevolucaoPrevista data/hora prevista de devolução da reserva.
    * @param valorDiaria valor da diária cadastrado no veículo.

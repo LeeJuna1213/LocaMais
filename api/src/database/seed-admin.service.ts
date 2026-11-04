@@ -3,9 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { normalizeEmail } from '../common/utils/normalize.utility.js';
-import { User } from '../user/entities/user.entity.js';
-import { UserType } from '../user/enums/user.enum.js';
-import { UserService } from '../user/user.service.js';
+import { Usuario } from '../usuario/entities/usuario.entity.js';
+import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
+import { UsuarioService } from '../usuario/usuario.service.js';
 
 /**
  * Cria o primeiro admin no boot a partir de `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
@@ -19,9 +19,9 @@ export class SeedAdminService implements OnApplicationBootstrap {
   private readonly logger = new Logger(SeedAdminService.name);
 
   constructor(
-    @InjectRepository(User)
-    private readonly usersRepository: Repository<User>,
-    private readonly usersService: UserService,
+    @InjectRepository(Usuario)
+    private readonly usuariosRepository: Repository<Usuario>,
+    private readonly usuariosService: UsuarioService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -36,8 +36,8 @@ export class SeedAdminService implements OnApplicationBootstrap {
       return;
     }
 
-    const existingAdmins = await this.usersRepository.count({
-      where: { type: UserType.ADMIN },
+    const existingAdmins = await this.usuariosRepository.count({
+      where: { type: TipoUsuario.ADMIN },
     });
 
     if (existingAdmins > 0) {
@@ -50,9 +50,9 @@ export class SeedAdminService implements OnApplicationBootstrap {
     const name =
       this.configService.get<string>('ADMIN_NAME') ?? 'Administrador';
 
-    const admin = await this.usersService.create(
-      { id: 0, email, name, type: UserType.ADMIN },
-      { name, email: normalizeEmail(email), password, type: UserType.ADMIN },
+    const admin = await this.usuariosService.create(
+      { id: 0, email, name, type: TipoUsuario.ADMIN },
+      { name, email: normalizeEmail(email), password, type: TipoUsuario.ADMIN },
     );
 
     this.logger.warn(

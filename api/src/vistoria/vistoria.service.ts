@@ -7,10 +7,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import type { AuthenticatedUser } from '../common/interfaces/authenticated-user.interface.js';
+import type { UsuarioAutenticado } from '../common/interfaces/usuario-autenticado.interface.js';
 import { LocacaoService } from '../locacao/locacao.service.js';
 import { StatusLocacao } from '../locacao/enums/status-locacao.enum.js';
-import { UserType } from '../user/enums/user.enum.js';
+import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
 
 import { CreateVistoriaDto } from './dto/create-vistoria.dto.js';
 import { UpdateVistoriaDto } from './dto/update-vistoria.dto.js';
@@ -55,7 +55,7 @@ export class VistoriaService {
    * - A vistoria é vinculada à locação.
    */
   async create(
-    actor: AuthenticatedUser,
+    actor: UsuarioAutenticado,
     dto: CreateVistoriaDto,
   ): Promise<Vistoria> {
     // Valida existência da locação e controle de acesso (dono/staff).
@@ -85,7 +85,7 @@ export class VistoriaService {
    * Admin/funcionário veem todas; cliente vê apenas as vistorias ligadas às
    * suas próprias locações (via `reservation.client.user_id`).
    */
-  findAll(actor: AuthenticatedUser): Promise<Vistoria[]> {
+  findAll(actor: UsuarioAutenticado): Promise<Vistoria[]> {
     const queryBuilder = this.vistoriasRepository
       .createQueryBuilder('vistoria')
       .leftJoinAndSelect('vistoria.locacao', 'locacao')
@@ -107,7 +107,7 @@ export class VistoriaService {
    * Lança 404 quando não existe e 403 quando o cliente não é o dono.
    */
   async findOne(
-    actor: AuthenticatedUser,
+    actor: UsuarioAutenticado,
     id: string,
   ): Promise<Vistoria> {
     const vistoria = await this.vistoriasRepository.findOne({
@@ -130,7 +130,7 @@ export class VistoriaService {
    * retorna o histórico de vistorias daquela locação.
    */
   async findByLocacao(
-    actor: AuthenticatedUser,
+    actor: UsuarioAutenticado,
     locacaoId: string,
   ): Promise<Vistoria[]> {
     // Garante que a locação exista e que o ator tem acesso a ela.
@@ -150,7 +150,7 @@ export class VistoriaService {
    * da vistoria, preservando o histórico.
    */
   async update(
-    actor: AuthenticatedUser,
+    actor: UsuarioAutenticado,
     id: string,
     dto: UpdateVistoriaDto,
   ): Promise<Vistoria> {
@@ -169,7 +169,7 @@ export class VistoriaService {
   }
 
   /** Staff enxerga tudo; cliente só enxerga as próprias vistorias. */
-  private assertCanRead(actor: AuthenticatedUser, vistoria: Vistoria): void {
+  private assertCanRead(actor: UsuarioAutenticado, vistoria: Vistoria): void {
     if (this.isStaff(actor)) return;
 
     if (
@@ -209,9 +209,9 @@ export class VistoriaService {
     throw new ConflictException('tipo de vistoria nao suportado');
   }
 
-  private isStaff(actor: AuthenticatedUser): boolean {
+  private isStaff(actor: UsuarioAutenticado): boolean {
     return (
-      actor.type === UserType.ADMIN || actor.type === UserType.FUNCIONARIO
+      actor.type === TipoUsuario.ADMIN || actor.type === TipoUsuario.FUNCIONARIO
     );
   }
 }

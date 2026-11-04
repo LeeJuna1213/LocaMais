@@ -6,8 +6,8 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator.js';
-import { AuthenticatedUser } from '../interfaces/authenticated-user.interface.js';
-import { UserType } from '../../user/enums/user.enum.js';
+import { UsuarioAutenticado } from '../interfaces/usuario-autenticado.interface.js';
+import { TipoUsuario } from '../../usuario/enums/usuario.enum.js';
 
 /**
  * Guard global de autorizacao por papel.
@@ -20,7 +20,7 @@ export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const required = this.reflector.getAllAndOverride<UserType[]>(ROLES_KEY, [
+    const required = this.reflector.getAllAndOverride<TipoUsuario[]>(ROLES_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
@@ -28,7 +28,7 @@ export class RolesGuard implements CanActivate {
     if (!required || required.length === 0) return true;
 
     const { user } = context.switchToHttp().getRequest<{
-      user?: AuthenticatedUser;
+      user?: UsuarioAutenticado;
     }>();
 
     if (!user) return false;

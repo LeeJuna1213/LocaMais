@@ -3,18 +3,18 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { createObserveModule } from '@nestjs/observe';
 import { APP_GUARD } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { AuthModule } from './auth/auth.module.js';
+import { AutenticacaoModule } from './autenticacao/autenticacao.module.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
 import { buildTypeOrmOptions } from './config/database.config.js';
 import { DatabaseModule } from './database/database.module.js';
-import { UserModule } from './user/user.module.js';
-import { ClientModule } from './client/client.module.js';
-import { AddressModule } from './address/address.module.js';
-import { CarModule } from './car/car.module.js';
-import { ReservationModule } from './reservation/reservation.module.js';
+import { UsuarioModule } from './usuario/usuario.module.js';
+import { ClienteModule } from './cliente/cliente.module.js';
+import { EnderecoModule } from './endereco/endereco.module.js';
+import { CarroModule } from './carro/carro.module.js';
+import { ReservaModule } from './reserva/reserva.module.js';
 import { LocacaoModule } from './locacao/locacao.module.js';
 import { VistoriaModule } from './vistoria/vistoria.module.js';
 
@@ -45,13 +45,13 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       }),
     }),
 
-    UserModule,
-    AuthModule,
+    UsuarioModule,
+    AutenticacaoModule,
     DatabaseModule,
-    ClientModule,
-    AddressModule,
-    CarModule,
-    ReservationModule,
+    ClienteModule,
+    EnderecoModule,
+    CarroModule,
+    ReservaModule,
     LocacaoModule,
     VistoriaModule,
   ],

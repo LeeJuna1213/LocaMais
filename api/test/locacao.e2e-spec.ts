@@ -10,19 +10,19 @@ import {
   post,
 } from './helpers.js';
 
-interface ClientBody {
+interface ClienteBody {
   id: number;
   user: { id: number; email: string; type: string };
 }
 
-interface CarBody {
+interface CarroBody {
   id: number;
   placa: string;
   status: string;
   valorDiaria: number;
 }
 
-interface ReservationBody {
+interface ReservaBody {
   id: string;
   dataRetirada: string;
   dataDevolucao: string;
@@ -97,7 +97,7 @@ describe('Locações (e2e)', () => {
       process.env.ADMIN_PASSWORD!,
     );
 
-    const client = await post<ClientBody>(
+    const client = await post<ClienteBody>(
       app,
       '/clients',
       {
@@ -119,7 +119,7 @@ describe('Locações (e2e)', () => {
     clientId = client.body.id;
     clientToken = await login(app, 'cliente.locacao@exemplo.com', 'senha-secreta');
 
-    const car = await post<CarBody>(
+    const car = await post<CarroBody>(
       app,
       '/cars',
       {
@@ -141,7 +141,7 @@ describe('Locações (e2e)', () => {
     // originam locações.
     const start = futureIso(10);
     const end = addHours(start, 50); // 50h => 3 diárias => valorTotal 300
-    const created = await post<ReservationBody>(
+    const created = await post<ReservaBody>(
       app,
       '/reservations',
       { dataRetirada: start, dataDevolucao: end, client_id: clientId, car_id: carId },
@@ -152,7 +152,7 @@ describe('Locações (e2e)', () => {
     }
     reservationId = created.body.id;
 
-    const confirmed = await patch<ReservationBody>(
+    const confirmed = await patch<ReservaBody>(
       app,
       `/reservations/${reservationId}`,
       { status: 'confirmada' },
@@ -181,7 +181,7 @@ describe('Locações (e2e)', () => {
   });
 
   it('não cria locação para reserva pendente (409)', async () => {
-    const pendente = await post<ReservationBody>(
+    const pendente = await post<ReservaBody>(
       app,
       '/reservations',
       {
@@ -204,7 +204,7 @@ describe('Locações (e2e)', () => {
   });
 
   it('não cria locação para reserva cancelada (409)', async () => {
-    const paraCancelar = await post<ReservationBody>(
+    const paraCancelar = await post<ReservaBody>(
       app,
       '/reservations',
       {
@@ -254,7 +254,7 @@ describe('Locações (e2e)', () => {
   });
 
   it('cliente não cria locação para reserva de outro cliente (403)', async () => {
-    const outraReserva = await post<ReservationBody>(
+    const outraReserva = await post<ReservaBody>(
       app,
       '/reservations',
       {
@@ -266,14 +266,14 @@ describe('Locações (e2e)', () => {
       adminToken,
     );
     expect(outraReserva.status).toBe(201);
-    await patch<ReservationBody>(
+    await patch<ReservaBody>(
       app,
       `/reservations/${outraReserva.body.id}`,
       { status: 'confirmada' },
       adminToken,
     );
 
-    await post<ClientBody>(
+    await post<ClienteBody>(
       app,
       '/clients',
       {

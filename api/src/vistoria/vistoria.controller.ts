@@ -22,7 +22,7 @@ import {
 } from '@nestjs/swagger';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
-import type { AuthenticatedUser } from '../common/interfaces/authenticated-user.interface.js';
+import type { UsuarioAutenticado } from '../common/interfaces/usuario-autenticado.interface.js';
 
 import { CreateVistoriaDto } from './dto/create-vistoria.dto.js';
 import type { Vistoria } from './entities/vistoria.entity.js';
@@ -70,7 +70,7 @@ export class VistoriaController {
     description: 'Cliente tentando vistoriar locacao de outro cliente.',
   })
   create(
-    @CurrentUser() actor: AuthenticatedUser,
+    @CurrentUser() actor: UsuarioAutenticado,
     @Body() dto: CreateVistoriaDto,
   ): Promise<Vistoria> {
     return this.vistoriaService.create(actor, dto);
@@ -84,7 +84,7 @@ export class VistoriaController {
       'Admin/funcionario veem todas as vistorias; cliente ve apenas as vistorias de suas proprias locacoes.',
   })
   @ApiOkResponse({ description: 'Lista de vistorias retornada com sucesso.' })
-  findAll(@CurrentUser() actor: AuthenticatedUser): Promise<Vistoria[]> {
+  findAll(@CurrentUser() actor: UsuarioAutenticado): Promise<Vistoria[]> {
     return this.vistoriaService.findAll(actor);
   }
 
@@ -107,7 +107,7 @@ export class VistoriaController {
     description: 'Cliente tentando acessar vistorias de locação de outro cliente.',
   })
   findByLocacao(
-    @CurrentUser() actor: AuthenticatedUser,
+    @CurrentUser() actor: UsuarioAutenticado,
     @Param('locacaoId', ParseUUIDPipe) locacaoId: string,
   ): Promise<Vistoria[]> {
     return this.vistoriaService.findByLocacao(actor, locacaoId);
@@ -128,7 +128,7 @@ export class VistoriaController {
     description: 'Cliente tentando acessar vistoria de outro cliente.',
   })
   findOne(
-    @CurrentUser() actor: AuthenticatedUser,
+    @CurrentUser() actor: UsuarioAutenticado,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<Vistoria> {
     return this.vistoriaService.findOne(actor, id);
@@ -164,7 +164,7 @@ export class VistoriaController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateVistoriaDto,
-    @CurrentUser() actor: AuthenticatedUser,
+    @CurrentUser() actor: UsuarioAutenticado,
   ): Promise<Vistoria> {
     return this.vistoriaService.update(actor, id, dto);
   }

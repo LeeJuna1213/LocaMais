@@ -23,8 +23,8 @@ import {
 
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
-import type { AuthenticatedUser } from '../common/interfaces/authenticated-user.interface.js';
-import { UserType } from '../user/enums/user.enum.js';
+import type { UsuarioAutenticado } from '../common/interfaces/usuario-autenticado.interface.js';
+import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
 
 import { CreateLocacaoDto } from './dto/create-locacao.dto.js';
 import { LocacaoAdicionaisDto } from './dto/locacao-adicionais.dto.js';
@@ -70,7 +70,7 @@ export class LocacaoController {
     description: 'Cliente tentando criar locação para reserva de outro cliente.',
   })
   create(
-    @CurrentUser() actor: AuthenticatedUser,
+    @CurrentUser() actor: UsuarioAutenticado,
     @Body() dto: CreateLocacaoDto,
   ): Promise<Locacao> {
     return this.locacaoService.create(actor, dto);
@@ -84,7 +84,7 @@ export class LocacaoController {
       'Admin/funcionário veem todas as locações; cliente ve apenas as locações das próprias reservas.',
   })
   @ApiOkResponse({ description: 'Lista de locações retornada com sucesso.' })
-  findAll(@CurrentUser() actor: AuthenticatedUser): Promise<Locacao[]> {
+  findAll(@CurrentUser() actor: UsuarioAutenticado): Promise<Locacao[]> {
     return this.locacaoService.findAll(actor);
   }
 
@@ -103,7 +103,7 @@ export class LocacaoController {
     description: 'Cliente tentando acessar locação de outro cliente.',
   })
   findOne(
-    @CurrentUser() actor: AuthenticatedUser,
+    @CurrentUser() actor: UsuarioAutenticado,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<Locacao> {
     return this.locacaoService.findOne(actor, id);
@@ -117,7 +117,7 @@ export class LocacaoController {
    * `em_andamento` e o veículo fica `alugado`.
    */
   @Patch(':id/retirada')
-  @Roles(UserType.ADMIN, UserType.FUNCIONARIO)
+  @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
   @ApiOperation({
     summary: 'Registra a retirada do veículo',
     description:
@@ -138,7 +138,7 @@ export class LocacaoController {
     description: 'Acesso restrito a admin/funcionário.',
   })
   registrarRetirada(
-    @CurrentUser() actor: AuthenticatedUser,
+    @CurrentUser() actor: UsuarioAutenticado,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<Locacao> {
     return this.locacaoService.registrarRetirada(actor, id);
@@ -153,7 +153,7 @@ export class LocacaoController {
    * os adicionais de atraso e a reserva de origem é concluída.
    */
   @Patch(':id/devolucao')
-  @Roles(UserType.ADMIN, UserType.FUNCIONARIO)
+  @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
   @ApiOperation({
     summary: 'Registra a devolução do veículo',
     description:
@@ -174,7 +174,7 @@ export class LocacaoController {
     description: 'Acesso restrito a admin/funcionário.',
   })
   registrarDevolucao(
-    @CurrentUser() actor: AuthenticatedUser,
+    @CurrentUser() actor: UsuarioAutenticado,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<Locacao> {
     return this.locacaoService.registrarDevolucao(actor, id);
@@ -187,7 +187,7 @@ export class LocacaoController {
    * quando a locação ainda está aguardando retirada.
    */
   @Patch(':id')
-  @Roles(UserType.ADMIN, UserType.FUNCIONARIO)
+  @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
   @ApiOperation({
     summary: 'Atualiza uma locação quando permitido',
     description:
@@ -211,7 +211,7 @@ export class LocacaoController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateLocacaoDto,
-    @CurrentUser() actor: AuthenticatedUser,
+    @CurrentUser() actor: UsuarioAutenticado,
   ): Promise<Locacao> {
     return this.locacaoService.update(actor, id, dto);
   }
@@ -243,7 +243,7 @@ export class LocacaoController {
     description: 'Cliente tentando acessar locação de outro cliente.',
   })
   adicionais(
-    @CurrentUser() actor: AuthenticatedUser,
+    @CurrentUser() actor: UsuarioAutenticado,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<LocacaoAdicionaisDto> {
     return this.locacaoService.calcularAdicionais(actor, id);

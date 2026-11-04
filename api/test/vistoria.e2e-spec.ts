@@ -10,19 +10,19 @@ import {
   post,
 } from './helpers.js';
 
-interface ClientBody {
+interface ClienteBody {
   id: number;
   user: { id: number; email: string; type: string };
 }
 
-interface CarBody {
+interface CarroBody {
   id: number;
   placa: string;
   status: string;
   valorDiaria: number;
 }
 
-interface ReservationBody {
+interface ReservaBody {
   id: string;
   dataRetirada: string;
   dataDevolucao: string;
@@ -106,7 +106,7 @@ describe('Vistorias (e2e)', () => {
       process.env.ADMIN_PASSWORD!,
     );
 
-    const client = await post<ClientBody>(
+    const client = await post<ClienteBody>(
       app,
       '/clients',
       {
@@ -128,7 +128,7 @@ describe('Vistorias (e2e)', () => {
     clientId = client.body.id;
     clientToken = await login(app, 'cliente.vistoria@exemplo.com', 'senha-secreta');
 
-    const otherClient = await post<ClientBody>(
+    const otherClient = await post<ClienteBody>(
       app,
       '/clients',
       {
@@ -150,7 +150,7 @@ describe('Vistorias (e2e)', () => {
     otherClientId = otherClient.body.id;
     otherClientToken = await login(app, 'outro.cliente.vistoria@exemplo.com', 'senha-secreta');
 
-    const car = await post<CarBody>(
+    const car = await post<CarroBody>(
       app,
       '/cars',
       {
@@ -171,7 +171,7 @@ describe('Vistorias (e2e)', () => {
     // Cria reserva e confirma (apenas reservas confirmadas originam locacoes).
     const start = futureIso(10);
     const end = addHours(start, 50);
-    const created = await post<ReservationBody>(
+    const created = await post<ReservaBody>(
       app,
       '/reservations',
       { dataRetirada: start, dataDevolucao: end, client_id: clientId, car_id: carId },
@@ -182,7 +182,7 @@ describe('Vistorias (e2e)', () => {
     }
     reservationId = created.body.id;
 
-    const confirmed = await patch<ReservationBody>(
+    const confirmed = await patch<ReservaBody>(
       app,
       `/reservations/${reservationId}`,
       { status: 'confirmada' },
@@ -258,14 +258,14 @@ describe('Vistorias (e2e)', () => {
     // Cria locação do outro cliente.
     const start2 = futureIso(20);
     const end2 = addHours(start2, 24);
-    const res2 = await post<ReservationBody>(
+    const res2 = await post<ReservaBody>(
       app,
       '/reservations',
       { dataRetirada: start2, dataDevolucao: end2, client_id: otherClientId, car_id: carId },
       otherClientToken,
     );
     expect(res2.status).toBe(201);
-    await patch<ReservationBody>(
+    await patch<ReservaBody>(
       app,
       `/reservations/${res2.body.id}`,
       { status: 'confirmada' },
@@ -343,14 +343,14 @@ describe('Vistorias (e2e)', () => {
     // Cria uma locação ainda aguardando retirada.
     const start3 = futureIso(30);
     const end3 = addHours(start3, 24);
-    const res3 = await post<ReservationBody>(
+    const res3 = await post<ReservaBody>(
       app,
       '/reservations',
       { dataRetirada: start3, dataDevolucao: end3, client_id: clientId, car_id: carId },
       clientToken,
     );
     expect(res3.status).toBe(201);
-    await patch<ReservationBody>(
+    await patch<ReservaBody>(
       app,
       `/reservations/${res3.body.id}`,
       { status: 'confirmada' },

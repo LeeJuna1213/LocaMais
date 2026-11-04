@@ -2,7 +2,7 @@
  * Estados possíveis de uma locação.
  *
  * Os valores são textos em minúsculo para seguir o padrão dos demais enums
- * persistidos no projeto (`StatusReserva`, `StatusVeiculo`, `UserType`).
+ * persistidos no projeto (`StatusReserva`, `StatusVeiculo`, `TipoUsuario`).
  * O TypeORM grava o texto no banco (`simple-enum`), então alterar um valor
  * aqui exige tratamento dos dados já existentes.
  *

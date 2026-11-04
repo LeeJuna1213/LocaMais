@@ -7,13 +7,13 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 
-import { Car } from '../car/entities/car.entity.js';
-import { StatusVeiculo } from '../car/enums/status-veiculo.enum.js';
-import type { AuthenticatedUser } from '../common/interfaces/authenticated-user.interface.js';
-import { UserType } from '../user/enums/user.enum.js';
-import { Reservation } from '../reservation/entities/reservation.entity.js';
-import { ReservationService } from '../reservation/reservation.service.js';
-import { StatusReserva } from '../reservation/enums/reservation-status.enum.js';
+import { Carro } from '../carro/entities/carro.entity.js';
+import { StatusVeiculo } from '../carro/enums/status-veiculo.enum.js';
+import type { UsuarioAutenticado } from '../common/interfaces/usuario-autenticado.interface.js';
+import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
+import { Reserva } from '../reserva/entities/reserva.entity.js';
+import { ReservaService } from '../reserva/reserva.service.js';
+import { StatusReserva } from '../reserva/enums/status-reserva.enum.js';
 
 import { CreateLocacaoDto } from './dto/create-locacao.dto.js';
 import { LocacaoAdicionaisDto } from './dto/locacao-adicionais.dto.js';
@@ -30,16 +30,16 @@ import { StatusLocacao } from './enums/status-locacao.enum.js';
  *
  * Injeção de dependência:
  * - `Repository<Locacao>` vem do `TypeOrmModule.forFeature([Locacao, ...])`;
- * - `Repository<Reservation>` e `Repository<Car>` são usados para atualizar a
+ * - `Repository<Reserva>` e `Repository<Carro>` são usados para atualizar a
  *   reserva e o veículo dentro da mesma transação que a locação, garantindo
  *   consistência (ex: retirada marca o veículo como alugado);
- * - `ReservationService` é reaproveitado para consultar a reserva de origem
+ * - `ReservaService` é reaproveitado para consultar a reserva de origem
  *   (com cliente e carro já carregados);
  * - `DataSource` abre as transações.
  *
- * O módulo `Reservation` já foi projetado para ser reutilizado por uma futura
- * entidade de Locação (veja o comentário de `ReservationModule`), e não há
- * dependência circular: `ReservationModule` e `CarModule` não importam
+ * O módulo `Reserva` já foi projetado para ser reutilizado por uma futura
+ * entidade de Locação (veja o comentário de `ReservaModule`), e não há
+ * dependência circular: `ReservaModule` e `CarroModule` não importam
  * `LocacaoModule`.
  */
 @Injectable()
@@ -47,12 +47,12 @@ export class LocacaoService {
   constructor(
     @InjectRepository(Locacao)
     private readonly locacoesRepository: Repository<Locacao>,
-    @InjectRepository(Reservation)
-    private readonly reservationsRepository: Repository<Reservation>,
-    @InjectRepository(Car)
-    private readonly carsRepository: Repository<Car>,
+    @InjectRepository(Reserva)
+    private readonly reservasRepository: Repository<Reserva>,
+    @InjectRepository(Carro)
+    private readonly carrosRepository: Repository<Carro>,
     private readonly dataSource: DataSource,
-    private readonly reservationService: ReservationService,
+    private readonly reservaService: ReservaService,
   ) {}
 
   /**
@@ -70,10 +70,10 @@ export class LocacaoService {
    *   informado pelo cliente.
    */
   async create(
-    actor: AuthenticatedUser,
+    actor: UsuarioAutenticado,
     dto: CreateLocacaoDto,
   ): Promise<Locacao> {
-    const reservation = await this.reservationService.findOne(
+    const reservation = await this.reservaService.findOne(
       dto.reservation_id,
     );
 
@@ -112,7 +112,7 @@ export class LocacaoService {
    * Admin/funcionário veem todas; cliente vê apenas as locações ligadas à sua
    * própria reserva (via `reservation.client.user_id`).
    */
-  findAll(actor: AuthenticatedUser): Promise<Locacao[]> {
+  findAll(actor: UsuarioAutenticado): Promise<Locacao[]> {
     const queryBuilder = this.locacoesRepository
       .createQueryBuilder('locacao')
       .leftJoinAndSelect('locacao.reservation', 'reservation')
@@ -134,7 +134,7 @@ export class LocacaoService {
    * Lança 404 quando não existe e 403 quando o cliente não é o dono.
    */
   async findOne(
-    actor: AuthenticatedUser,
+    actor: UsuarioAutenticado,
     id: string,
   ): Promise<Locacao> {
     const locacao = await this.locacoesRepository.findOne({
@@ -156,7 +156,7 @@ export class LocacaoService {
    * aguardando retirada.
    */
   async update(
-    actor: AuthenticatedUser,
+    actor: UsuarioAutenticado,
     id: string,
     dto: UpdateLocacaoDto,
   ): Promise<Locacao> {
@@ -192,14 +192,14 @@ export class LocacaoService {
    * Locação e veículo são atualizados na mesma transação.
    */
   async registrarRetirada(
-    actor: AuthenticatedUser,
+    actor: UsuarioAutenticado,
     id: string,
   ): Promise<Locacao> {
     await this.findOne(actor, id); // 404 + controle de acesso
 
     const saved = await this.dataSource.transaction(async (manager) => {
       const locacaoRepository = manager.getRepository(Locacao);
-      const carRepository = manager.getRepository(Car);
+      const carRepository = manager.getRepository(Carro);
 
       const locacao = await locacaoRepository.findOne({
         where: { id },
@@ -250,15 +250,15 @@ export class LocacaoService {
    * Locação, veículo e reserva são atualizados na mesma transação.
    */
   async registrarDevolucao(
-    actor: AuthenticatedUser,
+    actor: UsuarioAutenticado,
     id: string,
   ): Promise<Locacao> {
     await this.findOne(actor, id); // 404 + controle de acesso
 
     const saved = await this.dataSource.transaction(async (manager) => {
       const locacaoRepository = manager.getRepository(Locacao);
-      const carRepository = manager.getRepository(Car);
-      const reservationRepository = manager.getRepository(Reservation);
+      const carRepository = manager.getRepository(Carro);
+      const reservationRepository = manager.getRepository(Reserva);
 
       const locacao = await locacaoRepository.findOne({
         where: { id },
@@ -321,7 +321,7 @@ export class LocacaoService {
    *   `valorDiaria` cadastrado no veículo (fonte: banco de dados).
    */
   async calcularAdicionais(
-    actor: AuthenticatedUser,
+    actor: UsuarioAutenticado,
     id: string,
   ): Promise<LocacaoAdicionaisDto> {
     const locacao = await this.findOne(actor, id);
@@ -356,7 +356,7 @@ export class LocacaoService {
 
   /** Staff enxerga tudo; cliente só enxerga as próprias locações. */
   private assertCanRead(
-    actor: AuthenticatedUser,
+    actor: UsuarioAutenticado,
     locacao: Locacao,
   ): void {
     if (this.isStaff(actor)) return;
@@ -373,8 +373,8 @@ export class LocacaoService {
 
   /** Staff pode criar para qualquer reserva; cliente só para a própria. */
   private assertCanManageReservation(
-    actor: AuthenticatedUser,
-    reservation: Reservation,
+    actor: UsuarioAutenticado,
+    reservation: Reserva,
   ): void {
     if (this.isStaff(actor)) return;
 
@@ -388,9 +388,9 @@ export class LocacaoService {
     }
   }
 
-  private isStaff(actor: AuthenticatedUser): boolean {
+  private isStaff(actor: UsuarioAutenticado): boolean {
     return (
-      actor.type === UserType.ADMIN || actor.type === UserType.FUNCIONARIO
+      actor.type === TipoUsuario.ADMIN || actor.type === TipoUsuario.FUNCIONARIO
     );
   }
 }

@@ -12,7 +12,7 @@ import {
   post,
 } from './helpers.js';
 
-interface AuthBody {
+interface AutenticacaoBody {
   access_token: string;
   token_type: string;
   user: {
@@ -24,7 +24,7 @@ interface AuthBody {
   };
 }
 
-interface ClientBody {
+interface ClienteBody {
   id: number;
   tipo_pessoa: string;
   cnpj?: string | null;
@@ -33,7 +33,7 @@ interface ClientBody {
   address: { id: number; numero: string; cep: string } | null;
 }
 
-interface CarBody {
+interface CarroBody {
   id: number;
   placa: string;
   status: string;
@@ -82,7 +82,7 @@ describe('Fluxo principal (e2e)', () => {
   it('cadastra um cliente PF pelo auto-cadastro público', async () => {
     cpfPf = makeCpf('123456789');
 
-    const { status, body } = await post<AuthBody>(app, '/auth/register', {
+    const { status, body } = await post<AutenticacaoBody>(app, '/auth/register', {
       name: 'Maria Silva',
       email: 'maria.e2e@exemplo.com',
       password: 'senha-secreta',
@@ -160,7 +160,7 @@ describe('Fluxo principal (e2e)', () => {
   });
 
   it('admin cadastra cliente PJ pelo endpoint de clientes', async () => {
-    const { status, body } = await post<ClientBody>(
+    const { status, body } = await post<ClienteBody>(
       app,
       '/clients',
       {
@@ -191,11 +191,11 @@ describe('Fluxo principal (e2e)', () => {
   });
 
   it('admin lista e consulta clientes', async () => {
-    const list = await get<ClientBody[]>(app, '/clients', adminToken);
+    const list = await get<ClienteBody[]>(app, '/clients', adminToken);
     expect(list.status).toBe(200);
     expect(list.body.some((client) => client.id === clientePjId)).toBe(true);
 
-    const detail = await get<ClientBody>(
+    const detail = await get<ClienteBody>(
       app,
       `/clients/${clientePjId}`,
       adminToken,
@@ -255,7 +255,7 @@ describe('Fluxo principal (e2e)', () => {
   });
 
   it('admin atualiza os dados cadastrais do cliente PJ', async () => {
-    const updated = await patch<ClientBody>(
+    const updated = await patch<ClienteBody>(
       app,
       `/clients/${clientePjId}`,
       { razao_social: 'Empresa Exemplo Atualizada LTDA' },
@@ -267,7 +267,7 @@ describe('Fluxo principal (e2e)', () => {
   });
 
   it('admin cria, lista, atualiza e remove um veículo disponível', async () => {
-    const created = await post<CarBody>(
+    const created = await post<CarroBody>(
       app,
       '/cars',
       {
@@ -286,11 +286,11 @@ describe('Fluxo principal (e2e)', () => {
 
     const carId = created.body.id;
 
-    const list = await get<CarBody[]>(app, '/cars', adminToken);
+    const list = await get<CarroBody[]>(app, '/cars', adminToken);
     expect(list.status).toBe(200);
     expect(list.body.some((car) => car.id === carId)).toBe(true);
 
-    const updated = await patch<CarBody>(
+    const updated = await patch<CarroBody>(
       app,
       `/cars/${carId}`,
       { valorDiaria: 150 },

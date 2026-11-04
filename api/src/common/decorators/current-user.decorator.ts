@@ -1,5 +1,5 @@
 import { ExecutionContext, createParamDecorator } from '@nestjs/common';
-import { AuthenticatedUser } from '../interfaces/authenticated-user.interface.js';
+import { UsuarioAutenticado } from '../interfaces/usuario-autenticado.interface.js';
 
 /**
  * Injeta o usuario autenticado na rota.
@@ -8,9 +8,9 @@ import { AuthenticatedUser } from '../interfaces/authenticated-user.interface.js
  * `@CurrentUser('id')` para um campo especifico.
  */
 export const CurrentUser = createParamDecorator(
-  (field: keyof AuthenticatedUser | undefined, context: ExecutionContext) => {
+  (field: keyof UsuarioAutenticado | undefined, context: ExecutionContext) => {
     const request = context.switchToHttp().getRequest<{
-      user?: AuthenticatedUser;
+      user?: UsuarioAutenticado;
     }>();
 
     const user = request.user;
