@@ -10,6 +10,7 @@ import {
 // A coleção inversa usa o nome da entidade para evitar ciclo de runtime
 // Carro -> Reserva -> Carro. Reserva já importa Carro apenas como tipo.
 import type { Reserva } from '../../reserva/entities/reserva.entity.js';
+import type { Revisao } from '../../revisao/entities/revisao.entity.js';
 import { StatusVeiculo } from '../enums/status-veiculo.enum.js';
 
 /**
@@ -61,11 +62,31 @@ export class Carro {
   })
   valorDiaria: number;
 
+  /**
+   * Quilometragem atual do veículo (odômetro).
+   *
+   * É atualizada sempre que uma revisão é registrada, usando o `km`
+   * informado na revisão. Serve como referência para o controle de
+   * revisão periódica do módulo `Revisao`.
+   */
+  @Column({ type: 'int', nullable: false, default: 0 })
+  quilometragem: number;
+
   // Um carro pode aparecer em várias reservas ao longo do tempo. A chave
   // estrangeira fica em `reservations.car_id` (lado proprietário); esta
   // coleção é apenas de navegação e não é carregada automaticamente.
   @OneToMany('Reserva', 'car')
   reservations: Reserva[];
+
+  /**
+   * Coleção inversa de revisões associadas a este carro.
+   *
+   * O lado proprietário da relação está na entidade `Revisao` (`carro_id`).
+   * Esta coleção serve apenas para navegação e não é carregada
+   * automaticamente.
+   */
+  @OneToMany('Revisao', 'carro')
+  revisoes?: Revisao[];
 
   @CreateDateColumn()
   created_at: Date;
@@ -84,6 +105,7 @@ export class Carro {
       ano,
       status,
       valorDiaria,
+      quilometragem,
       created_at,
       updated_at,
     } = this;
@@ -97,6 +119,7 @@ export class Carro {
       ano,
       status,
       valorDiaria,
+      quilometragem,
       created_at,
       updated_at,
     };
