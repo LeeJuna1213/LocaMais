@@ -13,6 +13,7 @@ import {
 
 import type { Reserva } from '../../reserva/entities/reserva.entity.js';
 import type { Vistoria } from '../../vistoria/entities/vistoria.entity.js';
+import type { Pagamento } from '../../pagamento/entities/pagamento.entity.js';
 import { StatusLocacao } from '../enums/status-locacao.enum.js';
 
 /**
@@ -101,6 +102,16 @@ export class Locacao {
    */
   @OneToMany('Vistoria', 'locacao')
   vistorias?: Vistoria[];
+
+  /**
+   * Coleção inversa de pagamentos associados a esta locação.
+   *
+   * O lado proprietário da relação está na entidade `Pagamento` (`locacao_id`).
+   * Esta coleção serve apenas para navegação e não é carregada automaticamente.
+   * Uma locação pode ter vários pagamentos (pagamentos parciais são permitidos).
+   */
+  @OneToMany('Pagamento', 'locacao')
+  pagamentos?: Pagamento[];
 
   @CreateDateColumn()
   created_at: Date;
@@ -194,6 +205,8 @@ export class Locacao {
       status,
       reservation_id,
       reservation,
+      vistorias,
+      pagamentos,
       created_at,
       updated_at,
     } = this;
@@ -206,6 +219,8 @@ export class Locacao {
       status,
       reservation_id,
       reservation,
+      vistorias,
+      pagamentos,
       created_at,
       updated_at,
     };

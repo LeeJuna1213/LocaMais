@@ -131,6 +131,26 @@ export class LocacaoService {
 
   /**
    * Consulta uma locação por UUID, carregando reserva, cliente e carro.
+   * Lança 404 quando não existe.
+   *
+   * Este método é destinado ao uso interno por outros módulos (ex: Pagamento)
+   * que precisam consultar dados da locação sem o controle de acesso por actor.
+   */
+  async findOnePublic(id: string): Promise<Locacao> {
+    const locacao = await this.locacoesRepository.findOne({
+      where: { id },
+      relations: { reservation: { client: true, car: true } },
+    });
+
+    if (!locacao) {
+      throw new NotFoundException(`locacao de ID ${id} nao encontrada`);
+    }
+
+    return locacao;
+  }
+
+  /**
+   * Consulta uma locação por UUID, carregando reserva, cliente e carro.
    * Lança 404 quando não existe e 403 quando o cliente não é o dono.
    */
   async findOne(

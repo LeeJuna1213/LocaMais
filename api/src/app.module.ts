@@ -16,6 +16,7 @@ import { EnderecoModule } from './endereco/endereco.module.js';
 import { CarroModule } from './carro/carro.module.js';
 import { ReservaModule } from './reserva/reserva.module.js';
 import { LocacaoModule } from './locacao/locacao.module.js';
+import { PagamentoModule } from './pagamento/pagamento.module.js';
 import { RevisaoModule } from './revisao/revisao.module.js';
 import { VistoriaModule } from './vistoria/vistoria.module.js';
 
@@ -54,6 +55,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     CarroModule,
     ReservaModule,
     LocacaoModule,
+    PagamentoModule,
     RevisaoModule,
     VistoriaModule,
   ],
