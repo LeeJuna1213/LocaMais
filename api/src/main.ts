@@ -15,7 +15,7 @@ async function bootstrap() {
     .setTitle('locaMais API')
     .setDescription(
       'API de autenticacao e usuarios da locadora. ' +
-        'Use o botao "Authorize" com o access token retornado em POST /api/auth/login.',
+        'Use o botao "Authorize" com o access token retornado em POST /api/autenticacao/login.',
     )
     .setVersion('1.0')
     .addBearerAuth()

@@ -35,20 +35,20 @@ import { UpdateEnderecoDto } from './dto/update-endereco.dto.js';
  * completo. Estas rotas existem para consultar e corrigir um endereço já
  * existente. Como CPF/CNPJ/endereço são dados cadastrais sensíveis, o acesso
  * é restrito a admin/funcionário; o próprio cliente vê seu endereço por
- * `GET /api/users/:id` ou `GET /api/auth/me`.
+ * `GET /api/usuarios/:id` ou `GET /api/autenticacao/me`.
  */
-@ApiTags('addresses')
+@ApiTags('enderecos')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido' })
 @ApiForbiddenResponse({ description: 'Acesso restrito a admin/funcionario' })
 @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
-@Controller('addresses')
+@Controller('enderecos')
 export class EnderecoController {
   constructor(private readonly enderecoService: EnderecoService) {}
 
   // -------------------------------------------------------
   // CREATE - cria o endereço de um cliente existente
-  // Rota: POST /api/addresses
+  // Rota: POST /api/enderecos
   @Post()
   @ApiOperation({
     summary: 'Cadastra o endereco de um cliente existente',
@@ -65,7 +65,7 @@ export class EnderecoController {
 
   // -------------------------------------------------------
   // READ - lista todos os endereços
-  // Rota: GET /api/addresses
+  // Rota: GET /api/enderecos
   @Get()
   @ApiOperation({ summary: 'Lista todos os enderecos' })
   @ApiOkResponse({ description: 'Lista de enderecos retornada com sucesso.' })
@@ -75,7 +75,7 @@ export class EnderecoController {
 
   // -------------------------------------------------------
   // READ - consulta endereço por ID
-  // Rota: GET /api/addresses/:id
+  // Rota: GET /api/enderecos/:id
   @Get(':id')
   @ApiOperation({ summary: 'Consulta um endereco pelo identificador' })
   @ApiOkResponse({ description: 'Endereco encontrado com sucesso.' })
@@ -86,7 +86,7 @@ export class EnderecoController {
 
   // -------------------------------------------------------
   // UPDATE - atualiza endereço parcialmente
-  // Rota: PATCH /api/addresses/:id
+  // Rota: PATCH /api/enderecos/:id
   @Patch(':id')
   @ApiOperation({
     summary: 'Atualiza parcialmente um endereco',
@@ -105,7 +105,7 @@ export class EnderecoController {
 
   // -------------------------------------------------------
   // DELETE - bloqueado por regra de negócio
-  // Rota: DELETE /api/addresses/:id
+  // Rota: DELETE /api/enderecos/:id
   @Delete(':id')
   @ApiOperation({
     summary: 'Remocao de endereco (bloqueada)',

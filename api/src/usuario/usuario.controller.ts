@@ -48,9 +48,9 @@ import { UsuarioService } from './usuario.service.js';
 // O Controller também pode utilizar DTOs para receber dados
 // e decoradores do Swagger para documentar os endpoints.
 
-// Agrupa as rotas deste Controller na categoria "users"
+// Agrupa as rotas deste Controller na categoria "usuarios"
 // na interface de documentação do Swagger.
-@ApiTags('users')
+@ApiTags('usuarios')
 
 // Documenta que as rotas utilizam autenticação Bearer,
 // normalmente por meio de um token JWT.
@@ -67,8 +67,8 @@ import { UsuarioService } from './usuario.service.js';
 })
 
 // Define o prefixo das rotas deste Controller.
-// Todas as rotas abaixo começam com /users.
-@Controller('users')
+// Todas as rotas abaixo começam com /usuarios.
+@Controller('usuarios')
 export class UsuarioController {
 
   // ==========================================================
@@ -91,10 +91,10 @@ export class UsuarioController {
   // CREATE - CADASTRAR CONTA DE USUÁRIO
   // ==========================================================
   //
-  // Rota: POST /users
+  // Rota: POST /usuarios
   //
   // Esta rota gerencia CONTAS administrativas/funcionários. O cadastro de
-  // cliente (CPF/CNPJ + endereço + conta) fica em POST /clients, que é a
+  // cliente (CPF/CNPJ + endereço + conta) fica em POST /clientes, que é a
   // responsabilidade do ClienteController.
   //
   // @Roles restringe a criação de contas ao ADMIN. Funcionários continuam
@@ -108,7 +108,7 @@ export class UsuarioController {
   @ApiOperation({
     summary: 'Cria uma conta de admin ou funcionario',
     description:
-      'Somente admin. Clientes sao cadastrados em POST /api/clients com os dados PF/PJ e o endereco.',
+      'Somente admin. Clientes sao cadastrados em POST /api/clientes com os dados PF/PJ e o endereco.',
   })
 
   // Documenta a resposta HTTP 201 (Created).
@@ -116,10 +116,10 @@ export class UsuarioController {
   @ApiCreatedResponse({ type: UsuarioResponseDto })
 
   // Clientes não são aceitos nesta rota: eles precisam dos dados PF/PJ e do
-  // endereço, que são validados por CreateClienteAccountDto em POST /clients.
+  // endereço, que são validados por CreateClienteAccountDto em POST /clientes.
   @ApiBadRequestResponse({
     description:
-      'Tipo cliente deve ser cadastrado em POST /api/clients; demais dados invalidos retornam 400.',
+      'Tipo cliente deve ser cadastrado em POST /api/clientes; demais dados invalidos retornam 400.',
   })
 
   // Documenta a resposta HTTP 403 (Forbidden), utilizada
@@ -140,7 +140,7 @@ export class UsuarioController {
   // READ - LISTAR TODOS OS USUÁRIOS
   // ==========================================================
   //
-  // Rota: GET /users
+  // Rota: GET /usuarios
   //
   // GET é utilizado para consultar recursos.
   //
@@ -168,11 +168,11 @@ export class UsuarioController {
   // READ - CONSULTAR UM USUÁRIO PELO ID
   // ==========================================================
   //
-  // Rota: GET /users/:id
+  // Rota: GET /usuarios/:id
   //
   // O trecho :id é um parâmetro variável da URL.
   //
-  // Exemplo: GET /users/5 consulta o usuário de ID 5.
+  // Exemplo: GET /usuarios/5 consulta o usuário de ID 5.
   //
   // @Param('id') extrai o parâmetro da URL.
   //
@@ -201,7 +201,7 @@ export class UsuarioController {
   // UPDATE - ATUALIZAR UM USUÁRIO
   // ==========================================================
   //
-  // Rota: PATCH /users/:id
+  // Rota: PATCH /usuarios/:id
   //
   // PATCH é normalmente utilizado para atualizar apenas
   // determinados campos de um recurso.
@@ -240,7 +240,7 @@ export class UsuarioController {
   // DELETE - REMOVER UM USUÁRIO
   // ==========================================================
   //
-  // Rota: DELETE /users/:id
+  // Rota: DELETE /usuarios/:id
   //
   // DELETE é utilizado para remover um recurso.
   //

@@ -99,7 +99,7 @@ describe('Locações (e2e)', () => {
 
     const client = await post<ClienteBody>(
       app,
-      '/clients',
+      '/clientes',
       {
         name: 'Cliente Locacao',
         email: 'cliente.locacao@exemplo.com',
@@ -121,7 +121,7 @@ describe('Locações (e2e)', () => {
 
     const car = await post<CarroBody>(
       app,
-      '/cars',
+      '/carros',
       {
         placa: 'LOC1A23',
         modelo: 'Civic',
@@ -143,7 +143,7 @@ describe('Locações (e2e)', () => {
     const end = addHours(start, 50); // 50h => 3 diárias => valorTotal 300
     const created = await post<ReservaBody>(
       app,
-      '/reservations',
+      '/reservas',
       { dataRetirada: start, dataDevolucao: end, client_id: clientId, car_id: carId },
       clientToken,
     );
@@ -154,7 +154,7 @@ describe('Locações (e2e)', () => {
 
     const confirmed = await patch<ReservaBody>(
       app,
-      `/reservations/${reservationId}`,
+      `/reservas/${reservationId}`,
       { status: 'confirmada' },
       adminToken,
     );
@@ -183,7 +183,7 @@ describe('Locações (e2e)', () => {
   it('não cria locação para reserva pendente (409)', async () => {
     const pendente = await post<ReservaBody>(
       app,
-      '/reservations',
+      '/reservas',
       {
         dataRetirada: futureIso(20),
         dataDevolucao: addHours(futureIso(20), 24),
@@ -206,7 +206,7 @@ describe('Locações (e2e)', () => {
   it('não cria locação para reserva cancelada (409)', async () => {
     const paraCancelar = await post<ReservaBody>(
       app,
-      '/reservations',
+      '/reservas',
       {
         dataRetirada: futureIso(25),
         dataDevolucao: addHours(futureIso(25), 24),
@@ -219,7 +219,7 @@ describe('Locações (e2e)', () => {
 
     await patch(
       app,
-      `/reservations/${paraCancelar.body.id}/cancel`,
+      `/reservas/${paraCancelar.body.id}/cancelar`,
       {},
       clientToken,
     );
@@ -256,7 +256,7 @@ describe('Locações (e2e)', () => {
   it('cliente não cria locação para reserva de outro cliente (403)', async () => {
     const outraReserva = await post<ReservaBody>(
       app,
-      '/reservations',
+      '/reservas',
       {
         dataRetirada: futureIso(30),
         dataDevolucao: addHours(futureIso(30), 24),
@@ -268,14 +268,14 @@ describe('Locações (e2e)', () => {
     expect(outraReserva.status).toBe(201);
     await patch<ReservaBody>(
       app,
-      `/reservations/${outraReserva.body.id}`,
+      `/reservas/${outraReserva.body.id}`,
       { status: 'confirmada' },
       adminToken,
     );
 
     await post<ClienteBody>(
       app,
-      '/clients',
+      '/clientes',
       {
         name: 'Outro Cliente Locacao',
         email: 'outro.cliente.locacao@exemplo.com',

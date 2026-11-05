@@ -183,7 +183,7 @@ export class EnderecoService {
    *
    * Todo cliente precisa de endereço para o contrato de locação. Apagar a
    * linha deixaria o cliente incompleto. Se o cliente mudou de endereço, o
-   * correto é `PATCH /api/addresses/:id`. Quando a conta do cliente é
+   * correto é `PATCH /api/enderecos/:id`. Quando a conta do cliente é
    * desativada, o endereço continua preservado para histórico.
    */
   async remove(id: number): Promise<void> {

@@ -14,7 +14,7 @@ import {
 import { StatusVeiculo } from '../enums/status-veiculo.enum.js';
 
 /**
- * Dados aceitos em `POST /api/cars`.
+ * Dados aceitos em `POST /api/carros`.
  *
  * O `ValidationPipe` global (`whitelist` + `forbidNonWhitelisted`) rejeita
  * propriedades que não tenham decorator, então tudo que o cliente pode enviar

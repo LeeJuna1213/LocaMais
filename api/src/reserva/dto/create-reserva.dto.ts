@@ -3,7 +3,7 @@ import { IsISO8601, IsInt, Min } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 /**
- * Dados aceitos em `POST /api/reservations`.
+ * Dados aceitos em `POST /api/reservas`.
  *
  * O cliente da API informa apenas o período e os identificadores. `status` e
  * `valorTotal` NÃO fazem parte deste DTO: o Service define o status inicial e

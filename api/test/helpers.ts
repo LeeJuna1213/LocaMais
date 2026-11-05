@@ -76,7 +76,7 @@ export async function login(
 ): Promise<string> {
   const { status, body } = await post<{ access_token: string }>(
     app,
-    '/auth/login',
+    '/autenticacao/login',
     { email, password },
   );
 

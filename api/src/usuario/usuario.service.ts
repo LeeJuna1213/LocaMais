@@ -65,7 +65,7 @@ export class UsuarioService {
 
     if (dto.type === TipoUsuario.CLIENTE) {
       throw new BadRequestException(
-        'clientes devem ser cadastrados em POST /api/clients',
+        'clientes devem ser cadastrados em POST /api/clientes',
       );
     }
 

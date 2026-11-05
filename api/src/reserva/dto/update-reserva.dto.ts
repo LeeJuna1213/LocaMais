@@ -5,7 +5,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { StatusReserva } from '../enums/status-reserva.enum.js';
 
 /**
- * Dados aceitos em `PATCH /api/reservations/:id`.
+ * Dados aceitos em `PATCH /api/reservas/:id`.
  *
  * Todos os campos são opcionais. O Service decide o que pode ser alterado
  * conforme o status atual:

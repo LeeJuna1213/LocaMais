@@ -108,7 +108,7 @@ describe('Vistorias (e2e)', () => {
 
     const client = await post<ClienteBody>(
       app,
-      '/clients',
+      '/clientes',
       {
         name: 'Cliente Vistoria',
         email: 'cliente.vistoria@exemplo.com',
@@ -130,7 +130,7 @@ describe('Vistorias (e2e)', () => {
 
     const otherClient = await post<ClienteBody>(
       app,
-      '/clients',
+      '/clientes',
       {
         name: 'Outro Cliente Vistoria',
         email: 'outro.cliente.vistoria@exemplo.com',
@@ -152,7 +152,7 @@ describe('Vistorias (e2e)', () => {
 
     const car = await post<CarroBody>(
       app,
-      '/cars',
+      '/carros',
       {
         placa: 'VST1A23',
         modelo: 'Yaris',
@@ -173,7 +173,7 @@ describe('Vistorias (e2e)', () => {
     const end = addHours(start, 50);
     const created = await post<ReservaBody>(
       app,
-      '/reservations',
+      '/reservas',
       { dataRetirada: start, dataDevolucao: end, client_id: clientId, car_id: carId },
       clientToken,
     );
@@ -184,7 +184,7 @@ describe('Vistorias (e2e)', () => {
 
     const confirmed = await patch<ReservaBody>(
       app,
-      `/reservations/${reservationId}`,
+      `/reservas/${reservationId}`,
       { status: 'confirmada' },
       adminToken,
     );
@@ -260,14 +260,14 @@ describe('Vistorias (e2e)', () => {
     const end2 = addHours(start2, 24);
     const res2 = await post<ReservaBody>(
       app,
-      '/reservations',
+      '/reservas',
       { dataRetirada: start2, dataDevolucao: end2, client_id: otherClientId, car_id: carId },
       otherClientToken,
     );
     expect(res2.status).toBe(201);
     await patch<ReservaBody>(
       app,
-      `/reservations/${res2.body.id}`,
+      `/reservas/${res2.body.id}`,
       { status: 'confirmada' },
       adminToken,
     );
@@ -345,14 +345,14 @@ describe('Vistorias (e2e)', () => {
     const end3 = addHours(start3, 24);
     const res3 = await post<ReservaBody>(
       app,
-      '/reservations',
+      '/reservas',
       { dataRetirada: start3, dataDevolucao: end3, client_id: clientId, car_id: carId },
       clientToken,
     );
     expect(res3.status).toBe(201);
     await patch<ReservaBody>(
       app,
-      `/reservations/${res3.body.id}`,
+      `/reservas/${res3.body.id}`,
       { status: 'confirmada' },
       adminToken,
     );

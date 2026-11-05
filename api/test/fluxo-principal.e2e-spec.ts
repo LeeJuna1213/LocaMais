@@ -82,7 +82,7 @@ describe('Fluxo principal (e2e)', () => {
   it('cadastra um cliente PF pelo auto-cadastro público', async () => {
     cpfPf = makeCpf('123456789');
 
-    const { status, body } = await post<AutenticacaoBody>(app, '/auth/register', {
+    const { status, body } = await post<AutenticacaoBody>(app, '/autenticacao/register', {
       name: 'Maria Silva',
       email: 'maria.e2e@exemplo.com',
       password: 'senha-secreta',
@@ -104,10 +104,10 @@ describe('Fluxo principal (e2e)', () => {
     clienteToken = body.access_token;
   });
 
-  it('retorna o próprio usuário em /auth/me', async () => {
+  it('retorna o próprio usuário em /autenticacao/me', async () => {
     const { status, body } = await get<{ email: string; password?: string }>(
       app,
-      '/auth/me',
+      '/autenticacao/me',
       clienteToken,
     );
 
@@ -117,15 +117,15 @@ describe('Fluxo principal (e2e)', () => {
   });
 
   it('bloqueia cliente em rotas administrativas (403)', async () => {
-    const users = await get(app, '/users', clienteToken);
+    const users = await get(app, '/usuarios', clienteToken);
     expect(users.status).toBe(403);
 
-    const clients = await get(app, '/clients', clienteToken);
+    const clients = await get(app, '/clientes', clienteToken);
     expect(clients.status).toBe(403);
 
     const carCreate = await post(
       app,
-      '/cars',
+      '/carros',
       {
         placa: 'XYZ9Z99',
         modelo: 'Fiesta',
@@ -139,12 +139,12 @@ describe('Fluxo principal (e2e)', () => {
     expect(carCreate.status).toBe(403);
 
     // Leitura de veículos continua disponível para qualquer autenticado.
-    const carList = await get(app, '/cars', clienteToken);
+    const carList = await get(app, '/carros', clienteToken);
     expect(carList.status).toBe(200);
   });
 
   it('impede CPF duplicado no auto-cadastro (409)', async () => {
-    const { status } = await post(app, '/auth/register', {
+    const { status } = await post(app, '/autenticacao/register', {
       name: 'Outra Pessoa',
       email: 'outra.e2e@exemplo.com',
       password: 'senha-secreta',
@@ -162,7 +162,7 @@ describe('Fluxo principal (e2e)', () => {
   it('admin cadastra cliente PJ pelo endpoint de clientes', async () => {
     const { status, body } = await post<ClienteBody>(
       app,
-      '/clients',
+      '/clientes',
       {
         name: 'Empresa Exemplo LTDA',
         email: 'empresa.e2e@exemplo.com',
@@ -191,13 +191,13 @@ describe('Fluxo principal (e2e)', () => {
   });
 
   it('admin lista e consulta clientes', async () => {
-    const list = await get<ClienteBody[]>(app, '/clients', adminToken);
+    const list = await get<ClienteBody[]>(app, '/clientes', adminToken);
     expect(list.status).toBe(200);
     expect(list.body.some((client) => client.id === clientePjId)).toBe(true);
 
     const detail = await get<ClienteBody>(
       app,
-      `/clients/${clientePjId}`,
+      `/clientes/${clientePjId}`,
       adminToken,
     );
     expect(detail.status).toBe(200);
@@ -207,7 +207,7 @@ describe('Fluxo principal (e2e)', () => {
   it('admin atualiza o endereço do cliente', async () => {
     const { status, body } = await patch<{ numero: string }>(
       app,
-      `/addresses/${enderecoId}`,
+      `/enderecos/${enderecoId}`,
       { numero: '456' },
       adminToken,
     );
@@ -223,7 +223,7 @@ describe('Fluxo principal (e2e)', () => {
       client: unknown;
     }>(
       app,
-      '/users',
+      '/usuarios',
       {
         name: 'Funcionario E2E',
         email: 'funcionario.e2e@exemplo.com',
@@ -241,7 +241,7 @@ describe('Fluxo principal (e2e)', () => {
   it('endpoint de usuarios recusa cadastro de cliente (400)', async () => {
     const created = await post(
       app,
-      '/users',
+      '/usuarios',
       {
         name: 'Cliente via Users',
         email: 'cliente.users.e2e@exemplo.com',
@@ -257,7 +257,7 @@ describe('Fluxo principal (e2e)', () => {
   it('admin atualiza os dados cadastrais do cliente PJ', async () => {
     const updated = await patch<ClienteBody>(
       app,
-      `/clients/${clientePjId}`,
+      `/clientes/${clientePjId}`,
       { razao_social: 'Empresa Exemplo Atualizada LTDA' },
       adminToken,
     );
@@ -269,7 +269,7 @@ describe('Fluxo principal (e2e)', () => {
   it('admin cria, lista, atualiza e remove um veículo disponível', async () => {
     const created = await post<CarroBody>(
       app,
-      '/cars',
+      '/carros',
       {
         placa: 'ABC1D23',
         modelo: 'Onix',
@@ -286,32 +286,32 @@ describe('Fluxo principal (e2e)', () => {
 
     const carId = created.body.id;
 
-    const list = await get<CarroBody[]>(app, '/cars', adminToken);
+    const list = await get<CarroBody[]>(app, '/carros', adminToken);
     expect(list.status).toBe(200);
     expect(list.body.some((car) => car.id === carId)).toBe(true);
 
     const updated = await patch<CarroBody>(
       app,
-      `/cars/${carId}`,
+      `/carros/${carId}`,
       { valorDiaria: 150 },
       adminToken,
     );
     expect(updated.status).toBe(200);
 
-    const removed = await del(app, `/cars/${carId}`, adminToken);
+    const removed = await del(app, `/carros/${carId}`, adminToken);
     expect(removed.status).toBe(204);
   });
 
   it('não permite remover o endereço de um cliente (409)', async () => {
-    const { status } = await del(app, `/addresses/${enderecoId}`, adminToken);
+    const { status } = await del(app, `/enderecos/${enderecoId}`, adminToken);
     expect(status).toBe(409);
   });
 
   it('admin desativa o cliente e o login passa a falhar (401)', async () => {
-    const removed = await del(app, `/clients/${clientePjId}`, adminToken);
+    const removed = await del(app, `/clientes/${clientePjId}`, adminToken);
     expect(removed.status).toBe(204);
 
-    const attempt = await post(app, '/auth/login', {
+    const attempt = await post(app, '/autenticacao/login', {
       email: 'empresa.e2e@exemplo.com',
       password: 'senha-secreta',
     });

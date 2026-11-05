@@ -73,7 +73,7 @@ function addHours(iso: string, hours: number): string {
 
 function queryAvailability(carId: number, start: string, end: string): string {
   return (
-    `/reservations/availability?car_id=${carId}` +
+    `/reservas/disponibilidade?car_id=${carId}` +
     `&dataRetirada=${encodeURIComponent(start)}` +
     `&dataDevolucao=${encodeURIComponent(end)}`
   );
@@ -115,7 +115,7 @@ describe('Reservas (e2e)', () => {
 
     const client = await post<ClienteBody>(
       app,
-      '/clients',
+      '/clientes',
       {
         name: 'Cliente Reserva',
         email: 'cliente.reserva@exemplo.com',
@@ -145,7 +145,7 @@ describe('Reservas (e2e)', () => {
 
     const otherClient = await post<ClienteBody>(
       app,
-      '/clients',
+      '/clientes',
       {
         name: 'Outro Cliente Reserva',
         email: 'outro.cliente.reserva@exemplo.com',
@@ -175,7 +175,7 @@ describe('Reservas (e2e)', () => {
 
     const car = await post<CarroBody>(
       app,
-      '/cars',
+      '/carros',
       {
         placa: 'RSV1A23',
         modelo: 'Corolla',
@@ -226,7 +226,7 @@ describe('Reservas (e2e)', () => {
 
     const { status, body } = await post<ReservaBody>(
       app,
-      '/reservations',
+      '/reservas',
       {
         dataRetirada: firstStart,
         dataDevolucao: firstEnd,
@@ -251,7 +251,7 @@ describe('Reservas (e2e)', () => {
   it('impede cliente de reservar para outro cliente (403)', async () => {
     const { status } = await post(
       app,
-      '/reservations',
+      '/reservas',
       {
         dataRetirada: firstStart,
         dataDevolucao: firstEnd,
@@ -270,7 +270,7 @@ describe('Reservas (e2e)', () => {
 
     const overlap = await post(
       app,
-      '/reservations',
+      '/reservas',
       {
         dataRetirada: overlapStart,
         dataDevolucao: overlapEnd,
@@ -286,7 +286,7 @@ describe('Reservas (e2e)', () => {
     // intervalos semiabertos e não deve considerar conflito nesse instante.
     const boundary = await post<ReservaBody>(
       app,
-      '/reservations',
+      '/reservas',
       {
         dataRetirada: firstEnd,
         dataDevolucao: addHours(firstEnd, 24),
@@ -320,7 +320,7 @@ describe('Reservas (e2e)', () => {
   it('cliente só lista e consulta as próprias reservas', async () => {
     const otherList = await get<ReservaBody[]>(
       app,
-      '/reservations',
+      '/reservas',
       otherClientToken,
     );
 
@@ -329,20 +329,20 @@ describe('Reservas (e2e)', () => {
 
     const forbidden = await get(
       app,
-      `/reservations/${firstReservationId}`,
+      `/reservas/${firstReservationId}`,
       otherClientToken,
     );
     expect(forbidden.status).toBe(403);
 
     const own = await get<ReservaBody>(
       app,
-      `/reservations/${firstReservationId}`,
+      `/reservas/${firstReservationId}`,
       clientToken,
     );
     expect(own.status).toBe(200);
     expect(own.body.id).toBe(firstReservationId);
 
-    const all = await get<ReservaBody[]>(app, '/reservations', adminToken);
+    const all = await get<ReservaBody[]>(app, '/reservas', adminToken);
     expect(all.status).toBe(200);
     expect(
       all.body.some((reservation) => reservation.id === firstReservationId),
@@ -352,7 +352,7 @@ describe('Reservas (e2e)', () => {
   it('cliente não pode usar o PATCH administrativo (403)', async () => {
     const { status } = await patch(
       app,
-      `/reservations/${firstReservationId}`,
+      `/reservas/${firstReservationId}`,
       { dataDevolucao: addHours(firstEnd, 1) },
       clientToken,
     );
@@ -366,7 +366,7 @@ describe('Reservas (e2e)', () => {
 
     const { status, body } = await patch<ReservaBody>(
       app,
-      `/reservations/${firstReservationId}`,
+      `/reservas/${firstReservationId}`,
       {
         dataRetirada: newStart,
         dataDevolucao: newEnd,
@@ -386,7 +386,7 @@ describe('Reservas (e2e)', () => {
   it('admin confirma a reserva e congela o período', async () => {
     const confirmed = await patch<ReservaBody>(
       app,
-      `/reservations/${firstReservationId}`,
+      `/reservas/${firstReservationId}`,
       { status: 'confirmada' },
       adminToken,
     );
@@ -396,7 +396,7 @@ describe('Reservas (e2e)', () => {
 
     const dateChange = await patch(
       app,
-      `/reservations/${firstReservationId}`,
+      `/reservas/${firstReservationId}`,
       { dataDevolucao: addHours(firstEnd, 1) },
       adminToken,
     );
@@ -404,7 +404,7 @@ describe('Reservas (e2e)', () => {
 
     const statusDowngrade = await patch(
       app,
-      `/reservations/${firstReservationId}`,
+      `/reservas/${firstReservationId}`,
       { status: 'pendente' },
       adminToken,
     );
@@ -412,7 +412,7 @@ describe('Reservas (e2e)', () => {
 
     const cancelThroughGenericPatch = await patch(
       app,
-      `/reservations/${firstReservationId}`,
+      `/reservas/${firstReservationId}`,
       { status: 'cancelada' },
       adminToken,
     );
@@ -422,7 +422,7 @@ describe('Reservas (e2e)', () => {
   it('cliente cancela a própria reserva e ela deixa de bloquear o período', async () => {
     const cancelled = await patch<ReservaBody>(
       app,
-      `/reservations/${firstReservationId}/cancel`,
+      `/reservas/${firstReservationId}/cancelar`,
       {},
       clientToken,
     );
@@ -432,7 +432,7 @@ describe('Reservas (e2e)', () => {
 
     const again = await patch(
       app,
-      `/reservations/${firstReservationId}/cancel`,
+      `/reservas/${firstReservationId}/cancelar`,
       {},
       clientToken,
     );
@@ -440,7 +440,7 @@ describe('Reservas (e2e)', () => {
 
     const updateCancelled = await patch(
       app,
-      `/reservations/${firstReservationId}`,
+      `/reservas/${firstReservationId}`,
       { dataDevolucao: addHours(firstEnd, 1) },
       adminToken,
     );
@@ -458,7 +458,7 @@ describe('Reservas (e2e)', () => {
   });
 
   it('não remove fisicamente um carro que possui reservas', async () => {
-    const removed = await del(app, `/cars/${carId}`, adminToken);
+    const removed = await del(app, `/carros/${carId}`, adminToken);
     expect(removed.status).toBe(409);
   });
 
@@ -468,7 +468,7 @@ describe('Reservas (e2e)', () => {
 
     const invalidPeriod = await post(
       app,
-      '/reservations',
+      '/reservas',
       {
         dataRetirada: start,
         dataDevolucao: end,
@@ -482,7 +482,7 @@ describe('Reservas (e2e)', () => {
     const pastStart = futureIso(-2);
     const past = await post(
       app,
-      '/reservations',
+      '/reservas',
       {
         dataRetirada: pastStart,
         dataDevolucao: addHours(pastStart, 24),
@@ -495,14 +495,14 @@ describe('Reservas (e2e)', () => {
 
     const invalidUuid = await get(
       app,
-      '/reservations/nao-e-um-uuid',
+      '/reservas/nao-e-um-uuid',
       adminToken,
     );
     expect(invalidUuid.status).toBe(400);
 
     const missingCar = await post(
       app,
-      '/reservations',
+      '/reservas',
       {
         dataRetirada: futureIso(5),
         dataDevolucao: futureIso(6),
@@ -515,7 +515,7 @@ describe('Reservas (e2e)', () => {
 
     const missingClient = await post(
       app,
-      '/reservations',
+      '/reservas',
       {
         dataRetirada: futureIso(5),
         dataDevolucao: futureIso(6),
@@ -528,7 +528,7 @@ describe('Reservas (e2e)', () => {
 
     const forbiddenField = await post(
       app,
-      '/reservations',
+      '/reservas',
       {
         dataRetirada: futureIso(5),
         dataDevolucao: futureIso(6),

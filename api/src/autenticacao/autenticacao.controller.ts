@@ -24,8 +24,8 @@ import { AutenticacaoResponseDto } from './dto/autenticacao-response.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RegistroDto } from './dto/registro.dto.js';
 
-@ApiTags('auth')
-@Controller('auth')
+@ApiTags('autenticacao')
+@Controller('autenticacao')
 export class AutenticacaoController {
   constructor(
     private readonly autenticacaoService: AutenticacaoService,

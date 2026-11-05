@@ -4,7 +4,7 @@ import { IsInt, IsPositive } from 'class-validator';
 import { CreateEnderecoDto } from './create-endereco.dto.js';
 
 /**
- * Endereço enviado diretamente para `POST /api/addresses`.
+ * Endereço enviado diretamente para `POST /api/enderecos`.
  *
  * Diferente de `CreateEnderecoDto` (usado aninhado em `CreateClienteDto`), aqui
  * o `client_id` é obrigatório, pois o endereço está sendo criado sozinho para

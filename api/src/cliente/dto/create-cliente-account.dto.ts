@@ -16,12 +16,12 @@ import { CreateClienteDto } from './create-cliente.dto.js';
  * Cadastro completo de uma conta de cliente: dados de login (name/email/
  * password) + dados específicos de cliente + endereço.
  *
- * É usado pelo endpoint `POST /api/clients`, que é uma porta de entrada
+ * É usado pelo endpoint `POST /api/clientes`, que é uma porta de entrada
  * focada em clientes para admin/funcionário. O `type` do usuário NÃO é
  * enviado: o `ClienteService` impõe `TipoUsuario.CLIENTE`, evitando que o
  * cliente de API escolha um papel privilegiado.
  *
- * O auto-cadastro público continua em `POST /api/auth/register` (RegistroDto).
+ * O auto-cadastro público continua em `POST /api/autenticacao/register` (RegistroDto).
  */
 export class CreateClienteAccountDto {
   @ApiProperty({ example: 'Maria Silva' })

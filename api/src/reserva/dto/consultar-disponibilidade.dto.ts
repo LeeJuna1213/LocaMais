@@ -3,7 +3,7 @@ import { IsISO8601, IsInt, Min } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 /**
- * Parâmetros de `GET /api/reservations/availability`.
+ * Parâmetros de `GET /api/reservas/disponibilidade`.
  *
  * Como query strings chegam sempre como texto, `@Type(() => Number)` converte
  * `car_id` antes da validação. As datas precisam ser ISO 8601 para evitar

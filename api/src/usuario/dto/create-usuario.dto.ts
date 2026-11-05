@@ -38,7 +38,7 @@ export class CreateUsuarioDto {
 
   @IsIn([TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO], {
     message:
-      'type deve ser admin ou funcionario; clientes sao cadastrados em /api/clients',
+      'type deve ser admin ou funcionario; clientes sao cadastrados em /api/clientes',
   })
   type: TipoUsuario;
 }

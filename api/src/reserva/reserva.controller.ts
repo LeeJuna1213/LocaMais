@@ -41,10 +41,10 @@ import { ReservaService } from './reserva.service.js';
  * ao ReservaService. Regras como disponibilidade, cálculo do valor e
  * transições de status ficam no Service, que conhece os repositórios.
  */
-@ApiTags('reservations')
+@ApiTags('reservas')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido' })
-@Controller('reservations')
+@Controller('reservas')
 export class ReservaController {
   constructor(private readonly reservaService: ReservaService) {}
 
@@ -93,7 +93,7 @@ export class ReservaController {
    * Precisa ser declarada antes de `GET :id`; caso contrário, o Nest tentaria
    * interpretar "availability" como um UUID e devolveria 400.
    */
-  @Get('availability')
+  @Get('disponibilidade')
   @ApiOperation({
     summary: 'Consulta disponibilidade de um veiculo em um periodo',
     description:
@@ -152,7 +152,7 @@ export class ReservaController {
    * Fica antes de `PATCH :id` por clareza de roteamento. Staff pode cancelar
    * qualquer reserva; o cliente só as próprias.
    */
-  @Patch(':id/cancel')
+  @Patch(':id/cancelar')
   @ApiOperation({
     summary: 'Cancela uma reserva',
     description:

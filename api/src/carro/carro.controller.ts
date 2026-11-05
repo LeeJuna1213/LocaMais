@@ -39,10 +39,10 @@ import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
  * (placa única, transição de status, remoção apenas de disponíveis) ficam no
  * Service, que é quem conhece o Repository.
  */
-@ApiTags('cars')
+@ApiTags('carros')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido' })
-@Controller('cars')
+@Controller('carros')
 export class CarroController {
   constructor(private readonly carroService: CarroService) {}
 

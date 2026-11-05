@@ -47,16 +47,16 @@ import { UpdateClienteDto } from './dto/update-cliente.dto.js';
  * Todas as rotas exigem autenticação (guard global). As permissões finas são
  * aplicadas com `@Roles` e com verificações no `ClienteService`.
  */
-@ApiTags('clients')
+@ApiTags('clientes')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({ description: 'Token ausente ou invalido' })
-@Controller('clients')
+@Controller('clientes')
 export class ClienteController {
   constructor(private readonly clienteService: ClienteService) {}
 
   // -------------------------------------------------------
   // CREATE - cadastra usuário + cliente + endereço
-  // Rota: POST /api/clients
+  // Rota: POST /api/clientes
   @Post()
   @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
   @ApiOperation({
@@ -77,7 +77,7 @@ export class ClienteController {
 
   // -------------------------------------------------------
   // READ - lista todos os clientes
-  // Rota: GET /api/clients
+  // Rota: GET /api/clientes
   @Get()
   @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
   @ApiOperation({ summary: 'Lista todos os clientes' })
@@ -88,7 +88,7 @@ export class ClienteController {
 
   // -------------------------------------------------------
   // READ - consulta cliente por ID
-  // Rota: GET /api/clients/:id
+  // Rota: GET /api/clientes/:id
   @Get(':id')
   @ApiOperation({
     summary: 'Consulta um cliente pelo identificador',
@@ -106,7 +106,7 @@ export class ClienteController {
 
   // -------------------------------------------------------
   // UPDATE - atualiza dados PF/PJ do cliente
-  // Rota: PATCH /api/clients/:id
+  // Rota: PATCH /api/clientes/:id
   @Patch(':id')
   @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
   @ApiOperation({
@@ -127,7 +127,7 @@ export class ClienteController {
 
   // -------------------------------------------------------
   // DELETE - desativa o cliente (sem apagar dados)
-  // Rota: DELETE /api/clients/:id
+  // Rota: DELETE /api/clientes/:id
   @Delete(':id')
   @Roles(TipoUsuario.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)

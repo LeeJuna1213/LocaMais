@@ -13,7 +13,7 @@ import {
 import { StatusVeiculo } from '../enums/status-veiculo.enum.js';
 
 /**
- * Dados aceitos em `PATCH /api/cars/:id`.
+ * Dados aceitos em `PATCH /api/carros/:id`.
  *
  * Todos os campos são opcionais: apenas os enviados são alterados. Quando um
  * campo é enviado, as mesmas regras do Create continuam valendo.
