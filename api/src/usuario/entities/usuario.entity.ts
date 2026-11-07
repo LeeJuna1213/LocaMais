@@ -64,17 +64,17 @@ import type { Cliente } from '../../cliente/entities/cliente.entity.js';
 //
 // Identifica a classe Usuario como uma entidade do TypeORM.
 //
-// O argumento 'users' define o nome da tabela no MySQL.
+// O argumento 'usuarios' define o nome da tabela no MySQL.
 //
 // Portanto:
 // Classe TypeScript: Usuario
-// Tabela do MySQL: users
+// Tabela do MySQL: usuarios
 //
 // O TypeORM utiliza esse mapeamento para saber em qual
 // tabela deverá executar as operações do Repository.
 //
 // O decorator não cria a tabela sozinho.
-@Entity('users')
+@Entity('usuarios')
 export class Usuario {
 
   // ==========================================================
@@ -288,7 +288,6 @@ export class Usuario {
   @Column({
     type: 'simple-enum',
     enum: TipoUsuario,
-    length: 20,
     default: TipoUsuario.CLIENTE,
   })
   type: TipoUsuario;

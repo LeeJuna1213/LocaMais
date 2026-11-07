@@ -21,7 +21,7 @@ import type { Cliente } from '../../cliente/entities/cliente.entity.js';
  * Ligado ao `clients` (e nao ao `users`) para garantir que apenas clientes
  * possuam endereco — funcionarios e admins nao tem atributos adicionais.
  */
-@Entity('addresses')
+@Entity('enderecos')
 export class Endereco {
   @PrimaryGeneratedColumn()
   id: number;

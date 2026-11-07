@@ -51,7 +51,6 @@ export class Vistoria {
   @Column({
     type: 'simple-enum',
     enum: TipoVistoria,
-    length: 20,
     nullable: false,
   })
   tipo: TipoVistoria;

@@ -36,7 +36,7 @@ import { StatusReserva } from '../enums/status-reserva.enum.js';
  *   apagado fisicamente, preservando o histórico.
  * - O status inicial é `PENDENTE`; o Service é quem valida as transições.
  */
-@Entity('reservations')
+@Entity('reservas')
 @Index('idx_reservations_car_period', [
   'car_id',
   'dataRetirada',
@@ -61,7 +61,6 @@ export class Reserva {
   @Column({
     type: 'simple-enum',
     enum: StatusReserva,
-    length: 20,
     nullable: false,
     default: StatusReserva.PENDENTE,
   })

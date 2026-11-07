@@ -77,7 +77,6 @@ export class Locacao {
   @Column({
     type: 'simple-enum',
     enum: StatusLocacao,
-    length: 30,
     nullable: false,
     default: StatusLocacao.AGUARDANDO_RETIRADA,
   })

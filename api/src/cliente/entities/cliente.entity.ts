@@ -39,7 +39,7 @@ import type { Reserva } from '../../reserva/entities/reserva.entity.js';
  * removido fisicamente, o registro de cliente também seja removido pelo
  * banco. A aplicação, porém, faz desativação lógica de usuários.
  */
-@Entity('clients')
+@Entity('clientes')
 // Impede que um cliente misture os atributos de PF e de PJ.
 // O banco aceita cpf OU cnpj (ou nenhum dos dois), nunca os dois juntos.
 @Check('chk_clientes_tipo_pessoa', 'cpf IS NULL OR cnpj IS NULL')
@@ -60,7 +60,7 @@ export class Cliente {
   user: Usuario;
 
   /** 'PF' (Pessoa Física) ou 'PJ' (Pessoa Jurídica). */
-  @Column({ type: 'simple-enum', enum: TipoPessoa, length: 2, nullable: false })
+  @Column({ type: 'simple-enum', enum: TipoPessoa, nullable: false })
   tipo_pessoa: TipoPessoa;
 
   /** Obrigatório quando `tipo_pessoa` = PF. */

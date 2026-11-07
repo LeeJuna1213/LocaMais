@@ -12,7 +12,7 @@ import {
 import type { Pagamento } from './pagamento.entity.js';
 
 /**
- * Gateway de pagamento simulado (tabela `gateways_pagamento`).
+ * Gateway de pagamento simulado (tabela `gateways_de_pagamento`).
  *
  * Este componente representa o gateway responsável por simular o
  * processamento e a validação das transações de pagamento. Como o LocaMais
@@ -31,8 +31,8 @@ import type { Pagamento } from './pagamento.entity.js';
  * - `onDelete: 'RESTRICT'` impede que um gateway com pagamento associado seja
  *   apagado fisicamente, preservando o histórico.
  */
-@Entity('gateways_pagamento')
-@Index('idx_gateways_pagamento_pagamento', ['pagamento_id'], { unique: true })
+@Entity('gateways_de_pagamento')
+@Index('idx_gateways_de_pagamento_pagamento', ['pagamento_id'], { unique: true })
 export class GatewayPagamento {
   /** Identificador público do gateway. */
   @PrimaryGeneratedColumn('uuid')

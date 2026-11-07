@@ -24,7 +24,7 @@ import { StatusVeiculo } from '../enums/status-veiculo.enum.js';
  *   flutuante em valores monetários.
  * - `created_at`/`updated_at` são gerenciados pelo TypeORM.
  */
-@Entity('cars')
+@Entity('carros')
 export class Carro {
   @PrimaryGeneratedColumn()
   id: number;
@@ -47,7 +47,6 @@ export class Carro {
   @Column({
     type: 'simple-enum',
     enum: StatusVeiculo,
-    length: 30,
     nullable: false,
     default: StatusVeiculo.DISPONIVEL,
   })

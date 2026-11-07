@@ -58,7 +58,6 @@ export class Pagamento {
   @Column({
     type: 'simple-enum',
     enum: MetodoPagamento,
-    length: 30,
     nullable: false,
   })
   metodo: MetodoPagamento;
@@ -67,7 +66,6 @@ export class Pagamento {
   @Column({
     type: 'simple-enum',
     enum: StatusPagamento,
-    length: 20,
     nullable: false,
     default: StatusPagamento.PENDENTE,
   })
