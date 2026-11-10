@@ -19,6 +19,7 @@ import { LocacaoModule } from './locacao/locacao.module.js';
 import { PagamentoModule } from './pagamento/pagamento.module.js';
 import { RevisaoModule } from './revisao/revisao.module.js';
 import { VistoriaModule } from './vistoria/vistoria.module.js';
+import { RedisModule } from './redis/redis.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -46,6 +47,8 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
         serviceId: config.get<string>('OBSERVE_SERVICE_ID') ?? 'api',
       }),
     }),
+
+    RedisModule.forRoot(),
 
     UsuarioModule,
     AutenticacaoModule,
