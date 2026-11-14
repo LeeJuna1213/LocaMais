@@ -2,20 +2,23 @@ import { Redis } from 'ioredis';
 
 import { RedisService } from './redis.service.js';
 
+// Mantemos o objeto como `vi.fn()` (e não como `Redis`) para que o TypeScript
+// enxergue `.mockResolvedValue`/`.mockRejectedValue`. O cast para `Redis`
+// acontece apenas no ponto de injeção, onde o serviço exige o tipo real.
 const mockClient = {
   get: vi.fn(),
   set: vi.fn(),
   del: vi.fn(),
   exists: vi.fn(),
   expire: vi.fn(),
-} as unknown as Redis;
+};
 
 describe('RedisService', () => {
   let service: RedisService;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    service = new RedisService(mockClient);
+    service = new RedisService(mockClient as unknown as Redis);
   });
 
   it('should be defined', () => {

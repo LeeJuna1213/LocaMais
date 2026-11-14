@@ -97,4 +97,40 @@ export class Cliente {
 
   @UpdateDateColumn()
   updated_at: Date;
+
+  /**
+   * Controla a serialização JSON para evitar ciclo de referência com Endereco
+   * (Cliente.address -> Endereco.client -> Cliente.address -> ...) e para não
+   * expor dados sensíveis do usuario vinculado (senha removida via
+   * Usuario.toJSON()).
+   */
+  toJSON() {
+    return {
+      id: this.id,
+      user_id: this.user_id,
+      tipo_pessoa: this.tipo_pessoa,
+      cpf: this.cpf,
+      cnpj: this.cnpj,
+      data_nascimento: this.data_nascimento,
+      razao_social: this.razao_social,
+      created_at: this.created_at,
+      updated_at: this.updated_at,
+      user: this.user ? this.user.toJSON() : null,
+      address: this.address
+        ? {
+            id: this.address.id,
+            logradouro: this.address.logradouro,
+            numero: this.address.numero,
+            complemento: this.address.complemento,
+            bairro: this.address.bairro,
+            cidade: this.address.cidade,
+            uf: this.address.uf,
+            cep: this.address.cep,
+            pais: this.address.pais,
+            created_at: this.address.created_at,
+            updated_at: this.address.updated_at,
+          }
+        : null,
+    };
+  }
 }

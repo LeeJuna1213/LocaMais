@@ -16,6 +16,7 @@ import { normalizeDocument } from '../common/utils/normalize.utility.js';
 import type { Usuario } from '../usuario/entities/usuario.entity.js';
 import { TipoPessoa, TipoUsuario } from '../usuario/enums/usuario.enum.js';
 import { UsuarioService } from '../usuario/usuario.service.js';
+import { RedisService } from '../redis/redis.service.js';
 
 import { CreateClienteAccountDto } from './dto/create-cliente-account.dto.js';
 import type { CreateClienteDto } from './dto/create-cliente.dto.js';
@@ -51,6 +52,7 @@ export class ClienteService {
     private readonly dataSource: DataSource,
     private readonly usuarioService: UsuarioService,
     private readonly enderecoService: EnderecoService,
+    private readonly redis: RedisService,
   ) {}
 
   /** Busca o cliente pelo ID do usuário associado (chave única 1:1). */
@@ -88,8 +90,43 @@ export class ClienteService {
     actor: UsuarioAutenticado,
     id: number,
   ): Promise<Cliente> {
+    const cacheKey = `locamais:cliente:${id}`;
+
+    // Tenta recuperar do cache primeiro. A entidade Cliente possui toJSON()
+    // que quebra o ciclo com Endereco e remove dados sensíveis do usuario
+    // vinculado, então JSON.stringify nunca expõe credenciais no Redis.
+    let cached: Cliente | null = null;
+    try {
+      cached = await this.redis.get<Cliente>(cacheKey);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao ler cache do cliente ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    if (cached) {
+      // Verifica autorização sobre os dados do cache (fora do try/catch do Redis)
+      this.assertCanRead(actor, cached);
+      return cached;
+    }
+
+    // Cache miss: consulta o MySQL
     const client = await this.findOne(id);
     this.assertCanRead(actor, client);
+
+    // Armazena no cache com TTL de 300 segundos (5 minutos)
+    try {
+      await this.redis.set(cacheKey, client, 300);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao gravar cache do cliente ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
     return client;
   }
 
@@ -238,6 +275,17 @@ export class ClienteService {
       },
     );
 
+    // Invalida o cache do cliente atualizado somente apos a gravacao no MySQL
+    try {
+      await this.redis.del(`locamais:cliente:${id}`);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao invalidar cache do cliente ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
     return this.findOne(id);
   }
 
@@ -250,6 +298,17 @@ export class ClienteService {
   async remove(id: number): Promise<void> {
     const client = await this.findOne(id);
     await this.usuarioService.deactivateAccount(client.user_id);
+
+    // Invalida o cache do cliente desativado somente apos a gravacao no MySQL
+    try {
+      await this.redis.del(`locamais:cliente:${id}`);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao invalidar cache do cliente ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   /**

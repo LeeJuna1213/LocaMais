@@ -65,4 +65,26 @@ export class Endereco {
 
   @UpdateDateColumn()
   updated_at: Date;
+
+  /**
+   * Controla a serialização JSON para evitar ciclo de referência com Cliente
+   * (Endereco.client -> Cliente.address -> Endereco.client -> ...) e para
+   * expor apenas os dados que fazem parte da resposta original do endpoint.
+   */
+  toJSON() {
+    return {
+      id: this.id,
+      client_id: this.client_id,
+      logradouro: this.logradouro,
+      numero: this.numero,
+      complemento: this.complemento,
+      bairro: this.bairro,
+      cidade: this.cidade,
+      uf: this.uf,
+      cep: this.cep,
+      pais: this.pais,
+      created_at: this.created_at,
+      updated_at: this.updated_at,
+    };
+  }
 }

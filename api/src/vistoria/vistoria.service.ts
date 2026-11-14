@@ -2,6 +2,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -11,6 +12,7 @@ import type { UsuarioAutenticado } from '../common/interfaces/usuario-autenticad
 import { LocacaoService } from '../locacao/locacao.service.js';
 import { StatusLocacao } from '../locacao/enums/status-locacao.enum.js';
 import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
+import { RedisService } from '../redis/redis.service.js';
 
 import { CreateVistoriaDto } from './dto/create-vistoria.dto.js';
 import { UpdateVistoriaDto } from './dto/update-vistoria.dto.js';
@@ -35,10 +37,13 @@ import { TipoVistoria } from './enums/tipo-vistoria.enum.js';
  */
 @Injectable()
 export class VistoriaService {
+  private readonly logger = new Logger(VistoriaService.name);
+
   constructor(
     @InjectRepository(Vistoria)
     private readonly vistoriasRepository: Repository<Vistoria>,
     private readonly locacaoService: LocacaoService,
+    private readonly redis: RedisService,
   ) {}
 
   /**
@@ -105,11 +110,41 @@ export class VistoriaService {
   /**
    * Consulta uma vistoria por ID, carregando a locação, reserva e cliente.
    * Lança 404 quando não existe e 403 quando o cliente não é o dono.
+   *
+   * Utiliza cache Redis (TTL 600s) na chave `locamais:vistoria:{id}`.
+   * A autorização e verificada sobre os dados do cache antes de retorná-los,
+   * garantindo que o cache nao contorne verificacoes de acesso.
    */
   async findOne(
     actor: UsuarioAutenticado,
     id: string,
   ): Promise<Vistoria> {
+    const cacheKey = `locamais:vistoria:${id}`;
+
+    // Tenta recuperar do cache primeiro.
+    // A entidade Vistoria possui toJSON() que serializa os relacionamentos
+    // carregados (locacao > reservation > client) sem causar ciclos, pois as
+    // relacoes aninhadas (user, address, car, reservations) nao sao
+    // carregadas nesta consulta.
+    let cached: Vistoria | null = null;
+    try {
+      cached = await this.redis.get<Vistoria>(cacheKey);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao ler cache da vistoria ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    if (cached) {
+      // Verifica autorizacao sobre os dados do cache (fora do try/catch do
+      // Redis, para nao capturar ForbiddenException).
+      this.assertCanRead(actor, cached);
+      return cached;
+    }
+
+    // Cache miss: consulta o MySQL
     const vistoria = await this.vistoriasRepository.findOne({
       where: { id },
       relations: { locacao: { reservation: { client: true } } },
@@ -120,6 +155,18 @@ export class VistoriaService {
     }
 
     this.assertCanRead(actor, vistoria);
+
+    // Armazena no cache com TTL de 600 segundos (10 minutos)
+    try {
+      await this.redis.set(cacheKey, vistoria, 600);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao gravar cache da vistoria ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
     return vistoria;
   }
 
@@ -164,6 +211,17 @@ export class VistoriaService {
     }
 
     const saved = await this.vistoriasRepository.save(current);
+
+    // Invalida o cache da vistoria atualizada somente apos a gravacao no MySQL.
+    try {
+      await this.redis.del(`locamais:vistoria:${id}`);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao invalidar cache da vistoria ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
 
     return this.findOne(actor, saved.id);
   }

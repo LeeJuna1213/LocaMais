@@ -1,12 +1,14 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 
 import { CarroService } from '../carro/carro.service.js';
+import { RedisService } from '../redis/redis.service.js';
 import { Revisao } from './entities/revisao.entity.js';
 import { StatusRevisao } from './enums/status-revisao.enum.js';
 import { CreateRevisaoDto } from './dto/create-revisao.dto.js';
@@ -28,6 +30,16 @@ const INTERVALO_REVISAO_KM = 10000;
  * o veículo é considerado "próximo da revisão".
  */
 const MARGEM_PROXIMA_KM = 1000;
+
+/** Formato da resposta do status de revisão periódica de um veículo. */
+export interface RevisaoPeriodicaStatus {
+  carroId: number;
+  placa: string;
+  quilometragemAtual: number;
+  ultimaRevisaoKm: number | null;
+  proximaRevisaoPrevista: number | null;
+  situacao: StatusRevisao;
+}
 
 /**
  * Regras de negócio de revisão de veículos.
@@ -53,11 +65,14 @@ const MARGEM_PROXIMA_KM = 1000;
  */
 @Injectable()
 export class RevisaoService {
+  private readonly logger = new Logger(RevisaoService.name);
+
   constructor(
     @InjectRepository(Revisao)
     private readonly revisoesRepository: Repository<Revisao>,
     private readonly dataSource: DataSource,
     private readonly carroService: CarroService,
+    private readonly redis: RedisService,
   ) {}
 
   /**
@@ -105,11 +120,17 @@ export class RevisaoService {
     carro.quilometragem = dto.km;
 
     // 6. Persiste revisão e carro na mesma transação para garantir consistência.
-    return this.dataSource.transaction(async (manager) => {
-      const revisaoSalva = await manager.save(revisao);
+    const revisaoSalva = await this.dataSource.transaction(async (manager) => {
+      const salva = await manager.save(revisao);
       await manager.save(carro);
-      return revisaoSalva;
+      return salva;
     });
+
+    // 7. Invalida o status do carro somente após o commit no MySQL. A criação
+    // altera a última revisão e a quilometragem do veículo.
+    await this.invalidateStatusCache(carro.id);
+
+    return revisaoSalva;
   }
 
   /**
@@ -173,7 +194,7 @@ export class RevisaoService {
    * @returns A revisão atualizada.
    */
   async update(id: string, dto: UpdateRevisaoDto): Promise<any> {
-    await this.findOne(id); // verifica existência (lança 404 se não existir)
+    const revisao = await this.findOne(id); // verifica existência (lança 404 se não existir)
 
     const changes: Partial<any> = {};
 
@@ -184,6 +205,10 @@ export class RevisaoService {
     if (Object.keys(changes).length > 0) {
       await this.revisoesRepository.update({ id }, changes);
     }
+
+    // Invalida o status do carro após a gravação no MySQL. A data pode alterar
+    // qual revisão é considerada a última no cálculo periódico.
+    await this.invalidateStatusCache(revisao.carro_id);
 
     return this.findOne(id);
   }
@@ -201,6 +226,10 @@ export class RevisaoService {
     const revisao = await this.findOne(id);
 
     await this.revisoesRepository.remove(revisao);
+
+    // Invalida o status do carro após a exclusão no MySQL: a revisão removida
+    // pode ser a última considerada no cálculo periódico.
+    await this.invalidateStatusCache(revisao.carro_id);
   }
 
   /**
@@ -215,14 +244,30 @@ export class RevisaoService {
    * @param carroId ID do veículo.
    * @returns Objeto com a situação e detalhes do cálculo.
    */
-  async verificarRevisaoPeriodica(carroId: number): Promise<{
-    carroId: number;
-    placa: string;
-    quilometragemAtual: number;
-    ultimaRevisaoKm: number | null;
-    proximaRevisaoPrevista: number | null;
-    situacao: StatusRevisao;
-  }> {
+  async verificarRevisaoPeriodica(
+    carroId: number,
+  ): Promise<RevisaoPeriodicaStatus> {
+    const cacheKey = `locamais:revisao:carro:${carroId}`;
+
+    // Tenta recuperar do cache. O valor armazenado é exatamente o objeto de
+    // resposta do endpoint (sem entidades e sem dados do veículo além dos
+    // campos já retornados), portanto não há risco de ciclo ou vazamento.
+    let cached: RevisaoPeriodicaStatus | null = null;
+    try {
+      cached = await this.redis.get<RevisaoPeriodicaStatus>(cacheKey);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao ler cache do status de revisao do carro ${carroId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    if (cached) {
+      return cached;
+    }
+
+    // Cache miss: consulta o MySQL
     const carro = await this.carroService.findOne(carroId);
 
     const ultimaRevisao = await this.revisoesRepository.findOne({
@@ -230,9 +275,11 @@ export class RevisaoService {
       order: { data: 'DESC' },
     });
 
+    let resultado: RevisaoPeriodicaStatus;
+
     // Veículo sem histórico de revisão.
     if (!ultimaRevisao) {
-      return {
+      resultado = {
         carroId: carro.id,
         placa: carro.placa,
         quilometragemAtual: carro.quilometragem,
@@ -240,29 +287,42 @@ export class RevisaoService {
         proximaRevisaoPrevista: null,
         situacao: StatusRevisao.SEM_HISTORICO,
       };
-    }
-
-    const proximaRevisaoPrevista = ultimaRevisao.km + INTERVALO_REVISAO_KM;
-    const limiteProxima = proximaRevisaoPrevista - MARGEM_PROXIMA_KM;
-
-    let situacao: StatusRevisao;
-
-    if (carro.quilometragem >= proximaRevisaoPrevista) {
-      situacao = StatusRevisao.PENDENTE;
-    } else if (carro.quilometragem >= limiteProxima) {
-      situacao = StatusRevisao.PROXIMA;
     } else {
-      situacao = StatusRevisao.EM_DIA;
+      const proximaRevisaoPrevista = ultimaRevisao.km + INTERVALO_REVISAO_KM;
+      const limiteProxima = proximaRevisaoPrevista - MARGEM_PROXIMA_KM;
+
+      let situacao: StatusRevisao;
+
+      if (carro.quilometragem >= proximaRevisaoPrevista) {
+        situacao = StatusRevisao.PENDENTE;
+      } else if (carro.quilometragem >= limiteProxima) {
+        situacao = StatusRevisao.PROXIMA;
+      } else {
+        situacao = StatusRevisao.EM_DIA;
+      }
+
+      resultado = {
+        carroId: carro.id,
+        placa: carro.placa,
+        quilometragemAtual: carro.quilometragem,
+        ultimaRevisaoKm: ultimaRevisao.km,
+        proximaRevisaoPrevista,
+        situacao,
+      };
     }
 
-    return {
-      carroId: carro.id,
-      placa: carro.placa,
-      quilometragemAtual: carro.quilometragem,
-      ultimaRevisaoKm: ultimaRevisao.km,
-      proximaRevisaoPrevista,
-      situacao,
-    };
+    // Armazena no cache com TTL de 300 segundos (5 minutos)
+    try {
+      await this.redis.set(cacheKey, resultado, 300);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao gravar cache do status de revisao do carro ${carroId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    return resultado;
   }
 
   /**
@@ -272,14 +332,7 @@ export class RevisaoService {
    *
    * @returns Lista com a situação de revisão de cada veículo.
    */
-  async consultarSituacaoRevisaoVeiculos(): Promise<Array<{
-    carroId: number;
-    placa: string;
-    quilometragemAtual: number;
-    ultimaRevisaoKm: number | null;
-    proximaRevisaoPrevista: number | null;
-    situacao: StatusRevisao;
-  }>> {
+  async consultarSituacaoRevisaoVeiculos(): Promise<RevisaoPeriodicaStatus[]> {
     const carros = await this.carroService.findAll();
 
     const resultado = [];
@@ -290,5 +343,30 @@ export class RevisaoService {
     }
 
     return resultado;
+  }
+
+  /**
+   * Invalida o cache de status de um ou mais veículos.
+   *
+   * Aceita uma lista para cobrir operações futuras que alterem revisões de
+   * vários carros. Cada falha é registrada individualmente e não interrompe
+   * as demais invalidações nem o retorno da operação principal.
+   */
+  private async invalidateStatusCache(
+    carroIds: number | number[],
+  ): Promise<void> {
+    const ids = Array.isArray(carroIds) ? carroIds : [carroIds];
+
+    for (const carroId of ids) {
+      try {
+        await this.redis.del(`locamais:revisao:carro:${carroId}`);
+      } catch (error) {
+        this.logger.error(
+          `Falha ao invalidar cache do status de revisao do carro ${carroId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
   }
 }

@@ -1,12 +1,14 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 
 import { Cliente } from '../cliente/entities/cliente.entity.js';
+import { RedisService } from '../redis/redis.service.js';
 
 import { CreateEnderecoDto } from './dto/create-endereco.dto.js';
 import { UpdateEnderecoDto } from './dto/update-endereco.dto.js';
@@ -26,11 +28,14 @@ import { Endereco } from './entities/endereco.entity.js';
  */
 @Injectable()
 export class EnderecoService {
+  private readonly logger = new Logger(EnderecoService.name);
+
   constructor(
     @InjectRepository(Endereco)
     private readonly enderecosRepository: Repository<Endereco>,
     @InjectRepository(Cliente)
     private readonly clientesRepository: Repository<Cliente>,
+    private readonly redis: RedisService,
   ) {}
 
   /** Busca o endereço pelo ID do cliente (chave única 1:1). */
@@ -43,6 +48,27 @@ export class EnderecoService {
 
   /** Busca um endereço pelo ID; lança 404 quando não existe. */
   async findOne(id: number): Promise<Endereco> {
+    const cacheKey = `locamais:endereco:${id}`;
+
+    // Tenta recuperar do cache primeiro. A entidade Endereco possui toJSON()
+    // que quebra o ciclo com Cliente, então JSON.stringify nunca expõe dados
+    // sensíveis ou causa loop infinito no Redis.
+    let cached: Endereco | null = null;
+    try {
+      cached = await this.redis.get<Endereco>(cacheKey);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao ler cache do endereco ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    if (cached) {
+      return cached;
+    }
+
+    // Cache miss: consulta o MySQL
     const address = await this.enderecosRepository.findOne({
       where: { id },
       relations: { client: { user: true } },
@@ -50,6 +76,17 @@ export class EnderecoService {
 
     if (!address) {
       throw new NotFoundException(`endereco de ID ${id} nao encontrado`);
+    }
+
+    // Armazena no cache com TTL de 600 segundos (10 minutos)
+    try {
+      await this.redis.set(cacheKey, address, 600);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao gravar cache do endereco ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
 
     return address;
@@ -146,6 +183,17 @@ export class EnderecoService {
       await this.enderecosRepository.update({ id }, changes);
     }
 
+    // Invalida o cache do endereco atualizado somente apos a gravacao no MySQL
+    try {
+      await this.redis.del(`locamais:endereco:${id}`);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao invalidar cache do endereco ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
     return this.findOne(id);
   }
 
@@ -192,5 +240,21 @@ export class EnderecoService {
     throw new ConflictException(
       'endereco faz parte do cadastro do cliente e nao pode ser removido; atualize-o com PATCH',
     );
+  }
+
+  /**
+   * Invalida o cache do endereco. Pode ser chamado por outros modulos que
+   * alteram dados relacionados ao endereco (ex: cliente desativado).
+   */
+  async invalidateCache(id: number): Promise<void> {
+    try {
+      await this.redis.del(`locamais:endereco:${id}`);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao invalidar cache do endereco ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 }

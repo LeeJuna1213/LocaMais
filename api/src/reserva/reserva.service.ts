@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -15,6 +16,7 @@ import { Cliente } from '../cliente/entities/cliente.entity.js';
 import { ClienteService } from '../cliente/cliente.service.js';
 import type { UsuarioAutenticado } from '../common/interfaces/usuario-autenticado.interface.js';
 import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
+import { RedisService } from '../redis/redis.service.js';
 
 import { ConsultarDisponibilidadeDto } from './dto/consultar-disponibilidade.dto.js';
 import { CreateReservaDto } from './dto/create-reserva.dto.js';
@@ -72,12 +74,15 @@ export interface DisponibilidadeReserva {
  */
 @Injectable()
 export class ReservaService {
+  private readonly logger = new Logger(ReservaService.name);
+
   constructor(
     @InjectRepository(Reserva)
     private readonly reservasRepository: Repository<Reserva>,
     private readonly dataSource: DataSource,
     private readonly clienteService: ClienteService,
     private readonly carroService: CarroService,
+    private readonly redis: RedisService,
   ) {}
 
   /**
@@ -125,6 +130,7 @@ export class ReservaService {
       return repository.save(reservation);
     });
 
+    // UUID novo não pode ter cache anterior; o GET que vier depois populará.
     return this.findOne(saved.id);
   }
 
@@ -169,13 +175,49 @@ export class ReservaService {
     return reservation;
   }
 
-  /** Leitura com controle de acesso (staff ou dono da reserva). */
+  /** Leitura com controle de acesso (staff ou dono da reserva) e cache Redis. */
   async findOneForActor(
     actor: UsuarioAutenticado,
     id: string,
   ): Promise<Reserva> {
+    const cacheKey = `locamais:reserva:${id}`;
+
+    // Redis é apenas uma otimização: em MISS/falha, o MySQL segue como fonte
+    // oficial. A autorização será aplicada tanto no HIT quanto no MISS.
+    let cached: Reserva | null = null;
+    try {
+      cached = await this.redis.get<Reserva>(cacheKey);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao ler cache da reserva ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    if (cached) {
+      // Verifica autorizacao sobre os dados do cache (fora do try/catch do
+      // Redis, para nao capturar ForbiddenException).
+      this.assertCanRead(actor, cached);
+      return cached;
+    }
+
+    // Cache MISS (ou falha na leitura): consulta o MySQL com os relacionamentos
+    // que compõem a resposta pública atual da reserva.
     const reservation = await this.findOne(id);
     this.assertCanRead(actor, reservation);
+
+    // Só armazena depois da autorização. A falha de gravação não afeta a API.
+    try {
+      await this.redis.set(cacheKey, reservation, 120);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao gravar cache da reserva ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
     return reservation;
   }
 
@@ -308,6 +350,17 @@ export class ReservaService {
       return repository.save(reservation);
     });
 
+    // Invalida o cache da reserva atualizada somente apos a gravacao no MySQL.
+    try {
+      await this.redis.del(`locamais:reserva:${id}`);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao invalidar cache da reserva ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
     return this.findOne(saved.id);
   }
 
@@ -333,6 +386,17 @@ export class ReservaService {
 
     reservation.status = StatusReserva.CANCELADA;
     await this.reservasRepository.save(reservation);
+
+    // Invalida o cache da reserva cancelada somente apos a gravacao no MySQL.
+    try {
+      await this.redis.del(`locamais:reserva:${id}`);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao invalidar cache da reserva ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
 
     return this.findOne(id);
   }
@@ -416,10 +480,7 @@ export class ReservaService {
   }
 
   /** Staff enxerga tudo; cliente só enxerga as próprias reservas. */
-  private assertCanRead(
-    actor: UsuarioAutenticado,
-    reservation: Reserva,
-  ): void {
+  private assertCanRead(actor: UsuarioAutenticado, reservation: Reserva): void {
     if (this.isStaff(actor)) return;
 
     if (!reservation.client || reservation.client.user_id !== actor.id) {
@@ -430,7 +491,9 @@ export class ReservaService {
   }
 
   private isStaff(actor: UsuarioAutenticado): boolean {
-    return actor.type === TipoUsuario.ADMIN || actor.type === TipoUsuario.FUNCIONARIO;
+    return (
+      actor.type === TipoUsuario.ADMIN || actor.type === TipoUsuario.FUNCIONARIO
+    );
   }
 
   /**

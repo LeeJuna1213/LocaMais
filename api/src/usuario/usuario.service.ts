@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -12,6 +13,8 @@ import { EntityManager, Repository } from 'typeorm';
 
 import type { UsuarioAutenticado } from '../common/interfaces/usuario-autenticado.interface.js';
 import { normalizeEmail } from '../common/utils/normalize.utility.js';
+
+import { RedisService } from '../redis/redis.service.js';
 
 import { CreateUsuarioDto } from './dto/create-usuario.dto.js';
 import { UpdateUsuarioDto } from './dto/update-usuario.dto.js';
@@ -36,11 +39,13 @@ import { TipoUsuario } from './enums/usuario.enum.js';
  */
 @Injectable()
 export class UsuarioService {
+  private readonly logger = new Logger(UsuarioService.name);
   private readonly bcryptRounds: number;
 
   constructor(
     @InjectRepository(Usuario)
     private readonly usuariosRepository: Repository<Usuario>,
+    private readonly redis: RedisService,
     configService: ConfigService,
   ) {
     // O custo do bcrypt pode ser ajustado no ambiente. O fallback mantém o
@@ -170,7 +175,39 @@ export class UsuarioService {
     id: number,
   ): Promise<Usuario> {
     this.assertCanRead(actor, id);
-    return this.findOneOrFail(id);
+
+    const cacheKey = `locamais:usuario:${id}`;
+
+    // Tenta recuperar do cache. A entidade Usuario possui toJSON() que remove
+    // a senha, então JSON.stringify nunca expõe credenciais no Redis.
+    try {
+      const cached = await this.redis.get<Usuario>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    } catch (error) {
+      this.logger.error(
+        `Falha ao ler cache do usuario ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    // Cache miss: consulta o MySQL
+    const user = await this.findOneOrFail(id);
+
+    // Armazena no cache com TTL de 300 segundos (5 minutos)
+    try {
+      await this.redis.set(cacheKey, user, 300);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao gravar cache do usuario ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    return user;
   }
 
   /** Atualiza dados da conta; somente admin altera `active`. */
@@ -218,6 +255,18 @@ export class UsuarioService {
     }
 
     await this.usuariosRepository.update({ id }, changes);
+
+    // Invalida o cache do usuario atualizado somente apos a gravacao no MySQL
+    try {
+      await this.redis.del(`locamais:usuario:${id}`);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao invalidar cache do usuario ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
     return this.findOneOrFail(id);
   }
 
@@ -255,6 +304,17 @@ export class UsuarioService {
    */
   async deactivateAccount(userId: number): Promise<void> {
     await this.usuariosRepository.update({ id: userId }, { active: false });
+
+    // Invalida o cache do usuario desativado somente apos a gravacao no MySQL
+    try {
+      await this.redis.del(`locamais:usuario:${userId}`);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao invalidar cache do usuario ${userId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   /** Gera um hash bcrypt; a senha original não é armazenada. */
