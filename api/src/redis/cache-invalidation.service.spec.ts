@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { RedisService } from './redis.service.js';
 import { CacheInvalidationService } from './cache-invalidation.service.js';
@@ -40,11 +41,41 @@ describe('CacheInvalidationService', () => {
 
   it('does not stop later invalidations when Redis DEL fails', async () => {
     redis.del.mockRejectedValueOnce(new Error('redis unavailable'));
+    const loggerError = vi.spyOn(Logger.prototype, 'error');
 
-    await expect(
-      service.invalidateKeys(['locamais:carro:3', 'locamais:reserva:r1']),
-    ).resolves.toBeUndefined();
-    expect(redis.del).toHaveBeenCalledTimes(2);
+    try {
+      await expect(
+        service.invalidateKeys(['locamais:carro:3', 'locamais:reserva:r1']),
+      ).resolves.toBeUndefined();
+      expect(redis.del).toHaveBeenCalledTimes(2);
+      expect(loggerError.mock.calls.some(([message]) =>
+        String(message).includes('locamais:carro:3') &&
+        String(message).includes('redis unavailable'),
+      )).toBe(true);
+    } finally {
+      loggerError.mockRestore();
+    }
+  });
+
+  it('logs a dependent-ID query failure and leaves those keys for TTL expiry', async () => {
+    dataSource.query.mockRejectedValue(new Error('dependent query unavailable'));
+    const loggerError = vi.spyOn(Logger.prototype, 'error');
+
+    try {
+      await expect(service.invalidateCarDependents(8)).resolves.toBeUndefined();
+
+      expect(dataSource.query).toHaveBeenCalledWith(
+        'SELECT id FROM reservas WHERE car_id = ?',
+        [8],
+      );
+      expect(redis.del).not.toHaveBeenCalled();
+      expect(loggerError.mock.calls.some(([message]) =>
+        String(message).includes('Falha ao localizar IDs dependentes para invalidação') &&
+        String(message).includes('dependent query unavailable'),
+      )).toBe(true);
+    } finally {
+      loggerError.mockRestore();
+    }
   });
 
   it('invalidates both user and client aggregates for an address FK', async () => {

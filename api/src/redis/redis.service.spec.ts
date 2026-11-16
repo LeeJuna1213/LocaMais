@@ -53,6 +53,19 @@ describe('RedisService', () => {
 
       expect(result).toEqual(objeto);
     });
+
+    it('propaga falha do comando GET para o service de domínio tratar', async () => {
+      const failure = new Error('Redis indisponível');
+      mockClient.get.mockRejectedValue(failure);
+
+      await expect(service.get('chave')).rejects.toBe(failure);
+    });
+
+    it('retorna o texto bruto quando o conteúdo não é JSON válido', async () => {
+      mockClient.get.mockResolvedValue('{json inválido');
+
+      await expect(service.get('chave')).resolves.toBe('{json inválido');
+    });
   });
 
   describe('set', () => {
@@ -88,6 +101,13 @@ describe('RedisService', () => {
         60,
       );
     });
+
+    it('propaga falha do comando SET para o service de domínio tratar', async () => {
+      const failure = new Error('Redis somente leitura');
+      mockClient.set.mockRejectedValue(failure);
+
+      await expect(service.set('chave', { id: 1 }, 60)).rejects.toBe(failure);
+    });
   });
 
   describe('del', () => {
@@ -97,6 +117,13 @@ describe('RedisService', () => {
       await service.del('chave-remover');
 
       expect(mockClient.del).toHaveBeenCalledWith('chave-remover');
+    });
+
+    it('propaga falha do comando DEL para o chamador tratar', async () => {
+      const failure = new Error('Redis indisponível');
+      mockClient.del.mockRejectedValue(failure);
+
+      await expect(service.del('chave-remover')).rejects.toBe(failure);
     });
   });
 
@@ -116,6 +143,13 @@ describe('RedisService', () => {
       const result = await service.exists('chave-nao-existe');
 
       expect(result).toBe(false);
+    });
+
+    it('propaga falha do comando EXISTS para o chamador tratar', async () => {
+      const failure = new Error('Redis indisponível');
+      mockClient.exists.mockRejectedValue(failure);
+
+      await expect(service.exists('chave')).rejects.toBe(failure);
     });
   });
 

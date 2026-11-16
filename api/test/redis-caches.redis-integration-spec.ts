@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { Redis } from 'ioredis';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -495,6 +495,161 @@ describe('integração HTTP dos caches Redis (MySQL + Memurai reais)', () => {
     expect((await get<JsonObject>(app, `/reservas/${ids.cancelReservation}`, token)).body.status).toBe('confirmada');
   });
 
+  it('fallback MySQL funciona quando o GET Redis falha com WRONGTYPE no Memurai', async () => {
+    const key = `locamais:carro:${ids.car}`;
+    ownedKeys.add(key);
+    await redis.del(key);
+    await redis.rpush(key, 'valor-de-tipo-incorreto');
+    const loggerError = vi.spyOn(Logger.prototype, 'error');
+
+    try {
+      const response = await get<JsonObject>(app, `/carros/${ids.car}`, token);
+
+      expect(response.status).toBe(200);
+      expect(response.body.id).toBe(ids.car);
+      expect(response.body.placa).toBeTruthy();
+      expect(loggerError.mock.calls.some(([message]) =>
+        String(message).includes(`Falha ao ler cache do carro ${ids.car}`) &&
+        String(message).includes('WRONGTYPE'),
+      )).toBe(true);
+      expect(await redis.type(key)).toBe('string');
+      expect(JSON.parse((await redis.get(key))!).id).toBe(ids.car);
+    } finally {
+      loggerError.mockRestore();
+    }
+  });
+
+  it('retorna dados MySQL quando SET falha por ACL no Memurai', async () => {
+    const key = `locamais:endereco:${ids.address}`;
+    ownedKeys.add(key);
+    await redis.del(key);
+    const loggerError = vi.spyOn(Logger.prototype, 'error');
+
+    try {
+      await withRedisCommandDenied('set', async () => {
+        const response = await get<JsonObject>(app, `/enderecos/${ids.address}`, token);
+
+        expect(response.status).toBe(200);
+        expect(response.body.id).toBe(ids.address);
+        expect(response.body.logradouro).toBe(`Rua ${runTag}`);
+        expect(loggerError.mock.calls.some(([message]) =>
+          String(message).includes(`Falha ao gravar cache do endereco ${ids.address}`) &&
+          String(message).includes('NOPERM'),
+        )).toBe(true);
+      });
+
+      expect(await redis.exists(key)).toBe(0);
+    } finally {
+      loggerError.mockRestore();
+    }
+  });
+
+  it('DEL falho não reverte PATCH MySQL e a chave antiga expira pelo TTL', async () => {
+    const key = `locamais:carro:${ids.car}`;
+    ownedKeys.add(key);
+    const original = await get<JsonObject>(app, `/carros/${ids.car}`, token);
+    expect(original.status).toBe(200);
+    expect(await redis.exists(key)).toBe(1);
+    const staleModel = original.body.modelo;
+    const updatedModel = `Falha DEL ${runTag}`;
+    const loggerError = vi.spyOn(Logger.prototype, 'error');
+
+    try {
+      await withRedisCommandDenied('del', async () => {
+        const response = await patch<JsonObject>(app, `/carros/${ids.car}`, {
+          modelo: updatedModel,
+        }, token);
+
+        expect(response.status).toBe(200);
+        expect(response.body.modelo).toBe(updatedModel);
+        const [storedCar] = await dataSource.query(
+          'SELECT modelo FROM carros WHERE id = ?',
+          [ids.car],
+        );
+        expect(storedCar.modelo).toBe(updatedModel);
+        expect(loggerError.mock.calls.some(([message]) =>
+          String(message).includes(`Falha ao invalidar cache do carro ${ids.car}`) &&
+          String(message).includes('NOPERM'),
+        )).toBe(true);
+      });
+
+      expect(await redis.exists(key)).toBe(1);
+      expect(JSON.parse((await redis.get(key))!).modelo).toBe(staleModel);
+      await redis.expire(key, 1);
+      await waitForKeyAbsence(key);
+
+      const refreshed = await get<JsonObject>(app, `/carros/${ids.car}`, token);
+      expect(refreshed.status).toBe(200);
+      expect(refreshed.body.modelo).toBe(updatedModel);
+      expect(await redis.exists(key)).toBe(1);
+    } finally {
+      loggerError.mockRestore();
+    }
+  });
+
+  it('falha somente a query de reservas dependentes sem reverter PATCH do cliente', async () => {
+    const reservationKey = `locamais:reserva:${ids.reservation}`;
+    const inspectionKey = `locamais:vistoria:${ids.inspection}`;
+    const reservationBefore = await get<JsonObject>(app, `/reservas/${ids.reservation}`, token);
+    const inspectionBefore = await get<JsonObject>(app, `/vistorias/${ids.inspection}`, token);
+    expect(reservationBefore.status).toBe(200);
+    expect(inspectionBefore.status).toBe(200);
+    expect(await redis.exists(reservationKey)).toBe(1);
+    expect(await redis.exists(inspectionKey)).toBe(1);
+
+    const updatedCpf = makeCpf(String(Date.now()).slice(-9).padStart(9, '1'));
+    const expectedSql = 'SELECT id FROM reservas WHERE client_id = ?';
+    const originalQuery = dataSource.query.bind(dataSource);
+    let injectedQueryCount = 0;
+    const loggerError = vi.spyOn(Logger.prototype, 'error');
+    (dataSource as any).query = async (sql: string, parameters?: unknown[]) => {
+      if (sql === expectedSql && Number(parameters?.[0]) === ids.client) {
+        injectedQueryCount += 1;
+        throw new Error('falha injetada na consulta dependente de reservas');
+      }
+      return originalQuery(sql, parameters);
+    };
+
+    try {
+      const response = await patch<JsonObject>(app, `/clientes/${ids.client}`, {
+        cpf: updatedCpf,
+      }, token);
+
+      expect(response.status).toBe(200);
+      expect(response.body.cpf).toBe(updatedCpf);
+      expect(injectedQueryCount).toBe(1);
+      const [storedClient] = await originalQuery(
+        'SELECT cpf FROM clientes WHERE id = ?',
+        [ids.client],
+      );
+      expect(storedClient.cpf).toBe(updatedCpf);
+      expect(loggerError.mock.calls.some(([message]) =>
+        String(message).includes('Falha ao localizar IDs dependentes para invalidação') &&
+        String(message).includes('falha injetada na consulta dependente de reservas'),
+      )).toBe(true);
+      expect(await redis.exists(reservationKey)).toBe(1);
+      expect(await redis.exists(inspectionKey)).toBe(1);
+      expect(JSON.parse((await redis.get(reservationKey))!).client.cpf).toBe(reservationBefore.body.client.cpf);
+      expect(JSON.parse((await redis.get(inspectionKey))!).locacao.reservation.client.cpf)
+        .toBe(inspectionBefore.body.locacao.reservation.client.cpf);
+    } finally {
+      (dataSource as any).query = originalQuery;
+      loggerError.mockRestore();
+    }
+
+    await redis.expire(reservationKey, 1);
+    await redis.expire(inspectionKey, 1);
+    await waitForKeyAbsence(reservationKey);
+    await waitForKeyAbsence(inspectionKey);
+
+    const rebuiltReservation = await get<JsonObject>(app, `/reservas/${ids.reservation}`, token);
+    expect(rebuiltReservation.status).toBe(200);
+    expect(rebuiltReservation.body.client.cpf).toBe(updatedCpf);
+    const rebuiltInspection = await get<JsonObject>(app, `/vistorias/${ids.inspection}`, token);
+    expect(rebuiltInspection.status).toBe(200);
+    expect(rebuiltInspection.body.locacao.reservation.client.cpf).toBe(updatedCpf);
+  });
+
   function reservationCases(): CacheCase[] {
     return [ids.reservation, ids.otherReservation, ids.cancelReservation].map((id) => ({
       key: `locamais:reserva:${id}`,
@@ -502,6 +657,35 @@ describe('integração HTTP dos caches Redis (MySQL + Memurai reais)', () => {
       ttl: ttlByResource.reserva,
       tables: ['reservas', 'clientes', 'carros'],
     }));
+  }
+
+  async function withRedisCommandDenied<T>(
+    command: 'set' | 'del',
+    action: () => Promise<T>,
+  ): Promise<T> {
+    const aclLines = await redis.acl('LIST') as string[];
+    const defaultUser = aclLines.find((line) => line.startsWith('user default '));
+    if (!defaultUser) throw new Error('Memurai não retornou ACL para o usuário default');
+    const commandRules = defaultUser.split(/\s+/).filter((part) => /^[+-]/.test(part));
+    if (commandRules.at(-1) !== '+@all') {
+      throw new Error('Teste ACL exige usuário default dedicado com regra efetiva final +@all');
+    }
+
+    await redis.acl('SETUSER', 'default', `-${command}`);
+    try {
+      return await action();
+    } finally {
+      await redis.acl('SETUSER', 'default', '+@all');
+    }
+  }
+
+  async function waitForKeyAbsence(key: string, timeoutMs = 5000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (await redis.exists(key) === 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(await redis.exists(key), `a chave ${key} deveria expirar`).toBe(0);
   }
 
   function rentalCacheCases(reservationId: string, inspectionId: string): CacheCase[] {
