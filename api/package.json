@@ -21,6 +21,7 @@
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
+    "test:e2e:redis": "vitest run --config ./vitest.config.redis.e2e.ts",
     "migration:run": "npx typeorm migration:run --dataSource src/database/data-source.ts",
     "migration:revert": "npx typeorm migration:revert --dataSource src/database/data-source.ts",
     "migration:create": "npx typeorm migration:create -n"

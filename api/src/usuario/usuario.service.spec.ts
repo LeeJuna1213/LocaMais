@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 
 import { RedisService } from '../redis/redis.service.js';
+import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
 
 import { Usuario } from './entities/usuario.entity.js';
 import { TipoUsuario } from './enums/usuario.enum.js';
@@ -84,6 +85,12 @@ describe('UsuarioService', () => {
         {
           provide: RedisService,
           useValue: mockRedisService,
+        },
+        {
+          provide: CacheInvalidationService,
+          useValue: {
+            invalidateUserDependents: vi.fn().mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();

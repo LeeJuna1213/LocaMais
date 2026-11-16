@@ -281,7 +281,7 @@ describe('VistoriaService', () => {
 
     // Criacao de vistoria nova nao possui cache existente para invalidar.
     // O `findOne` ao final do `create` popula o cache na primeira leitura.
-    it('nao deve chamar del ao criar uma vistoria nova (nao ha cache existente)', async () => {
+    it('nao deve aquecer o cache ao criar uma vistoria nova', async () => {
       locacaoService.findOne.mockResolvedValue({
         id: 'loc-456',
         status: StatusLocacao.AGUARDANDO_RETIRADA,
@@ -297,7 +297,7 @@ describe('VistoriaService', () => {
       });
 
       expect(redisService.del).not.toHaveBeenCalled();
-      expect(redisService.set).toHaveBeenCalled();
+      expect(redisService.set).not.toHaveBeenCalled();
     });
   });
 });

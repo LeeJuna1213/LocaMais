@@ -61,6 +61,7 @@ async function main() {
       {} as any,
       carroService as any,
       redis,
+      { invalidateRevisionDependents: async () => undefined } as any,
     );
 
     const primeiro = await service.verificarRevisaoPeriodica(carroId);
@@ -121,6 +122,7 @@ async function main() {
       carrosRepository2 as any,
       reservasRepository2 as any,
       redis,
+      { invalidateCarDependents: async () => undefined } as any,
     );
 
     // 5a. Placa alterada -> invalida

@@ -38,6 +38,9 @@ const mockRedisService = {
   set: vi.fn(),
   del: vi.fn(),
 };
+const cacheInvalidation = {
+  invalidateAddressAggregates: vi.fn().mockResolvedValue(undefined),
+};
 
 /**
  * Testes do `EnderecoService`.
@@ -56,6 +59,7 @@ describe('EnderecoService', () => {
       repoMocks as unknown as Repository<Endereco>,
       repoMocks as unknown as Repository<any>,
       mockRedisService as unknown as RedisService,
+      cacheInvalidation as any,
     );
   });
 
@@ -151,6 +155,7 @@ describe('EnderecoService', () => {
       await service.update(1, { logradouro: 'Nova Rua' });
 
       expect(mockRedisService.del).toHaveBeenCalledWith('locamais:endereco:1');
+      expect(cacheInvalidation.invalidateAddressAggregates).toHaveBeenCalledWith(1);
     });
 
     // Remocao e bloqueada por regra de negocio (endereco pertence a cliente),

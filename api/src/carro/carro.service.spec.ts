@@ -8,6 +8,7 @@ describe('CarroService', () => {
   let carrosRepository: any;
   let reservasRepository: any;
   let redisService: any;
+  let cacheInvalidation: any;
 
   const mockCarro = {
     id: 1,
@@ -41,11 +42,15 @@ describe('CarroService', () => {
       set: vi.fn().mockResolvedValue(undefined),
       del: vi.fn().mockResolvedValue(1),
     };
+    cacheInvalidation = {
+      invalidateCarDependents: vi.fn().mockResolvedValue(undefined),
+    };
 
     service = new CarroService(
       carrosRepository,
       reservasRepository,
       redisService,
+      cacheInvalidation,
     );
   });
 
@@ -149,6 +154,7 @@ describe('CarroService', () => {
       expect(resultado).toBe(mockCarro);
       // A placa faz parte da resposta do status de revisao em cache.
       expect(redisService.del).toHaveBeenCalledWith('locamais:revisao:carro:1');
+      expect(cacheInvalidation.invalidateCarDependents).toHaveBeenCalledWith(1);
     });
 
     it('deve invalidar o cache do carro apos update bem-sucedido', async () => {
@@ -197,6 +203,7 @@ describe('CarroService', () => {
 
       await expect(service.update(1, dto)).rejects.toThrow();
       expect(redisService.del).not.toHaveBeenCalled();
+      expect(cacheInvalidation.invalidateCarDependents).not.toHaveBeenCalled();
     });
 
     it('nao deve impedir a atualizacao quando a invalidacao falhar no Redis', async () => {

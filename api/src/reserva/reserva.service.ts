@@ -17,6 +17,7 @@ import { ClienteService } from '../cliente/cliente.service.js';
 import type { UsuarioAutenticado } from '../common/interfaces/usuario-autenticado.interface.js';
 import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
 import { RedisService } from '../redis/redis.service.js';
+import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
 
 import { ConsultarDisponibilidadeDto } from './dto/consultar-disponibilidade.dto.js';
 import { CreateReservaDto } from './dto/create-reserva.dto.js';
@@ -83,6 +84,7 @@ export class ReservaService {
     private readonly clienteService: ClienteService,
     private readonly carroService: CarroService,
     private readonly redis: RedisService,
+    private readonly cacheInvalidation: CacheInvalidationService,
   ) {}
 
   /**
@@ -360,6 +362,7 @@ export class ReservaService {
         }`,
       );
     }
+    await this.cacheInvalidation.invalidateReservationInspections(id);
 
     return this.findOne(saved.id);
   }
@@ -397,6 +400,7 @@ export class ReservaService {
         }`,
       );
     }
+    await this.cacheInvalidation.invalidateReservationInspections(id);
 
     return this.findOne(id);
   }

@@ -61,6 +61,9 @@ const mockRedisService = {
   set: vi.fn(),
   del: vi.fn(),
 };
+const cacheInvalidation = {
+  invalidateClientDependents: vi.fn().mockResolvedValue(undefined),
+};
 
 /**
  * Testes do `ClienteService`.
@@ -84,6 +87,7 @@ describe('ClienteService', () => {
       mockUsuarioService,
       mockEnderecoService,
       mockRedisService as unknown as RedisService,
+      cacheInvalidation as any,
     );
   });
 
@@ -228,6 +232,7 @@ describe('ClienteService', () => {
       });
 
       expect(mockRedisService.del).toHaveBeenCalledWith('locamais:cliente:1');
+      expect(cacheInvalidation.invalidateClientDependents).toHaveBeenCalledWith(1);
     });
 
     // `DELETE /clientes/:id` (desativacao) invalida `locamais:cliente:{id}`.

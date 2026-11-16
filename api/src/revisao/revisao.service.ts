@@ -7,8 +7,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 
+import { Carro } from '../carro/entities/carro.entity.js';
 import { CarroService } from '../carro/carro.service.js';
 import { RedisService } from '../redis/redis.service.js';
+import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
 import { Revisao } from './entities/revisao.entity.js';
 import { StatusRevisao } from './enums/status-revisao.enum.js';
 import { CreateRevisaoDto } from './dto/create-revisao.dto.js';
@@ -73,6 +75,7 @@ export class RevisaoService {
     private readonly dataSource: DataSource,
     private readonly carroService: CarroService,
     private readonly redis: RedisService,
+    private readonly cacheInvalidation: CacheInvalidationService,
   ) {}
 
   /**
@@ -91,44 +94,44 @@ export class RevisaoService {
    * @returns A revisão criada.
    */
   async create(dto: CreateRevisaoDto): Promise<any> {
-    // 1. Verifica se o carro existe.
-    const carro = await this.carroService.findOne(dto.carroId);
+    // Carrega e valida os dados dentro da mesma transação que realizará as
+    // gravações. O carro deve ser uma entidade TypeORM, nunca um objeto do cache.
+    const { revisaoSalva, carroId } = await this.dataSource.transaction(async (manager) => {
+      const carro = await manager.findOne(Carro, {
+        where: { id: dto.carroId },
+      });
+      if (!carro) {
+        throw new NotFoundException(`veiculo com ID ${dto.carroId} nao encontrado`);
+      }
 
-    // 2. Busca a última revisão registrada para este carro (ordena por data decrescente).
-    const ultimaRevisao = await this.revisoesRepository.findOne({
-      where: { carro_id: carro.id },
-      order: { data: 'DESC' },
-    });
+      const ultimaRevisao = await manager.findOne(Revisao, {
+        where: { carro_id: carro.id },
+        order: { data: 'DESC' },
+      });
+      if (ultimaRevisao && dto.km < ultimaRevisao.km) {
+        throw new ConflictException(
+          `não é possível registrar revisão com km ${dto.km} inferior à última revisão registrada (${ultimaRevisao.km} km).`,
+        );
+      }
 
-    // 3. Valida a quilometragem: não permite valor inferior à última revisão.
-    if (ultimaRevisao && dto.km < ultimaRevisao.km) {
-      throw new ConflictException(
-        `não é possível registrar revisão com km ${dto.km} inferior à última revisão registrada (${ultimaRevisao.km} km).`,
-      );
-    }
+      const revisao = this.revisoesRepository.create({
+        data: new Date(dto.data),
+        descricao: dto.descricao,
+        km: dto.km,
+        valor: dto.valor,
+        carro_id: carro.id,
+      });
+      carro.quilometragem = dto.km;
 
-    // 4. Cria a revisão em memória.
-    const revisao = this.revisoesRepository.create({
-      data: new Date(dto.data),
-      descricao: dto.descricao,
-      km: dto.km,
-      valor: dto.valor,
-      carro_id: carro.id,
-    });
-
-    // 5. Atualiza a quilometragem atual do carro com o km informado na revisão.
-    carro.quilometragem = dto.km;
-
-    // 6. Persiste revisão e carro na mesma transação para garantir consistência.
-    const revisaoSalva = await this.dataSource.transaction(async (manager) => {
       const salva = await manager.save(revisao);
       await manager.save(carro);
-      return salva;
+      return { revisaoSalva: salva, carroId: carro.id };
     });
 
-    // 7. Invalida o status do carro somente após o commit no MySQL. A criação
+    // Invalida somente após a transação concluir e confirmar o commit. A criação
     // altera a última revisão e a quilometragem do veículo.
-    await this.invalidateStatusCache(carro.id);
+    await this.invalidateStatusCache(carroId);
+    await this.cacheInvalidation.invalidateRevisionDependents(carroId);
 
     return revisaoSalva;
   }
@@ -206,9 +209,10 @@ export class RevisaoService {
       await this.revisoesRepository.update({ id }, changes);
     }
 
-    // Invalida o status do carro após a gravação no MySQL. A data pode alterar
-    // qual revisão é considerada a última no cálculo periódico.
-    await this.invalidateStatusCache(revisao.carro_id);
+    // Invalida o status somente quando algum campo permitido foi alterado.
+    if (Object.keys(changes).length > 0) {
+      await this.invalidateStatusCache(revisao.carro_id);
+    }
 
     return this.findOne(id);
   }

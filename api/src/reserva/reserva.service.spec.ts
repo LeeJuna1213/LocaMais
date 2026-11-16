@@ -22,6 +22,7 @@ describe('ReservaService', () => {
   let clienteService: any;
   let carroService: any;
   let redisService: any;
+  let cacheInvalidation: any;
 
   const mockReserva = Object.assign(
     new (class {
@@ -116,6 +117,9 @@ describe('ReservaService', () => {
       set: vi.fn().mockResolvedValue(undefined),
       del: vi.fn().mockResolvedValue(1),
     };
+    cacheInvalidation = {
+      invalidateReservationInspections: vi.fn().mockResolvedValue(undefined),
+    };
 
     service = new ReservaService(
       reservasRepository as any,
@@ -123,6 +127,7 @@ describe('ReservaService', () => {
       clienteService as any,
       carroService as any,
       redisService as unknown as RedisService,
+      cacheInvalidation as any,
     );
   });
 

@@ -17,6 +17,7 @@ import type { Usuario } from '../usuario/entities/usuario.entity.js';
 import { TipoPessoa, TipoUsuario } from '../usuario/enums/usuario.enum.js';
 import { UsuarioService } from '../usuario/usuario.service.js';
 import { RedisService } from '../redis/redis.service.js';
+import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
 
 import { CreateClienteAccountDto } from './dto/create-cliente-account.dto.js';
 import type { CreateClienteDto } from './dto/create-cliente.dto.js';
@@ -53,6 +54,7 @@ export class ClienteService {
     private readonly usuarioService: UsuarioService,
     private readonly enderecoService: EnderecoService,
     private readonly redis: RedisService,
+    private readonly cacheInvalidation: CacheInvalidationService,
   ) {}
 
   /** Busca o cliente pelo ID do usuário associado (chave única 1:1). */
@@ -285,6 +287,7 @@ export class ClienteService {
         }`,
       );
     }
+    await this.cacheInvalidation.invalidateClientDependents(id);
 
     return this.findOne(id);
   }

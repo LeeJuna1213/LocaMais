@@ -81,7 +81,7 @@ export class VistoriaService {
 
     const saved = await this.vistoriasRepository.save(vistoria);
 
-    return this.findOne(actor, saved.id);
+    return this.findOneFromDatabase(actor, saved.id);
   }
 
   /**
@@ -201,7 +201,7 @@ export class VistoriaService {
     id: string,
     dto: UpdateVistoriaDto,
   ): Promise<Vistoria> {
-    const current = await this.findOne(actor, id);
+    const current = await this.findOneFromDatabase(actor, id);
 
     if (dto.observacoes !== undefined) {
       current.observacoes = dto.observacoes;
@@ -223,7 +223,22 @@ export class VistoriaService {
       );
     }
 
-    return this.findOne(actor, saved.id);
+    return saved;
+  }
+
+  private async findOneFromDatabase(
+    actor: UsuarioAutenticado,
+    id: string,
+  ): Promise<Vistoria> {
+    const vistoria = await this.vistoriasRepository.findOne({
+      where: { id },
+      relations: { locacao: { reservation: { client: true } } },
+    });
+    if (!vistoria) {
+      throw new NotFoundException(`vistoria de ID ${id} nao encontrada`);
+    }
+    this.assertCanRead(actor, vistoria);
+    return vistoria;
   }
 
   /** Staff enxerga tudo; cliente só enxerga as próprias vistorias. */

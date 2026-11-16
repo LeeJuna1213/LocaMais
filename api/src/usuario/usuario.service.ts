@@ -15,6 +15,7 @@ import type { UsuarioAutenticado } from '../common/interfaces/usuario-autenticad
 import { normalizeEmail } from '../common/utils/normalize.utility.js';
 
 import { RedisService } from '../redis/redis.service.js';
+import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
 
 import { CreateUsuarioDto } from './dto/create-usuario.dto.js';
 import { UpdateUsuarioDto } from './dto/update-usuario.dto.js';
@@ -47,6 +48,7 @@ export class UsuarioService {
     private readonly usuariosRepository: Repository<Usuario>,
     private readonly redis: RedisService,
     configService: ConfigService,
+    private readonly cacheInvalidation: CacheInvalidationService,
   ) {
     // O custo do bcrypt pode ser ajustado no ambiente. O fallback mantém o
     // comportamento anterior quando a variável não está configurada.
@@ -266,6 +268,7 @@ export class UsuarioService {
         }`,
       );
     }
+    await this.cacheInvalidation.invalidateUserDependents(id);
 
     return this.findOneOrFail(id);
   }
@@ -315,6 +318,7 @@ export class UsuarioService {
         }`,
       );
     }
+    await this.cacheInvalidation.invalidateUserDependents(userId);
   }
 
   /** Gera um hash bcrypt; a senha original não é armazenada. */

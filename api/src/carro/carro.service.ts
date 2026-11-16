@@ -13,6 +13,7 @@ import { CreateCarroDto } from './dto/create-carro.dto.js';
 import { UpdateCarroDto } from './dto/update-carro.dto.js';
 import { Reserva } from '../reserva/entities/reserva.entity.js';
 import { RedisService } from '../redis/redis.service.js';
+import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
 
 /**
  * Regras de negócio do veículo.
@@ -32,6 +33,7 @@ export class CarroService {
     @InjectRepository(Reserva)
     private readonly reservasRepository: Repository<Reserva>,
     private readonly redis: RedisService,
+    private readonly cacheInvalidation: CacheInvalidationService,
   ) {}
 
   async create(dto: CreateCarroDto): Promise<Carro> {
@@ -108,7 +110,8 @@ export class CarroService {
   }
 
   async update(id: number, dto: UpdateCarroDto): Promise<Carro> {
-    const carroExistente = await this.findOne(id);
+    const carroExistente = await this.carrosRepository.findOne({ where: { id } });
+    if (!carroExistente) throw new NotFoundException(`veiculo com ID ${id} nao encontrado`);
 
     if (dto.placa && dto.placa !== carroExistente.placa) {
       const placaExists = await this.carrosRepository.exists({
@@ -141,14 +144,18 @@ export class CarroService {
 
     // Invalida o cache de status de revisao somente quando a placa realmente
     // mudou e a atualizacao foi confirmada no MySQL.
-    if (placaMudou) {
-      await this.invalidarCacheStatusRevisao(id);
+    if (Object.keys(changes).length > 0) {
+      if (placaMudou) {
+        await this.invalidarCacheStatusRevisao(id);
+      }
+
+      await this.invalidarCacheCarro(id);
+      await this.cacheInvalidation.invalidateCarDependents(id);
     }
 
-    // Invalida o cache do carro atualizado (qualquer campo alterado).
-    await this.invalidarCacheCarro(id);
-
-    return this.findOne(id);
+    const updated = await this.carrosRepository.findOne({ where: { id } });
+    if (!updated) throw new NotFoundException(`veiculo com ID ${id} nao encontrado`);
+    return updated;
   }
 
   async remove(id: number): Promise<void> {
@@ -197,6 +204,7 @@ export class CarroService {
 
     // Invalida o cache do carro removido.
     await this.invalidarCacheCarro(id);
+    await this.cacheInvalidation.invalidateCarDependents(id);
   }
 
   /** Identifica violação de FK sem depender de um único driver. */

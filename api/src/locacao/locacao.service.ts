@@ -20,6 +20,7 @@ import { LocacaoAdicionaisDto } from './dto/locacao-adicionais.dto.js';
 import { UpdateLocacaoDto } from './dto/update-locacao.dto.js';
 import { Locacao } from './entities/locacao.entity.js';
 import { StatusLocacao } from './enums/status-locacao.enum.js';
+import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
 
 /**
  * Regras de negócio das locações.
@@ -53,6 +54,7 @@ export class LocacaoService {
     private readonly carrosRepository: Repository<Carro>,
     private readonly dataSource: DataSource,
     private readonly reservaService: ReservaService,
+    private readonly cacheInvalidation: CacheInvalidationService,
   ) {}
 
   /**
@@ -192,6 +194,7 @@ export class LocacaoService {
     ) {
       current.status = StatusLocacao.CANCELADA;
       const saved = await this.locacoesRepository.save(current);
+      await this.cacheInvalidation.invalidateLocacaoInspections(id);
       return this.findOne(actor, saved.id);
     }
 
@@ -215,7 +218,7 @@ export class LocacaoService {
     actor: UsuarioAutenticado,
     id: string,
   ): Promise<Locacao> {
-    await this.findOne(actor, id); // 404 + controle de acesso
+    const current = await this.findOne(actor, id); // 404 + controle de acesso
 
     const saved = await this.dataSource.transaction(async (manager) => {
       const locacaoRepository = manager.getRepository(Locacao);
@@ -252,6 +255,12 @@ export class LocacaoService {
       return locacao;
     });
 
+    await this.cacheInvalidation.invalidateLocacaoDependents(
+      saved.id,
+      saved.reservation_id,
+      current.reservation.car_id,
+      true,
+    );
     return this.findOne(actor, saved.id);
   }
 
@@ -273,7 +282,7 @@ export class LocacaoService {
     actor: UsuarioAutenticado,
     id: string,
   ): Promise<Locacao> {
-    await this.findOne(actor, id); // 404 + controle de acesso
+    const current = await this.findOne(actor, id); // 404 + controle de acesso
 
     const saved = await this.dataSource.transaction(async (manager) => {
       const locacaoRepository = manager.getRepository(Locacao);
@@ -324,6 +333,12 @@ export class LocacaoService {
       return locacao;
     });
 
+    await this.cacheInvalidation.invalidateLocacaoDependents(
+      saved.id,
+      saved.reservation_id,
+      current.reservation.car_id,
+      true,
+    );
     return this.findOne(actor, saved.id);
   }
 

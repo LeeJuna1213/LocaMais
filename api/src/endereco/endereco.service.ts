@@ -9,6 +9,7 @@ import { EntityManager, Repository } from 'typeorm';
 
 import { Cliente } from '../cliente/entities/cliente.entity.js';
 import { RedisService } from '../redis/redis.service.js';
+import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
 
 import { CreateEnderecoDto } from './dto/create-endereco.dto.js';
 import { UpdateEnderecoDto } from './dto/update-endereco.dto.js';
@@ -36,6 +37,7 @@ export class EnderecoService {
     @InjectRepository(Cliente)
     private readonly clientesRepository: Repository<Cliente>,
     private readonly redis: RedisService,
+    private readonly cacheInvalidation: CacheInvalidationService,
   ) {}
 
   /** Busca o endereço pelo ID do cliente (chave única 1:1). */
@@ -132,7 +134,9 @@ export class EnderecoService {
       client_id: clientId,
     });
 
-    return this.enderecosRepository.save(address);
+    const saved = await this.enderecosRepository.save(address);
+    await this.cacheInvalidation.invalidateAddressAggregates(saved.id);
+    return saved;
   }
 
   /**
@@ -165,7 +169,8 @@ export class EnderecoService {
    * `client_id` não é alterável pelo DTO: o vínculo com o cliente é imutável.
    */
   async update(id: number, dto: UpdateEnderecoDto): Promise<Endereco> {
-    await this.findOne(id);
+    const current = await this.enderecosRepository.findOne({ where: { id } });
+    if (!current) throw new NotFoundException(`endereco de ID ${id} nao encontrado`);
 
     const changes: Partial<Endereco> = {};
 
@@ -183,18 +188,23 @@ export class EnderecoService {
       await this.enderecosRepository.update({ id }, changes);
     }
 
-    // Invalida o cache do endereco atualizado somente apos a gravacao no MySQL
-    try {
-      await this.redis.del(`locamais:endereco:${id}`);
-    } catch (error) {
-      this.logger.error(
-        `Falha ao invalidar cache do endereco ${id}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+    if (Object.keys(changes).length > 0) {
+      try {
+        await this.redis.del(`locamais:endereco:${id}`);
+      } catch (error) {
+        this.logger.error(
+          `Falha ao invalidar cache do endereco ${id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      await this.cacheInvalidation.invalidateAddressAggregates(id);
     }
 
-    return this.findOne(id);
+    const updated = await this.enderecosRepository.findOne({
+      where: { id },
+      relations: { client: { user: true } },
+    });
+    if (!updated) throw new NotFoundException(`endereco de ID ${id} nao encontrado`);
+    return updated;
   }
 
   /**

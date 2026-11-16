@@ -1,7 +1,9 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 
 import { RevisaoService } from './revisao.service.js';
 import { CarroService } from '../carro/carro.service.js';
+import { Carro } from '../carro/entities/carro.entity.js';
+import { Revisao } from './entities/revisao.entity.js';
 import { StatusRevisao } from './enums/status-revisao.enum.js';
 
 /**
@@ -21,9 +23,11 @@ describe('RevisaoService', () => {
   let service: RevisaoService;
   let revisoesRepository: any;
   let dataSource: any;
+  let transactionManager: any;
   let carroService: CarroService;
   let carroFindOneMock: ReturnType<typeof vi.fn>;
   let redisService: any;
+  let cacheInvalidation: any;
 
   const mockCarro = {
     id: 1,
@@ -57,10 +61,15 @@ describe('RevisaoService', () => {
       remove: vi.fn().mockResolvedValue(undefined),
     };
 
+    transactionManager = {
+      findOne: vi.fn().mockImplementation((entity: unknown) =>
+        entity === Carro ? Promise.resolve(mockCarro) : Promise.resolve(null),
+      ),
+      save: vi.fn().mockImplementation(async (entity: any) => entity),
+    };
     dataSource = {
       transaction: vi.fn().mockImplementation(async (cb: any) => {
-        const manager = revisoesRepository;
-        return cb(manager);
+        return cb(transactionManager);
       }),
     };
 
@@ -75,12 +84,16 @@ describe('RevisaoService', () => {
       set: vi.fn().mockResolvedValue(undefined),
       del: vi.fn().mockResolvedValue(1),
     };
+    cacheInvalidation = {
+      invalidateRevisionDependents: vi.fn().mockResolvedValue(undefined),
+    };
 
     service = new RevisaoService(
       revisoesRepository,
       dataSource,
       carroService,
       redisService,
+      cacheInvalidation,
     );
   });
 
@@ -289,8 +302,22 @@ describe('RevisaoService', () => {
 
     // Criacao bem-sucedida atualiza a quilometragem do carro.
     it('deve registrar uma revisao com sucesso e atualizar quilometragem do carro', async () => {
-      carroService.findOne = vi.fn().mockResolvedValue(mockCarro);
-      revisoesRepository.findOne = vi.fn().mockResolvedValue(null);
+      let transactionCommitted = false;
+      dataSource.transaction.mockImplementation(async (cb: any) => {
+        const result = await cb(transactionManager);
+        transactionCommitted = true;
+        return result;
+      });
+      redisService.del.mockImplementation(async () => {
+        expect(transactionCommitted).toBe(true);
+        return 1;
+      });
+      cacheInvalidation.invalidateRevisionDependents.mockImplementation(async () => {
+        expect(transactionCommitted).toBe(true);
+      });
+      transactionManager.findOne.mockImplementation((entity: unknown) =>
+        entity === Carro ? Promise.resolve(mockCarro) : Promise.resolve(null),
+      );
       mockCarro.quilometragem = 10000;
 
       const resultado = await service.create(dto);
@@ -299,14 +326,27 @@ describe('RevisaoService', () => {
       expect(resultado.km).toBe(dto.km);
       expect(resultado.valor).toBe(dto.valor);
       expect(mockCarro.quilometragem).toBe(dto.km);
+      expect(transactionManager.findOne).toHaveBeenNthCalledWith(1, Carro, {
+        where: { id: dto.carroId },
+      });
+      expect(transactionManager.findOne).toHaveBeenNthCalledWith(2, Revisao, {
+        where: { carro_id: dto.carroId },
+        order: { data: 'DESC' },
+      });
+      expect(carroFindOneMock).not.toHaveBeenCalled();
+      expect(transactionManager.save).toHaveBeenCalledTimes(2);
+      expect(transactionManager.save).toHaveBeenNthCalledWith(1, expect.objectContaining({ carro_id: dto.carroId }));
+      expect(transactionManager.save).toHaveBeenNthCalledWith(2, mockCarro);
+      expect(cacheInvalidation.invalidateRevisionDependents).toHaveBeenCalledWith(dto.carroId);
     });
 
     // A criacao altera a ultima revisao e a quilometragem => invalida o cache.
     it('deve invalidar o cache do status do carro apos criar revisao', async () => {
-      carroService.findOne = vi
-        .fn()
-        .mockResolvedValue({ ...mockCarro, quilometragem: 10000 });
-      revisoesRepository.findOne = vi.fn().mockResolvedValue(null);
+      transactionManager.findOne.mockImplementation((entity: unknown) =>
+        entity === Carro
+          ? Promise.resolve({ ...mockCarro, quilometragem: 10000 })
+          : Promise.resolve(null),
+      );
 
       await service.create(dto);
 
@@ -318,8 +358,9 @@ describe('RevisaoService', () => {
     // Se a criacao falhar no MySQL (km invalido), nada e gravado e nada e
     // invalidado no Redis.
     it('nao deve invalidar o cache quando a criacao falhar', async () => {
-      carroService.findOne = vi.fn().mockResolvedValue(mockCarro);
-      revisoesRepository.findOne = vi.fn().mockResolvedValue(mockUltimaRevisao);
+      transactionManager.findOne.mockImplementation((entity: unknown) =>
+        entity === Carro ? Promise.resolve(mockCarro) : Promise.resolve(mockUltimaRevisao),
+      );
 
       const dtoInvalido = {
         data: '2026-11-10T10:00:00.000Z',
@@ -329,15 +370,18 @@ describe('RevisaoService', () => {
         carroId: 1,
       };
 
-      await expect(service.create(dtoInvalido)).rejects.toThrow();
+      await expect(service.create(dtoInvalido)).rejects.toThrow(ConflictException);
 
+      expect(transactionManager.save).not.toHaveBeenCalled();
       expect(redisService.del).not.toHaveBeenCalled();
+      expect(cacheInvalidation.invalidateRevisionDependents).not.toHaveBeenCalled();
     });
 
     // Regra de negocio: km nao pode ser inferior ao da ultima revisao.
     it('deve impedir revisao com km inferior à ultima revisão', async () => {
-      carroService.findOne = vi.fn().mockResolvedValue(mockCarro);
-      revisoesRepository.findOne = vi.fn().mockResolvedValue(mockUltimaRevisao);
+      transactionManager.findOne.mockImplementation((entity: unknown) =>
+        entity === Carro ? Promise.resolve(mockCarro) : Promise.resolve(mockUltimaRevisao),
+      );
 
       const dtoInvalido = {
         data: '2026-11-10T10:00:00.000Z',
@@ -347,27 +391,37 @@ describe('RevisaoService', () => {
         carroId: 1,
       };
 
-      await expect(service.create(dtoInvalido)).rejects.toThrow();
+      await expect(service.create(dtoInvalido)).rejects.toThrow(ConflictException);
     });
 
     // Carro inexistente => NotFoundException, sem invalidar cache.
     it('deve lançar NotFoundException quando o carro nao existe', async () => {
-      carroService.findOne = vi.fn().mockRejectedValue(
-        new NotFoundException('veiculo com ID 999 nao encontrado'),
-      );
+      transactionManager.findOne.mockResolvedValue(null);
 
       await expect(service.create(dto)).rejects.toThrow(NotFoundException);
+      expect(transactionManager.save).not.toHaveBeenCalled();
+      expect(redisService.del).not.toHaveBeenCalled();
     });
 
     // Falha na invalidação nao desfaz a criacao ja confirmada no MySQL.
     it('nao deve impedir a criacao quando a invalidacao falhar no Redis', async () => {
-      carroService.findOne = vi
-        .fn()
-        .mockResolvedValue({ ...mockCarro, quilometragem: 10000 });
-      revisoesRepository.findOne = vi.fn().mockResolvedValue(null);
+      transactionManager.findOne.mockImplementation((entity: unknown) =>
+        entity === Carro
+          ? Promise.resolve({ ...mockCarro, quilometragem: 10000 })
+          : Promise.resolve(null),
+      );
       redisService.del.mockRejectedValue(new Error('Redis indisponível'));
 
       await expect(service.create(dto)).resolves.toBeDefined();
+    });
+
+    it('não invalida caches se a transação falhar antes do commit', async () => {
+      dataSource.transaction.mockRejectedValue(new Error('falha de persistência'));
+
+      await expect(service.create(dto)).rejects.toThrow('falha de persistência');
+
+      expect(redisService.del).not.toHaveBeenCalled();
+      expect(cacheInvalidation.invalidateRevisionDependents).not.toHaveBeenCalled();
     });
   });
 
