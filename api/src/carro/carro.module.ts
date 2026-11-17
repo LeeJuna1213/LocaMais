@@ -5,6 +5,7 @@ import { Carro } from './entities/carro.entity.js';
 import { CarroController } from './carro.controller.js';
 import { CarroService } from './carro.service.js';
 import { Reserva } from '../reserva/entities/reserva.entity.js';
+import { CarroFotoStorage } from './carro-foto.storage.js';
 
 /**
  * Módulo de veículos.
@@ -20,7 +21,7 @@ import { Reserva } from '../reserva/entities/reserva.entity.js';
 @Module({
   imports: [TypeOrmModule.forFeature([Carro, Reserva])],
   controllers: [CarroController],
-  providers: [CarroService],
+  providers: [CarroService, CarroFotoStorage],
   exports: [CarroService],
 })
 export class CarroModule {}

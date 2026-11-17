@@ -1,2 +1,36 @@
-// For information on how to create your own theme, please refer to:
-// https://ionicframework.com/docs/theming/
+// Ionic theme variables for Loca+
+:root {
+  --ion-color-primary: #f57c1f;
+  --ion-color-primary-rgb: 245, 124, 31;
+  --ion-color-primary-contrast: #ffffff;
+  --ion-color-primary-contrast-rgb: 255, 255, 255;
+  --ion-color-primary-shade: #d86d1b;
+  --ion-color-primary-tint: #f68935;
+
+  --ion-color-secondary: #ff9a3c;
+  --ion-color-secondary-rgb: 255, 154, 60;
+  --ion-color-secondary-contrast: #ffffff;
+  --ion-color-secondary-contrast-rgb: 255, 255, 255;
+  --ion-color-secondary-shade: #e08835;
+  --ion-color-secondary-tint: #ffa450;
+
+  --ion-color-danger: #c0392b;
+  --ion-color-danger-rgb: 192, 57, 43;
+  --ion-color-danger-contrast: #ffffff;
+  --ion-color-danger-contrast-rgb: 255, 255, 255;
+  --ion-color-danger-shade: #a93226;
+  --ion-color-danger-tint: #c64d40;
+
+  --ion-font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --ion-background-color: #120904;
+  --ion-text-color: #ffffff;
+
+  --lm-primary: #f57c1f;
+  --lm-primary-light: #ff9a3c;
+  --lm-primary-dark: #f2640f;
+  --lm-bg-start: #2e1707;
+  --lm-bg-end: #120904;
+  --lm-text: #2b1a0d;
+  --lm-muted: #7a5a40;
+  --lm-glow: #4a2508;
+}

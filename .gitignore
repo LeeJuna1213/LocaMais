@@ -23,6 +23,8 @@ pnpm-debug.log*
 
 # Bancos locais (SQLite) ----------------------------------------------------
 data/
+api/uploads/carros/*
+!api/uploads/carros/.gitkeep
 *.sqlite
 *.sqlite3
 

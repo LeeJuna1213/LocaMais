@@ -1,8 +1,139 @@
 import { Routes } from '@angular/router';
+import { authGuard, roleGuard } from './core/guards/role.guard';
 
 export const routes: Routes = [
+  { path: '', pathMatch: 'full', redirectTo: 'login' },
   {
-    path: '',
-    loadChildren: () => import('./tabs/tabs.routes').then((m) => m.routes),
+    path: 'login',
+    loadComponent: () => import('./pages/auth/login.page').then((m) => m.LoginPage),
   },
+  {
+    path: 'cadastro',
+    loadComponent: () => import('./pages/auth/register.page').then((m) => m.RegisterPage),
+  },
+  {
+    path: 'client',
+    canActivate: [roleGuard('client')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'veiculos' },
+      {
+        path: 'veiculos',
+        loadComponent: () => import('./pages/client/vehicle-list.page').then((m) => m.VehicleListPage),
+      },
+      {
+        path: 'minhas',
+        loadComponent: () => import('./pages/client/my-reservations.page').then((m) => m.MyReservationsPage),
+      },
+      {
+        path: 'reservas/:id',
+        loadComponent: () => import('./pages/client/reservation-details.page').then((m) => m.ReservationDetailsPage),
+      },
+      {
+        path: 'perfil',
+        loadComponent: () => import('./pages/client/profile.page').then((m) => m.ProfilePage),
+      },
+      {
+        path: 'perfil/:section',
+        loadComponent: () => import('./pages/client/profile-section.page').then((m) => m.ProfileSectionPage),
+      },
+    ],
+  },
+  {
+    path: 'admin',
+    canActivate: [roleGuard('admin')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'painel' },
+      {
+        path: 'painel',
+        loadComponent: () => import('./pages/admin/dashboard.page').then((m) => m.DashboardPage),
+      },
+      {
+        path: 'clientes',
+        loadComponent: () => import('./pages/admin/clients.page').then((m) => m.ClientsPage),
+      },
+      {
+        path: 'clientes/:id',
+        loadComponent: () => import('./pages/admin/client-edit.page').then((m) => m.ClientEditPage),
+      },
+      {
+        path: 'veiculos',
+        loadComponent: () => import('./pages/admin/admin-vehicles.page').then((m) => m.AdminVehiclesPage),
+      },
+      {
+        path: 'veiculos/novo',
+        loadComponent: () => import('./pages/admin/new-vehicle.page').then((m) => m.NewVehiclePage),
+      },
+      {
+        path: 'veiculos/:id/revisoes',
+        loadComponent: () => import('./pages/admin/vehicle-revisions.page').then((m) => m.VehicleRevisionsPage),
+      },
+      {
+        path: 'reservas',
+        loadComponent: () => import('./pages/admin/admin-reservations.page').then((m) => m.AdminReservationsPage),
+      },
+      {
+        path: 'reservas/:id',
+        loadComponent: () => import('./pages/client/reservation-details.page').then((m) => m.ReservationDetailsPage),
+      },
+      {
+        path: 'locacoes',
+        loadComponent: () => import('./pages/admin/pickup-list.page').then((m) => m.PickupListPage),
+      },
+      {
+        path: 'devolucoes',
+        loadComponent: () => import('./pages/admin/return-list.page').then((m) => m.ReturnListPage),
+      },
+      {
+        path: 'retirada/:id',
+        loadComponent: () => import('./pages/admin/register-pickup.page').then((m) => m.RegisterPickupPage),
+      },
+      {
+        path: 'devolucao/:id',
+        loadComponent: () => import('./pages/admin/register-return.page').then((m) => m.RegisterReturnPage),
+      },
+      {
+        path: 'pagamentos',
+        loadComponent: () => import('./pages/admin/admin-payments.page').then((m) => m.AdminPaymentsPage),
+      },
+      {
+        path: 'relatorios',
+        loadComponent: () => import('./pages/admin/reports.page').then((m) => m.ReportsPage),
+      },
+      {
+        path: 'menu',
+        loadComponent: () => import('./pages/admin/admin-menu.page').then((m) => m.AdminMenuPage),
+      },
+      {
+        path: 'reserva',
+        loadComponent: () => import('./pages/client/vehicle-list.page').then((m) => m.VehicleListPage),
+      },
+    ],
+  },
+  {
+    path: 'booking',
+    canActivate: [authGuard],
+    children: [
+      {
+        path: 'vehicle/:id',
+        loadComponent: () => import('./pages/booking/vehicle-details.page').then((m) => m.VehicleDetailsPage),
+      },
+      {
+        path: 'reservar/:id',
+        loadComponent: () => import('./pages/booking/reservation-form.page').then((m) => m.ReservationFormPage),
+      },
+      {
+        path: 'confirmar',
+        loadComponent: () => import('./pages/booking/confirm-reservation.page').then((m) => m.ConfirmReservationPage),
+      },
+      {
+        path: 'pagamento',
+        loadComponent: () => import('./pages/booking/payment.page').then((m) => m.PaymentPage),
+      },
+      {
+        path: 'sucesso',
+        loadComponent: () => import('./pages/booking/reservation-success.page').then((m) => m.ReservationSuccessPage),
+      },
+    ],
+  },
+  { path: '**', redirectTo: 'login' },
 ];

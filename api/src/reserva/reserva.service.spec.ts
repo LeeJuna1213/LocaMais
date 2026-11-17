@@ -110,6 +110,10 @@ describe('ReservaService', () => {
           valorDiaria: 100,
           status: 'disponivel',
         }),
+      enriquecerFoto: vi.fn().mockImplementation(async (car: any) => ({
+        ...car,
+        foto: '/uploads/carros/atual.jpg',
+      })),
     };
 
     redisService = {
@@ -141,15 +145,38 @@ describe('ReservaService', () => {
    * os caminhos impede que uma chave compartilhada contorne o controle de acesso.
    */
   describe('findOneForActor com cache', () => {
-    // Cache HIT: devolve o valor do Redis sem consultar o repositorio MySQL.
-    it('deve retornar dados do cache em HIT sem consultar o MySQL', async () => {
-      redisService.get.mockResolvedValue(mockReserva);
+    it('HIT consulta a foto atual do carro no MySQL sem buscar a reserva novamente', async () => {
+      redisService.get.mockResolvedValue({
+        ...mockReserva,
+        car: { ...mockReserva.car, foto: '/uploads/carros/legada.jpg' },
+      });
 
       const resultado = await service.findOneForActor(adminActor, 'res-123');
 
       expect(redisService.get).toHaveBeenCalledWith('locamais:reserva:res-123');
       expect(reservasRepository.findOne).not.toHaveBeenCalled();
-      expect(resultado).toEqual(mockReserva);
+      expect(carroService.enriquecerFoto).toHaveBeenCalledWith({
+        ...mockReserva.car,
+        foto: '/uploads/carros/legada.jpg',
+      });
+      expect(resultado.car.foto).toBe('/uploads/carros/atual.jpg');
+      expect(resultado.id).toBe(mockReserva.id);
+    });
+
+    it('reflete a nova foto do MySQL em leituras sucessivas de reserva', async () => {
+      let fotoAtual = '/uploads/carros/primeira.jpg';
+      carroService.enriquecerFoto.mockImplementation(async (car: any) => ({
+        ...car,
+        foto: fotoAtual,
+      }));
+      redisService.get.mockResolvedValue({ ...mockReserva, car: mockReserva.car });
+
+      const primeira = await service.findOneForActor(adminActor, 'res-123');
+      fotoAtual = '/uploads/carros/segunda.jpg';
+      const segunda = await service.findOneForActor(adminActor, 'res-123');
+
+      expect(primeira.car.foto).toBe('/uploads/carros/primeira.jpg');
+      expect(segunda.car.foto).toBe('/uploads/carros/segunda.jpg');
     });
 
     // Cache MISS: consulta o MySQL e grava no Redis com TTL de 120 segundos.
@@ -166,9 +193,10 @@ describe('ReservaService', () => {
       });
       expect(redisService.set).toHaveBeenCalledWith(
         'locamais:reserva:res-123',
-        resultado,
+        expect.any(Object),
         120,
       );
+      expect(redisService.set.mock.calls[0][1].car).not.toHaveProperty('foto');
       expect(resultado).toEqual(mockReserva);
     });
 
@@ -188,7 +216,7 @@ describe('ReservaService', () => {
 
       // Cliente pode acessar sua propria reserva (user_id == actor.id).
       const resultado = await service.findOneForActor(clienteActor, 'res-123');
-      expect(resultado).toEqual(mockReserva);
+      expect(resultado.car.foto).toBe('/uploads/carros/atual.jpg');
 
       // Outro cliente nao pode acessar reserva de cliente diferente.
       redisService.get.mockResolvedValue(mockReserva);

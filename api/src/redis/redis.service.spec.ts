@@ -35,8 +35,8 @@ describe('RedisService', () => {
       expect(mockClient.get).toHaveBeenCalledWith('nao-existe');
     });
 
-    it('deve retornar uma string armazenada', async () => {
-      mockClient.get.mockResolvedValue('valor-string');
+    it('deve desserializar uma string JSON válida', async () => {
+      mockClient.get.mockResolvedValue('"valor-string"');
 
       const result = await service.get<string>('chave-string');
 
@@ -61,20 +61,29 @@ describe('RedisService', () => {
       await expect(service.get('chave')).rejects.toBe(failure);
     });
 
-    it('retorna o texto bruto quando o conteúdo não é JSON válido', async () => {
+    it('trata JSON inválido como MISS e remove a chave corrompida', async () => {
       mockClient.get.mockResolvedValue('{json inválido');
+      mockClient.del.mockResolvedValue(1);
 
-      await expect(service.get('chave')).resolves.toBe('{json inválido');
+      await expect(service.get('chave')).resolves.toBeNull();
+      expect(mockClient.del).toHaveBeenCalledWith('chave');
+    });
+
+    it('mantém MISS mesmo se falhar a remoção da chave corrompida', async () => {
+      mockClient.get.mockResolvedValue('{json inválido');
+      mockClient.del.mockRejectedValue(new Error('Redis indisponível'));
+
+      await expect(service.get('chave')).resolves.toBeNull();
     });
   });
 
   describe('set', () => {
-    it('deve armazenar uma string sem TTL', async () => {
+    it('deve armazenar uma string como JSON sem TTL', async () => {
       mockClient.set.mockResolvedValue('OK');
 
       await service.set('chave', 'valor');
 
-      expect(mockClient.set).toHaveBeenCalledWith('chave', 'valor');
+      expect(mockClient.set).toHaveBeenCalledWith('chave', '"valor"');
     });
 
     it('deve armazenar um objeto serializado em JSON', async () => {
@@ -96,7 +105,7 @@ describe('RedisService', () => {
 
       expect(mockClient.set).toHaveBeenCalledWith(
         'chave-ttl',
-        'valor',
+        '"valor"',
         'EX',
         60,
       );

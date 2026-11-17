@@ -24,7 +24,7 @@ export function buildTypeOrmOptions(
 
   const common = {
     autoLoadEntities: true,
-    synchronize: config.get<string>('DATABASE_SYNCHRONIZE') !== 'false',
+    synchronize: config.get<string>('DATABASE_SYNCHRONIZE') === 'true',
     logging: config.get<string>('DATABASE_LOGGING') === 'true',
   };
 

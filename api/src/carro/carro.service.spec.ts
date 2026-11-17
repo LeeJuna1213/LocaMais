@@ -9,6 +9,7 @@ describe('CarroService', () => {
   let reservasRepository: any;
   let redisService: any;
   let cacheInvalidation: any;
+  let fotoStorage: any;
 
   const mockCarro = {
     id: 1,
@@ -20,6 +21,7 @@ describe('CarroService', () => {
     status: StatusVeiculo.DISPONIVEL,
     valorDiaria: 100,
     quilometragem: 15000,
+    foto: null,
   };
 
   beforeEach(() => {
@@ -45,13 +47,95 @@ describe('CarroService', () => {
     cacheInvalidation = {
       invalidateCarDependents: vi.fn().mockResolvedValue(undefined),
     };
+    fotoStorage = {
+      validar: vi.fn().mockReturnValue('.jpg'),
+      salvar: vi.fn().mockResolvedValue('/uploads/carros/novo.jpg'),
+      remover: vi.fn().mockResolvedValue(undefined),
+    };
 
     service = new CarroService(
       carrosRepository,
       reservasRepository,
       redisService,
       cacheInvalidation,
+      fotoStorage,
     );
+  });
+
+  describe('fotos', () => {
+    const arquivo = {
+      originalname: 'imagem.jpg',
+      mimetype: 'image/jpeg',
+      size: 3,
+      buffer: Buffer.from([0xff, 0xd8, 0xff]),
+    } as Express.Multer.File;
+
+    it('salva foto e invalida carro e reservas após persistir o caminho', async () => {
+      carrosRepository.findOne
+        .mockResolvedValueOnce({ ...mockCarro, foto: null })
+        .mockResolvedValueOnce({ ...mockCarro, foto: '/uploads/carros/novo.jpg' });
+      const result = await service.enviarFoto(1, arquivo);
+      expect(fotoStorage.salvar).toHaveBeenCalledWith(arquivo);
+      expect(carrosRepository.update).toHaveBeenCalledWith(
+        { id: 1 },
+        { foto: '/uploads/carros/novo.jpg' },
+      );
+      expect(redisService.del).toHaveBeenCalledWith('locamais:carro:1');
+      expect(cacheInvalidation.invalidateCarDependents).toHaveBeenCalledWith(1);
+      expect(result.foto).toBe('/uploads/carros/novo.jpg');
+    });
+
+    it('rejeita carro inexistente sem salvar arquivo', async () => {
+      carrosRepository.findOne.mockResolvedValueOnce(null);
+      await expect(service.enviarFoto(99, arquivo)).rejects.toThrow(NotFoundException);
+      expect(fotoStorage.salvar).not.toHaveBeenCalled();
+    });
+
+    it('remove foto antiga somente após persistir a nova', async () => {
+      carrosRepository.findOne
+        .mockResolvedValueOnce({ ...mockCarro, foto: '/uploads/carros/anterior.jpg' })
+        .mockResolvedValueOnce({ ...mockCarro, foto: '/uploads/carros/novo.jpg' });
+      await service.enviarFoto(1, arquivo);
+      expect(fotoStorage.remover).toHaveBeenCalledWith('/uploads/carros/anterior.jpg');
+    });
+
+    it('remove arquivo novo se a persistência do caminho falhar', async () => {
+      carrosRepository.update.mockRejectedValueOnce(new Error('MySQL indisponível'));
+      await expect(service.enviarFoto(1, arquivo)).rejects.toThrow('MySQL indisponível');
+      expect(fotoStorage.remover).toHaveBeenCalledWith('/uploads/carros/novo.jpg');
+      expect(redisService.del).not.toHaveBeenCalled();
+    });
+
+    it('não desfaz persistência se falhar a remoção física da foto anterior', async () => {
+      carrosRepository.findOne
+        .mockResolvedValueOnce({ ...mockCarro, foto: '/uploads/carros/anterior.jpg' })
+        .mockResolvedValueOnce({ ...mockCarro, foto: '/uploads/carros/novo.jpg' });
+      fotoStorage.remover.mockRejectedValueOnce(new Error('arquivo ocupado'));
+      await expect(service.enviarFoto(1, arquivo)).resolves.toMatchObject({
+        foto: '/uploads/carros/novo.jpg',
+      });
+    });
+
+    it('remove foto por fluxo dedicado mesmo quando não havia foto', async () => {
+      carrosRepository.findOne
+        .mockResolvedValueOnce({ ...mockCarro, foto: null })
+        .mockResolvedValueOnce({ ...mockCarro, foto: '/uploads/carros/novo.jpg' });
+      await service.removerFoto(1);
+      expect(carrosRepository.update).toHaveBeenCalledWith({ id: 1 }, { foto: null });
+      expect(fotoStorage.remover).toHaveBeenCalledWith(null);
+      expect(cacheInvalidation.invalidateCarDependents).toHaveBeenCalledWith(1);
+    });
+
+    it('continua após falha Redis ao invalidar foto', async () => {
+      redisService.del.mockRejectedValue(new Error('Redis indisponível'));
+      carrosRepository.findOne
+        .mockResolvedValueOnce({ ...mockCarro, foto: null })
+        .mockResolvedValueOnce({ ...mockCarro, foto: '/uploads/carros/novo.jpg' });
+      await expect(service.enviarFoto(1, arquivo)).resolves.toMatchObject({
+        foto: '/uploads/carros/novo.jpg',
+      });
+      expect(carrosRepository.update).toHaveBeenCalled();
+    });
   });
 
   it('should be defined', () => {
@@ -64,15 +148,19 @@ describe('CarroService', () => {
    * tenta popular Redis. O Redis não é a fonte oficial nem pode derrubar GET.
    */
   describe('findOne com cache', () => {
-    // Cache HIT: devolve o valor do Redis sem consultar o repositorio MySQL.
-    it('deve retornar dados do cache em HIT sem consultar o MySQL', async () => {
-      redisService.get.mockResolvedValue(mockCarro);
+    it('HIT combina dados do Redis com foto atual consultada no MySQL', async () => {
+      redisService.get.mockResolvedValue({ ...mockCarro, foto: '/uploads/carros/legada.jpg' });
+      carrosRepository.findOne.mockResolvedValue({ id: 1, foto: '/uploads/carros/atual.jpg' });
 
       const resultado = await service.findOne(1);
 
       expect(redisService.get).toHaveBeenCalledWith('locamais:carro:1');
-      expect(carrosRepository.findOne).not.toHaveBeenCalled();
-      expect(resultado).toEqual(mockCarro);
+      expect(carrosRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 1 },
+        select: { id: true, foto: true },
+      });
+      expect(resultado.foto).toBe('/uploads/carros/atual.jpg');
+      expect(resultado.modelo).toBe(mockCarro.modelo);
     });
 
     // Cache MISS: consulta o MySQL e grava no Redis com TTL de 60 segundos.
@@ -88,9 +176,11 @@ describe('CarroService', () => {
       });
       expect(redisService.set).toHaveBeenCalledWith(
         'locamais:carro:1',
-        resultado,
+        expect.objectContaining({ modelo: mockCarro.modelo }),
         60,
       );
+      expect(redisService.set.mock.calls[0][1]).not.toHaveProperty('foto');
+      expect(carrosRepository.findOne).toHaveBeenCalledTimes(1);
       expect(resultado).toEqual(mockCarro);
     });
 
@@ -113,6 +203,24 @@ describe('CarroService', () => {
 
       expect(carrosRepository.findOne).toHaveBeenCalled();
       expect(resultado).toEqual(mockCarro);
+    });
+
+    it('retorna foto null no HIT sem tratar o carro como inexistente', async () => {
+      redisService.get.mockResolvedValue({ ...mockCarro, foto: '/uploads/antiga.jpg' });
+      carrosRepository.findOne.mockResolvedValue({ id: 1, foto: null });
+      await expect(service.findOne(1)).resolves.toMatchObject({ foto: null });
+    });
+
+    it('não utiliza foto legada se a consulta MySQL falhar no HIT', async () => {
+      redisService.get.mockResolvedValue({ ...mockCarro, foto: '/uploads/antiga.jpg' });
+      carrosRepository.findOne.mockRejectedValue(new Error('MySQL indisponível'));
+      await expect(service.findOne(1)).rejects.toThrow('MySQL indisponível');
+    });
+
+    it('retorna 404 no HIT se a projeção não encontrar o carro', async () => {
+      redisService.get.mockResolvedValue(mockCarro);
+      carrosRepository.findOne.mockResolvedValue(null);
+      await expect(service.findOne(1)).rejects.toThrow(NotFoundException);
     });
 
     // Falha de gravacao no Redis: nao impede o retorno dos dados do MySQL.
@@ -236,6 +344,25 @@ describe('CarroService', () => {
   });
 
   describe('remove', () => {
+    it('consulta o estado atual diretamente no MySQL sem consultar o cache', async () => {
+      await service.remove(1);
+
+      expect(carrosRepository.findOne).toHaveBeenCalledWith({ where: { id: 1 } });
+      expect(redisService.get).not.toHaveBeenCalled();
+    });
+
+    it('usa o status do MySQL mesmo quando o Redis contém outro status', async () => {
+      carrosRepository.findOne.mockResolvedValue({
+        ...mockCarro,
+        status: StatusVeiculo.ALUGADO,
+      });
+      redisService.get.mockResolvedValue(mockCarro);
+
+      await expect(service.remove(1)).rejects.toThrow(ConflictException);
+      expect(carrosRepository.delete).not.toHaveBeenCalled();
+      expect(redisService.del).not.toHaveBeenCalled();
+    });
+
     // Só depois do DELETE confirmado removemos ambas as representações em cache.
     it('deve remover o veiculo e invalidar o cache de revisao e do carro', async () => {
       await service.remove(1);

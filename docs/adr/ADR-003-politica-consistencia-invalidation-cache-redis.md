@@ -2,7 +2,7 @@
 
 ## Status
 
-Aceito e implementado. A infraestrutura, os sete caches diretos e as invalidações cruzadas descritas abaixo estão implementados por invalidação direcionada pós-escrita. Os testes unitários foram ampliados. Existe uma suíte HTTP MySQL/Memurai em construção, mas a validação integrada completa continua pendente.
+Aceito e implementado. A infraestrutura, os sete caches diretos e as invalidações cruzadas descritas abaixo estão implementados por invalidação direcionada pós-escrita. Operações críticas de escrita consultam o estado atual no MySQL em vez de tomar decisões com dados cacheados. A sincronização automática do schema é opt-in (`DATABASE_SYNCHRONIZE=true`). Conteúdo Redis inválido é tratado como MISS, com remoção best-effort. Os resultados da suíte HTTP MySQL/Memurai devem ser registrados somente após execução em infraestrutura dedicada.
 
 ## 1. Contexto e problema
 
@@ -30,6 +30,8 @@ Adotar **invalidação de chaves dependentes com reconstrução sob demanda (laz
 4. O próximo GET do recurso afetado encontra MISS, consulta o MySQL, carrega as relações atuais, serializa a resposta e grava-a com o TTL original.
 5. HIT passa a ocorrer nas leituras subsequentes até nova invalidação ou expiração.
 6. Escritas que não alteram nenhum campo serializado em uma chave não devem removê-la.
+
+Para carros, `foto` é exceção ao conteúdo cacheado: a coluna não é armazenada na chave do carro nem no carro aninhado da chave de reserva. Respostas de HIT consultam `foto` no MySQL; falha dessa consulta impede a resposta, sem reutilizar uma foto potencialmente antiga. No MISS, a consulta completa já fornece a foto, mas o snapshot gravado no cache a remove.
 
 O comportamento descrito é implementado pelos Services e por `CacheInvalidationService`, registrado pelo `CacheInvalidationModule` global, separado do módulo que apenas encapsula o cliente Redis. As queries dependentes usam FKs MySQL; os `DEL` não gravam nem atualizam objetos de cache.
 
@@ -60,7 +62,8 @@ A matriz considera somente dados carregados e serializados nos endpoints, não a
 | Endereço: criar para cliente existente | A chave `endereco:{newId}` não tem entrada anterior | `cliente:{clientId}` e `usuario:{userId}` — **implementadas** | As respostas cacheadas de cliente/usuário podem representar ausência de endereço. Os agregados associados são invalidados após salvar. Criação transacional de cliente totalmente novo não requer invalidação de chaves de IDs novos. |
 | Endereço: atualizar campos | `endereco:{addressId}` — **implementado** | `cliente:{clientId}` e `usuario:{userId}` — **implementadas** | Ambos os agregados serializam o endereço. `client_id` é imutável no DTO atual; se vier a mudar, invalidar agregados do vínculo antigo e do novo. |
 | Endereço: excluir | A exclusão é rejeitada por `EnderecoService.remove` — **não aplicável atualmente** | Se a regra de negócio mudar: chave própria e agregados cliente/usuário — **obrigatórias** | Não há exclusão bem-sucedida para invalidar hoje. |
-| Carro: atualizar qualquer campo exposto por `Carro.toJSON()` | `carro:{carId}` — **implementado** | Reservas que apontam para esse carro — **obrigatórias, implementadas** | A reserva serializa `car`, que inclui placa, modelo, marca, categoria, ano, status, diária e quilometragem. Alteração de qualquer um desses campos muda o JSON da reserva. |
+| Carro: atualizar qualquer dado geral serializado por `Carro.toJSON()` | `carro:{carId}` — **implementado** | Reservas que apontam para esse carro — **obrigatórias, implementadas** | A reserva serializa `car`, que inclui placa, modelo, marca, categoria, ano, status, diária e quilometragem. `foto` é retornada pela API, mas obtida diretamente do MySQL e omitida dos snapshots Redis. |
+| Carro: atualizar ou remover foto | `carro:{carId}` e reservas associadas — **invalidadas após escrita** | `foto` é lida diretamente no MySQL em toda resposta relevante | As invalidações preservam a política para os demais campos; leitura direta garante atualidade sem depender da execução bem-sucedida de `DEL`. |
 | Carro: alterar placa | `carro:{carId}` — **implementado** | `revisao:carro:{carId}` — **implementado** | O status de revisão inclui placa. `UpdateCarroDto` não permite alterar quilometragem; se isso mudar, o status de revisão também deve ser invalidado. Outros campos atuais de carro não integram a resposta de status de revisão. |
 | Carro: excluir | `carro:{carId}` e `revisao:carro:{carId}` — **implementado** | Reservas — **desnecessário no fluxo permitido** | A exclusão é bloqueada se existir reserva e a FK restringe exclusão; não deve haver resposta de reserva válida referenciando o carro excluído. |
 | Revisão: criar | `revisao:carro:{carId}` — **implementado** | `carro:{carId}` e reservas do carro — **obrigatórias, implementadas** | `RevisaoService.create` atualiza `Carro.quilometragem`, serializada tanto no carro quanto no campo `car` da reserva. |
@@ -80,7 +83,7 @@ A matriz considera somente dados carregados e serializados nos endpoints, não a
 - `UsuarioService.findOne`: `client.address`; `Usuario.toJSON()` remove explicitamente senha/hash, e o cliente serializa endereço.
 - `ClienteService.findOne`: `user` e `address`; serializa atributos de cliente e usuário público/endereço.
 - `Endereco.toJSON()`: somente campos do endereço; omite o cliente.
-- `Carro.toJSON()`: campos públicos do veículo, incluindo status, diária e quilometragem; omite a coleção inversa de reservas.
+- `Carro.toJSON()`: campos públicos do veículo, incluindo `foto`, status, diária e quilometragem; omite a coleção inversa de reservas. A foto só é incluída nas respostas após leitura MySQL, nunca nos objetos Redis.
 - `ReservaService.findOne`: `client` e `car`; `Reserva.toJSON()` inclui as duas relações.
 - `RevisaoService.verificarRevisaoPeriodica`: objeto plano com placa, quilometragem e valores derivados da revisão mais recente.
 - `VistoriaService.findOne`: `locacao.reservation.client`; `Vistoria`, `Locacao` e `Reserva` serializam os relacionamentos carregados. Portanto, a resposta pode expor campos de locação, reserva e cliente.
@@ -99,6 +102,7 @@ Não usar `KEYS` ou varredura global como estratégia normal de invalidação. R
 
 - Executar `DEL` somente após a escrita MySQL e o commit da transação. Falha MySQL/rollback não deve apagar chaves.
 - Falha Redis em invalidação não reverte o MySQL; registrar erro sem credenciais/dados sensíveis e concluir a operação de negócio.
+- Falha Redis de leitura em carro/reserva recorre ao MySQL. Falha na consulta MySQL necessária para confirmar `foto` em HIT falha a resposta, sem devolver foto antiga. `foto: null` representa carro existente sem imagem; ausência da linha no GET individual continua sendo 404.
 - Como não há transação distribuída ou Outbox, uma falha Redis pode deixar valor antigo até expirar pelo TTL correspondente (60, 120, 300 ou 600 segundos). TTL é proteção adicional, não consistência forte.
 - Invalidação best-effort não garante remoção enquanto o servidor Redis estiver indisponível.
 - Requisições de escrita não devem usar valores cacheados para decisões transacionais/críticas; verificar estado atual no MySQL.
@@ -110,6 +114,7 @@ Não usar `KEYS` ou varredura global como estratégia normal de invalidação. R
 
 - `RedisModule` global, ioredis, `RedisService` e conexão usada pela aplicação.
 - HIT/MISS e os TTLs dos sete endpoints listados na tabela da seção 4.
+- `CarroService` e `ReservaService` não gravam `foto` nos snapshots Redis; respostas em HIT enriquecem o carro com a foto consultada no MySQL. Chaves legadas não são fonte do valor da foto.
 - Invalidações diretas: usuário em update/desativação; cliente em update/desativação; endereço em update; revisão em create/update/delete; carro em update/delete e revisão em mudança de placa/delete; reserva em update/cancel; vistoria em update.
 - Captura best-effort de falhas Redis nos Services de cache e uso do MySQL em falhas de leitura/gravação.
 

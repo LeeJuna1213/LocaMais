@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementado para infraestrutura, os sete caches e as invalidações cruzadas descritas no ADR-003. A remoção best-effort de chaves é seguida de reconstrução sob demanda nos GETs; falhas de consultas de dependentes ou Redis são registradas e podem manter entradas até o TTL. Uma suíte HTTP MySQL/Memurai foi iniciada, mas ainda requer ambiente dedicado e cobertura dos fluxos de locação/falhas antes de ser considerada validada.
+Implementado para infraestrutura, os sete caches e as invalidações cruzadas descritas no ADR-003. A remoção best-effort de chaves é seguida de reconstrução sob demanda nos GETs; falhas de consultas de dependentes ou Redis são registradas e podem manter entradas até o TTL. `DATABASE_SYNCHRONIZE` é desabilitado por padrão e somente habilitado pelo valor explícito `true`; testes de integração dedicados podem ativá-lo apenas no banco isolado. A suíte HTTP MySQL/Memurai tem cenários implementados; seu estado de aprovação depende da execução registrada, não da existência dos testes.
 
 ## 1. Contexto
 
@@ -11,6 +11,8 @@ A API NestJS LocaMais usa Redis para reduzir consultas repetidas ao MySQL em lei
 ## 2. Infraestrutura Redis
 
 O projeto usa **ioredis** (`ioredis@^5.11.1`) como cliente. No ambiente de desenvolvimento Windows, o servidor Redis-compatível usado é o **Memurai**. A conexão de runtime é configurável por ambiente; o código não restringe o servidor a Memurai.
+
+Valores Redis que não possam ser desserializados como JSON são tratados como cache MISS; a chave é removida em best-effort e a falha dessa remoção não bloqueia o fallback à fonte persistente. Strings JSON válidas continuam suportadas.
 
 | Arquivo | Responsabilidade implementada |
 |---|---|
@@ -25,8 +27,8 @@ O projeto usa **ioredis** (`ioredis@^5.11.1`) como cliente. No ambiente de desen
 
 ### 2.1 Operações expostas por `RedisService`
 
-- `get<T>(key)`: chama Redis `GET`; retorna `null` quando a chave não existe; tenta `JSON.parse` do valor e, se não for JSON válido, devolve o texto bruto.
-- `set(key, value, ttl?)`: strings são gravadas diretamente; outros valores passam por `JSON.stringify` (incluindo `toJSON()` de entidades). TTL positivo é aplicado no comando `SET ... EX ttl`, em segundos. Sem TTL positivo, grava sem expiração automática.
+- `get<T>(key)`: chama Redis `GET`; retorna `null` quando a chave não existe ou contém JSON inválido, removendo a chave inválida em best-effort.
+- `set(key, value, ttl?)`: valores passam por `JSON.stringify` (incluindo `toJSON()` de entidades). TTL positivo é aplicado no comando `SET ... EX ttl`, em segundos. Sem TTL positivo, grava sem expiração automática.
 - `del(key)`: remove a chave com Redis `DEL`.
 - `exists(key)`: chama `EXISTS` e converte o resultado para boolean.
 - `expire(key, ttl)`: chama Redis `EXPIRE`, em segundos.
@@ -68,12 +70,18 @@ As chaves usam o identificador da rota e o prefixo comum `locamais:`. O status d
 - **Usuário:** a consulta carrega `client.address`; `Usuario.toJSON()` expõe o usuário e o cliente serializado com endereço. A entidade de usuário usa uma lista explícita de campos e exclui senha/hash.
 - **Cliente:** carrega `user` e `address`; o JSON inclui atributos cadastrais, usuário público e endereço.
 - **Endereço:** serializa seus próprios campos; não inclui o objeto cliente.
-- **Carro:** serializa placa, modelo, marca, categoria, ano, status, valor da diária e quilometragem; omite a coleção de reservas.
+- **Carro:** a resposta serializa foto, placa, modelo, marca, categoria, ano, status, valor da diária e quilometragem; omite a coleção de reservas. O snapshot Redis é construído sem `foto`.
 - **Reserva:** carrega e serializa `client` e `car`, além de status, período e valor total.
 - **Status de revisão:** resposta plana com identificador do carro, placa, quilometragem, revisão mais recente/próxima e situação.
 - **Vistoria:** a consulta carrega `locacao.reservation.client`. A resposta pode conter campos serializados da locação, da reserva e do cliente; esses dados não devem ser tratados como imutáveis em relação às operações desses módulos.
 
 Listagens completas e consultas de disponibilidade não usam esses caches. Autenticação/login e endpoints de pagamento/locação também não foram definidos como caches por este ADR.
+
+### 4.2 Cache híbrido do carro e foto
+
+O cache `locamais:carro:{id}` (TTL 60s) contém os atributos gerais do carro, mas exclui `foto`. Em HIT, `CarroService.findOne` consulta no MySQL somente `id` e `foto`, combina a foto atual com os atributos gerais cacheados e não usa eventual foto de uma chave anterior. Em MISS ou falha Redis, a consulta completa ao MySQL fornece os dois conjuntos; a resposta mantém `foto`, enquanto o valor gravado no Redis a omite. A leitura adicional de duas colunas no HIT é intencional: mantém a foto atual sem abrir mão do cache nos demais atributos. Chaves antigas com foto são seguras porque o campo é sempre sobrescrito pela projeção atual do banco.
+
+O cache de reserva também armazena o carro aninhado sem `foto`; em HIT, `ReservaService` consulta a foto atual antes de responder. Listagens de reservas e respostas de locação já são carregadas do MySQL com os relacionamentos, sem consultas individuais adicionais.
 
 ## 5. Invalidação: implementado e pendente
 

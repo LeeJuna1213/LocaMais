@@ -53,4 +53,6 @@ export class CreateCarroDto {
   @IsNumber()
   @IsPositive({ message: 'O valor da diaria deve ser positivo' })
   valorDiaria: number;
+
+  // `foto` é administrada exclusivamente pelos endpoints específicos.
 }

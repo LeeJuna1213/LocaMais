@@ -22,7 +22,16 @@ export class RedisService {
   async get<T>(key: string): Promise<T | null> {
     const raw = await this.client.get(key);
     if (raw === null) return null;
-    return this.deserialize<T>(raw);
+    const value = this.deserialize<T>(raw);
+    if (value === null) {
+      this.logger.warn(`Valor JSON inválido no cache da chave ${key}; tratando como MISS.`);
+      try {
+        await this.client.del(key);
+      } catch {
+        this.logger.warn(`Não foi possível remover a chave de cache inválida ${key}.`);
+      }
+    }
+    return value;
   }
 
   /**
@@ -70,7 +79,6 @@ export class RedisService {
   }
 
   private serialize(value: unknown): string {
-    if (typeof value === 'string') return value;
     return JSON.stringify(value);
   }
 
@@ -80,7 +88,7 @@ export class RedisService {
     try {
       return JSON.parse(raw) as T;
     } catch {
-      return raw as unknown as T;
+      return null;
     }
   }
 }

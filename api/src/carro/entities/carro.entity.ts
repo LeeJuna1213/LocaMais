@@ -71,6 +71,10 @@ export class Carro {
   @Column({ type: 'int', nullable: false, default: 0 })
   quilometragem: number;
 
+  /** Caminho público relativo da foto armazenada localmente, quando houver. */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  foto: string | null;
+
   // Um carro pode aparecer em várias reservas ao longo do tempo. A chave
   // estrangeira fica em `reservations.car_id` (lado proprietário); esta
   // coleção é apenas de navegação e não é carregada automaticamente.
@@ -105,6 +109,7 @@ export class Carro {
       status,
       valorDiaria,
       quilometragem,
+      foto,
       created_at,
       updated_at,
     } = this;
@@ -119,6 +124,7 @@ export class Carro {
       status,
       valorDiaria,
       quilometragem,
+      foto,
       created_at,
       updated_at,
     };

@@ -201,6 +201,10 @@ export class ReservaService {
       // Verifica autorizacao sobre os dados do cache (fora do try/catch do
       // Redis, para nao capturar ForbiddenException).
       this.assertCanRead(actor, cached);
+      if (cached.car) {
+        const carroAtual = await this.carroService.enriquecerFoto(cached.car);
+        return { ...cached, car: carroAtual } as Reserva;
+      }
       return cached;
     }
 
@@ -211,7 +215,12 @@ export class ReservaService {
 
     // Só armazena depois da autorização. A falha de gravação não afeta a API.
     try {
-      await this.redis.set(cacheKey, reservation, 120);
+      // Compatibilidade com chaves anteriores: nenhum carro cacheado mantém `foto`.
+      const dadosCache = JSON.parse(JSON.stringify(reservation)) as Reserva;
+      if (dadosCache.car) {
+        delete (dadosCache.car as { foto?: string | null }).foto;
+      }
+      await this.redis.set(cacheKey, dadosCache, 120);
     } catch (error) {
       this.logger.error(
         `Falha ao gravar cache da reserva ${id}: ${

@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import request from 'supertest';
 
 import {
   createTestingApp,
@@ -285,6 +286,29 @@ describe('Fluxo principal (e2e)', () => {
     expect(created.body.status).toBe('disponivel');
 
     const carId = created.body.id;
+
+    const imagem = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+    const upload = await request(app.getHttpServer())
+      .post(`/api/carros/${carId}/foto`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .attach('foto', imagem, { filename: 'foto.jpg', contentType: 'image/jpeg' });
+    expect(upload.status).toBe(201);
+    expect(upload.body.foto).toMatch(/^\/uploads\/carros\/[\w-]+\.jpg$/);
+
+    const publicImage = await request(app.getHttpServer()).get(upload.body.foto);
+    expect(publicImage.status).toBe(200);
+
+    const forbiddenUpload = await request(app.getHttpServer())
+      .post(`/api/carros/${carId}/foto`)
+      .set('Authorization', `Bearer ${clienteToken}`)
+      .attach('foto', imagem, { filename: 'foto.jpg', contentType: 'image/jpeg' });
+    expect(forbiddenUpload.status).toBe(403);
+
+    const removedPhoto = await request(app.getHttpServer())
+      .delete(`/api/carros/${carId}/foto`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(removedPhoto.status).toBe(200);
+    expect(removedPhoto.body.foto).toBeNull();
 
     const list = await get<CarroBody[]>(app, '/carros', adminToken);
     expect(list.status).toBe(200);

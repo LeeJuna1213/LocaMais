@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  UploadedFile,
   Get,
   HttpCode,
   HttpStatus,
@@ -14,6 +15,8 @@ import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiConflictResponse,
+  ApiConsumes,
+  ApiBody,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNoContentResponse,
@@ -31,6 +34,10 @@ import { UpdateCarroDto } from './dto/update-carro.dto.js';
 
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { UseInterceptors, BadRequestException } from '@nestjs/common';
+import { memoryStorage } from 'multer';
+import { validarTipoFoto } from './carro-foto.storage.js';
 
 /**
  * Rotas de veículos.
@@ -115,5 +122,34 @@ export class CarroController {
   })
   async remove(@Param('id', ParseIntPipe) id: number): Promise<void> {
     await this.carroService.remove(id);
+  }
+
+  @Post(':id/foto')
+  @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
+  @UseInterceptors(
+    FileInterceptor('foto', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+      fileFilter: validarTipoFoto,
+    }),
+  )
+  @ApiOperation({ summary: 'Envia ou substitui a foto de um veículo' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { foto: { type: 'string', format: 'binary' } }, required: ['foto'] } })
+  @ApiOkResponse({ description: 'Veículo atualizado com a foto.' })
+  enviarFoto(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() arquivo?: Express.Multer.File,
+  ) {
+    if (!arquivo) throw new BadRequestException('O arquivo foto é obrigatório.');
+    return this.carroService.enviarFoto(id, arquivo);
+  }
+
+  @Delete(':id/foto')
+  @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
+  @ApiOperation({ summary: 'Remove a foto de um veículo' })
+  @ApiOkResponse({ description: 'Veículo retornado sem foto.' })
+  removerFoto(@Param('id', ParseIntPipe) id: number) {
+    return this.carroService.removerFoto(id);
   }
 }

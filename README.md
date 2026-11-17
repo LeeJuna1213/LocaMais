@@ -296,6 +296,10 @@ http://localhost:3000/docs
 
 Use o botão **Authorize** e informe o access token retornado por `POST /api/auth/login` no formato `Bearer <token>`.
 
+### Fotos dos veículos
+
+`POST /api/carros/:id/foto` recebe o campo multipart `foto` (JPG/JPEG, PNG ou WebP, até 5 MB) para usuários admin/funcionário. `DELETE /api/carros/:id/foto` remove a associação e o arquivo. As imagens são salvas em `api/uploads/carros/` (criada automaticamente) e servidas publicamente em `/uploads/carros/...`; aplique a migration `AddFotoToCarros1763400000000` antes de usar a funcionalidade. Não versione imagens enviadas.
+
 ---
 
 ## 13. Principais endpoints

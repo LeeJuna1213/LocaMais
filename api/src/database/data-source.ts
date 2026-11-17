@@ -25,14 +25,14 @@ export const AppDataSource = new DataSource(
         username: process.env.DATABASE_USERNAME,
         password: process.env.DATABASE_PASSWORD,
         database: process.env.DATABASE_NAME,
-        synchronize: process.env.DATABASE_SYNCHRONIZE !== 'false',
+        synchronize: process.env.DATABASE_SYNCHRONIZE === 'true',
         logging: process.env.DATABASE_LOGGING === 'true',
         migrations: [__dirname + '/migrations/*.{ts,js}'],
       }
     : {
         type: 'better-sqlite3',
         database: process.env.DATABASE_FILE ?? './data/locadora.sqlite',
-        synchronize: process.env.DATABASE_SYNCHRONIZE !== 'false',
+        synchronize: process.env.DATABASE_SYNCHRONIZE === 'true',
         logging: process.env.DATABASE_LOGGING === 'true',
         migrations: [__dirname + '/migrations/*.{ts,js}'],
       },

@@ -14,6 +14,7 @@ import { UpdateCarroDto } from './dto/update-carro.dto.js';
 import { Reserva } from '../reserva/entities/reserva.entity.js';
 import { RedisService } from '../redis/redis.service.js';
 import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
+import { CarroFotoStorage } from './carro-foto.storage.js';
 
 /**
  * Regras de negócio do veículo.
@@ -34,6 +35,7 @@ export class CarroService {
     private readonly reservasRepository: Repository<Reserva>,
     private readonly redis: RedisService,
     private readonly cacheInvalidation: CacheInvalidationService,
+    private readonly fotoStorage: CarroFotoStorage,
   ) {}
 
   async create(dto: CreateCarroDto): Promise<Carro> {
@@ -69,8 +71,7 @@ export class CarroService {
   async findOne(id: number): Promise<Carro> {
     const cacheKey = `locamais:carro:${id}`;
 
-    // Redis é uma camada opcional: HIT evita a consulta ao MySQL; em MISS ou
-    // falha do Redis, o banco continua sendo a fonte oficial dos dados.
+    // Redis acelera os dados gerais. A foto é sempre confirmada no MySQL em HIT.
     let cached: Carro | null = null;
     try {
       cached = await this.redis.get<Carro>(cacheKey);
@@ -83,7 +84,12 @@ export class CarroService {
     }
 
     if (cached) {
-      return cached;
+      const fotoCarro = await this.buscarFoto(id);
+      if (!fotoCarro) {
+        throw new NotFoundException(`veiculo com ID ${id} nao encontrado`);
+      }
+      // Nunca confiar em `foto` presente em uma chave antiga do Redis.
+      return { ...cached, foto: fotoCarro.foto } as Carro;
     }
 
     // Cache MISS (ou Redis indisponível): consulta o MySQL.
@@ -97,7 +103,8 @@ export class CarroService {
 
     // Gravação best-effort: a falha não altera a resposta da API.
     try {
-      await this.redis.set(cacheKey, carro, 60);
+      const { foto: _foto, ...dadosGerais } = carro;
+      await this.redis.set(cacheKey, dadosGerais, 60);
     } catch (error) {
       this.logger.error(
         `Falha ao gravar cache do carro ${id}: ${
@@ -107,6 +114,25 @@ export class CarroService {
     }
 
     return carro;
+  }
+
+  /** Consulta somente ID e foto; usada para completar dados gerais cacheados. */
+  private buscarFoto(
+    id: number,
+  ): Promise<Pick<Carro, 'id' | 'foto'> | null> {
+    return this.carrosRepository.findOne({
+      where: { id },
+      select: { id: true, foto: true },
+    });
+  }
+
+  /** Enriquece um carro aninhado com o caminho atual consultado no MySQL. */
+  async enriquecerFoto<T extends { id: number }>(carro: T): Promise<T & { foto: string | null }> {
+    const atual = await this.buscarFoto(carro.id);
+    if (!atual) {
+      throw new NotFoundException(`veiculo com ID ${carro.id} nao encontrado`);
+    }
+    return { ...carro, foto: atual.foto };
   }
 
   async update(id: number, dto: UpdateCarroDto): Promise<Carro> {
@@ -159,7 +185,11 @@ export class CarroService {
   }
 
   async remove(id: number): Promise<void> {
-    const carro = await this.findOne(id);
+    // Decisões de escrita usam sempre o estado atual do MySQL, nunca o cache.
+    const carro = await this.carrosRepository.findOne({ where: { id } });
+    if (!carro) {
+      throw new NotFoundException(`carro ${id} nao encontrado`);
+    }
 
     // Regra de negócio: um veículo alugado ou em manutenção não pode
     // desaparecer do sistema, pois contratos futuros dependem dele.
@@ -205,6 +235,42 @@ export class CarroService {
     // Invalida o cache do carro removido.
     await this.invalidarCacheCarro(id);
     await this.cacheInvalidation.invalidateCarDependents(id);
+  }
+
+  async enviarFoto(id: number, arquivo: Express.Multer.File): Promise<Carro> {
+    this.fotoStorage.validar(arquivo);
+    const atual = await this.carrosRepository.findOne({ where: { id } });
+    if (!atual) throw new NotFoundException(`veiculo com ID ${id} nao encontrado`);
+    const novoCaminho = await this.fotoStorage.salvar(arquivo);
+    try {
+      await this.carrosRepository.update({ id }, { foto: novoCaminho });
+    } catch (error) {
+      await this.fotoStorage.remover(novoCaminho).catch(() => undefined);
+      throw error;
+    }
+
+    await this.invalidarCacheCarro(id);
+    await this.cacheInvalidation.invalidateCarDependents(id);
+    if (atual.foto) {
+      await this.fotoStorage.remover(atual.foto).catch(() => undefined);
+    }
+    const atualizado = await this.carrosRepository.findOne({ where: { id } });
+    if (!atualizado) throw new NotFoundException(`veiculo com ID ${id} nao encontrado`);
+    return atualizado;
+  }
+
+  async removerFoto(id: number): Promise<Carro> {
+    const carro = await this.carrosRepository.findOne({ where: { id } });
+    if (!carro) throw new NotFoundException(`veiculo com ID ${id} nao encontrado`);
+
+    await this.carrosRepository.update({ id }, { foto: null });
+    await this.invalidarCacheCarro(id);
+    await this.cacheInvalidation.invalidateCarDependents(id);
+    await this.fotoStorage.remover(carro.foto).catch(() => undefined);
+
+    const atualizado = await this.carrosRepository.findOne({ where: { id } });
+    if (!atualizado) throw new NotFoundException(`veiculo com ID ${id} nao encontrado`);
+    return atualizado;
   }
 
   /** Identifica violação de FK sem depender de um único driver. */

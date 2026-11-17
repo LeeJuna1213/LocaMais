@@ -222,7 +222,38 @@ describe('integração HTTP dos caches Redis (MySQL + Memurai reais)', () => {
       const raw = await redis.get(key);
       expect(raw).not.toBeNull();
       const stored = JSON.parse(raw!) as T;
-      expect(stored).toMatchObject(miss.body);
+      expect(() => JSON.parse(raw!)).not.toThrow();
+      const isCarCache = key.startsWith('locamais:carro:');
+      const isReservationCache = key.startsWith('locamais:reserva:');
+      const expectedSnapshot = structuredClone(miss.body) as JsonObject;
+      if (isCarCache) {
+        expect(Object.hasOwn(miss.body, 'foto')).toBe(true);
+        expect(miss.body.foto).toBeNull();
+        expect(Object.hasOwn(stored, 'foto')).toBe(false);
+        delete expectedSnapshot.foto;
+        expect(stored).toMatchObject(expectedSnapshot);
+        expect(stored).not.toHaveProperty('foto');
+        expect(stored).toMatchObject({
+          id: miss.body.id,
+          placa: miss.body.placa,
+          modelo: miss.body.modelo,
+          marca: miss.body.marca,
+          categoria: miss.body.categoria,
+          ano: miss.body.ano,
+          status: miss.body.status,
+          valorDiaria: miss.body.valorDiaria,
+          quilometragem: miss.body.quilometragem,
+        });
+      } else if (isReservationCache) {
+        expect(Object.hasOwn(miss.body, 'foto')).toBe(false);
+        expect(Object.hasOwn(miss.body.car, 'foto')).toBe(true);
+        expect(miss.body.car.foto).toBeNull();
+        expect(stored.car).not.toHaveProperty('foto');
+        delete expectedSnapshot.car.foto;
+        expect(stored).toMatchObject(expectedSnapshot);
+      } else {
+        expect(stored).toMatchObject(expectedSnapshot);
+      }
       const remaining = await redis.ttl(key);
       expect(remaining).toBeGreaterThan(0);
       expect(remaining).toBeLessThanOrEqual(ttl);
@@ -237,8 +268,16 @@ describe('integração HTTP dos caches Redis (MySQL + Memurai reais)', () => {
       expect(hit.status).toBe(200);
       expect(hit.body).toEqual(miss.body);
       expect(cacheReads.some((read) => read.key === key && read.value !== null), diagnostic('HIT deve retornar valor da chave Redis')).toBe(true);
-      expect(queries.filter((query) => !query.authentication && query.tables.some((table) => readTables.includes(table))), diagnostic('SQL não-autenticação no HIT'))
-        .toHaveLength(0);
+      const hitResourceQueries = queries.filter((query) =>
+        !query.authentication && query.tables.some((table) => readTables.includes(table)),
+      );
+      if (isCarCache || isReservationCache) {
+        expect(hitResourceQueries.length, diagnostic('HIT deve consultar a foto atual no MySQL')).toBeGreaterThan(0);
+        expect(hitResourceQueries.every(({ sql }) => /\bfoto\b/i.test(sql) && /\bid\b/i.test(sql)),
+          diagnostic('HIT deve limitar a consulta MySQL à foto/id do carro')).toBe(true);
+      } else {
+        expect(hitResourceQueries, diagnostic('SQL não-autenticação no HIT')).toHaveLength(0);
+      }
       expect(missResourceQueries.length, diagnostic('MISS deve consultar tabelas do recurso')).toBeGreaterThan(0);
 
       await redis.del(key);

@@ -123,6 +123,7 @@ async function main() {
       reservasRepository2 as any,
       redis,
       { invalidateCarDependents: async () => undefined } as any,
+      {} as any,
     );
 
     // 5a. Placa alterada -> invalida
