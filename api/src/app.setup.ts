@@ -1,6 +1,9 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
+
+const apiRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
  * Configuração comum a `main.ts` e aos testes e2e.
@@ -11,7 +14,7 @@ import express from 'express';
 export function configureApp(app: INestApplication): INestApplication {
   app.setGlobalPrefix('api');
   // Rota estática fora do prefixo global para URLs /uploads/... no frontend.
-  app.use('/uploads', express.static(resolve(__dirname, '../uploads')));
+  app.use('/uploads', express.static(resolve(apiRoot, 'uploads')));
 
   /**
    * `whitelist` remove propriedades sem decorator de validação;

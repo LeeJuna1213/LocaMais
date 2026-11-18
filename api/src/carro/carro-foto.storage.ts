@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, unlink } from 'node:fs/promises';
-import { extname, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { dirname, extname, resolve, sep } from 'node:path';
 
 const EXTENSOES_PERMITIDAS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 const MIME_POR_EXTENSAO: Record<string, string[]> = {
@@ -15,7 +16,9 @@ const TAMANHO_MAXIMO = 5 * 1024 * 1024;
 @Injectable()
 export class CarroFotoStorage {
   private readonly logger = new Logger(CarroFotoStorage.name);
-  private readonly uploadsDir = resolve(__dirname, '../../uploads');
+  private readonly moduleDir = dirname(fileURLToPath(import.meta.url));
+  private readonly apiRoot = resolve(this.moduleDir, '..', '..');
+  private readonly uploadsDir = resolve(this.apiRoot, 'uploads');
   private readonly diretorio = resolve(this.uploadsDir, 'carros');
 
   validar(arquivo: Express.Multer.File): string {
