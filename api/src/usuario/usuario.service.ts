@@ -160,6 +160,11 @@ export class UsuarioService {
       .getOne();
   }
 
+  /** Busca uma conta sem solicitar o hash de senha. */
+  findByEmail(email: string): Promise<Usuario | null> {
+    return this.usuariosRepository.findOne({ where: { email: normalizeEmail(email) } });
+  }
+
   /** Busca uma conta existente ou lança HTTP 404. */
   async findOneOrFail(id: number): Promise<Usuario> {
     const user = await this.findOne(id);
@@ -258,17 +263,7 @@ export class UsuarioService {
 
     await this.usuariosRepository.update({ id }, changes);
 
-    // Invalida o cache do usuario atualizado somente apos a gravacao no MySQL
-    try {
-      await this.redis.del(`locamais:usuario:${id}`);
-    } catch (error) {
-      this.logger.error(
-        `Falha ao invalidar cache do usuario ${id}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-    await this.cacheInvalidation.invalidateUserDependents(id);
+    await this.passwordChanged(id);
 
     return this.findOneOrFail(id);
   }
@@ -307,8 +302,11 @@ export class UsuarioService {
    */
   async deactivateAccount(userId: number): Promise<void> {
     await this.usuariosRepository.update({ id: userId }, { active: false });
+    await this.passwordChanged(userId);
+  }
 
-    // Invalida o cache do usuario desativado somente apos a gravacao no MySQL
+  /** Invalida caches após qualquer alteração de credenciais do usuário. */
+  async passwordChanged(userId: number): Promise<void> {
     try {
       await this.redis.del(`locamais:usuario:${userId}`);
     } catch (error) {

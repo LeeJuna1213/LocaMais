@@ -94,6 +94,36 @@ export class AuthService {
     finally { this._loading.set(false); }
   }
 
+  async requestPasswordRecovery(email: string): Promise<void> {
+    this._loading.set(true);
+    try {
+      await firstValueFrom(this.http.post<{ message: string }>(
+        `${this.apiUrl}/autenticacao/recuperar-senha`,
+        { email: email.trim().toLowerCase() },
+        { context: new HttpContext().set(SKIP_AUTH, true) },
+      ));
+    } catch (error) {
+      throw new Error(this.errors.message(error, 'Não foi possível solicitar a recuperação de senha'));
+    } finally {
+      this._loading.set(false);
+    }
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    this._loading.set(true);
+    try {
+      await firstValueFrom(this.http.post<{ message: string }>(
+        `${this.apiUrl}/autenticacao/redefinir-senha`,
+        { token, novaSenha: newPassword },
+        { context: new HttpContext().set(SKIP_AUTH, true) },
+      ));
+    } catch (error) {
+      throw new Error(this.errors.message(error, 'Não foi possível redefinir a senha'));
+    } finally {
+      this._loading.set(false);
+    }
+  }
+
   async updateProfile(partial: Partial<UserProfile>): Promise<void> {
     // Preserva a edição visual local até o módulo de perfil ser integrado.
     this._profileOverride.update((current) => ({ ...current, ...partial }));

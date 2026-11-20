@@ -122,4 +122,32 @@ describe('AuthService', () => {
     await expect(registration).rejects.toThrow('Este e-mail já está cadastrado.');
     expect(auth.isLoggedIn()).toBe(false);
   });
+
+  it('solicita recuperação usando endpoint público e normaliza resposta sem autenticar', async () => {
+    const requestRecovery = auth.requestPasswordRecovery(' Ana@Example.Test ');
+    const request = testing.expectOne(`${environment.apiUrl}/autenticacao/recuperar-senha`);
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ email: 'ana@example.test' });
+    request.flush({ message: 'Se existir uma conta vinculada a esse e-mail, você receberá uma mensagem com as instruções para redefinir sua senha.' });
+    await expect(requestRecovery).resolves.toBeUndefined();
+    expect(auth.isLoggedIn()).toBe(false);
+  });
+
+  it('mantém estado de carregamento durante a solicitação de recuperação', async () => {
+    const recovery = auth.requestPasswordRecovery('ana@example.test');
+    expect(auth.loading()).toBe(true);
+    testing.expectOne(`${environment.apiUrl}/autenticacao/recuperar-senha`).flush({ message: 'accepted' });
+    await recovery;
+    expect(auth.loading()).toBe(false);
+  });
+
+  it('redefine senha pelo token sem iniciar sessão', async () => {
+    const reset = auth.resetPassword('recovery-token', 'NovaSenha1!');
+    const request = testing.expectOne(`${environment.apiUrl}/autenticacao/redefinir-senha`);
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ token: 'recovery-token', novaSenha: 'NovaSenha1!' });
+    request.flush({ message: 'Senha alterada com sucesso.' });
+    await expect(reset).resolves.toBeUndefined();
+    expect(auth.isLoggedIn()).toBe(false);
+  });
 });

@@ -35,7 +35,7 @@ import { SegmentTabsComponent } from '../../shared/components/segment-tabs.compo
         @if (showError(emailControl)) {
           <small class="field-error">{{ emailControl.errors?.['required'] ? 'Informe o e-mail.' : 'Informe um e-mail válido.' }}</small>
         }
-        <input name="document" type="text" [(ngModel)]="document" #documentControl="ngModel" required [appDocumentInput]="type" [placeholder]="type === 'PF' ? 'CPF *' : 'CNPJ *'" inputmode="numeric" autocomplete="off" />
+        <input name="document" type="text" [(ngModel)]="document" #documentControl="ngModel" required [appDocumentInput]="type" [maxlength]="type === 'PF' ? 14 : 18" [placeholder]="type === 'PF' ? 'CPF *' : 'CNPJ *'" inputmode="numeric" autocomplete="off" />
         @if (showError(documentControl)) {
           <small class="field-error">{{ documentControl.errors?.['required'] ? (type === 'PF' ? 'Informe o CPF.' : 'Informe o CNPJ.') : (documentControl.errors?.['documentIncomplete']?.message ?? documentControl.errors?.['documentInvalid']?.message) }}</small>
         }
@@ -101,7 +101,11 @@ export class RegisterPage {
   zipCode = '';
 
   setType(label: string): void {
-    this.type = label === 'Pessoa Jurídica' ? 'PJ' : 'PF';
+    const nextType = label === 'Pessoa Jurídica' ? 'PJ' : 'PF';
+    if (nextType !== this.type) {
+      this.type = nextType;
+      this.document = '';
+    }
   }
 
   submitted = false;

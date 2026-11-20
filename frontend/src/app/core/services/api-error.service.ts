@@ -27,6 +27,9 @@ export class ApiErrorService {
       if (message && /cnpj/.test(message.toLowerCase())) return 'Este CNPJ já está cadastrado.';
       return message ?? 'A operação conflita com o estado atual do cadastro.';
     }
+    if (error.status === 503) {
+      return this.bodyMessage(error.error) ?? 'O serviço está indisponível no momento. Tente novamente.';
+    }
     if (error.status >= 500) {
       return 'O serviço está indisponível no momento. Tente novamente.';
     }

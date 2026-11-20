@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
+import { normalizeDocument, validateDocument } from '../../core/utils/document.validation';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
 import { RegisterPage } from './register.page';
 
@@ -123,6 +124,13 @@ describe('RegisterPage complete registration form', () => {
       await fill('companyName', 'Empresa Exemplo Ltda');
     }
 
+    const expectedDisplay = type === 'PF' ? '529.982.247-25' : '11.222.333/0001-81';
+    expect(input('document').value).toBe(expectedDisplay);
+    expect(page.document).toBe(expectedDisplay);
+    expect(normalizeDocument(page.document)).toBe(normalized);
+    expect(validateDocument(type, page.document)).toBeNull();
+    expect(page.registrationForm?.controls['document'].errors).toBeNull();
+    expect(page.registrationForm?.controls['document'].valid).toBe(true);
     expect(page.registrationForm?.valid).toBe(true);
     expect(button().disabled).toBe(false);
     await submit();
@@ -158,21 +166,21 @@ describe('RegisterPage complete registration form', () => {
 
   it('saneia CPF digitado, atualiza o valor do controle Angular e sinaliza dez dígitos como incompleto', async () => {
     await typeInto('document', '5299822472');
-    expect(input('document').value).toBe('5299822472');
-    expect(page.document).toBe('5299822472');
-    expect(page.registrationForm?.controls['document'].value).toBe('5299822472');
+    expect(input('document').value).toBe('529.982.247-2');
+    expect(page.document).toBe('529.982.247-2');
+    expect(page.registrationForm?.controls['document'].value).toBe('529.982.247-2');
     expect(page.registrationForm?.controls['document'].errors?.['documentIncomplete']).toBeTruthy();
     expect(page.registrationForm?.invalid).toBe(true);
 
     await typeInto('document', '5299822472a');
-    expect(input('document').value).toBe('5299822472');
-    expect(page.document).toBe('5299822472');
+    expect(input('document').value).toBe('529.982.247-2');
+    expect(page.document).toBe('529.982.247-2');
   });
 
   it('remove letras e pontuação de CPF colado e valida os 11 dígitos resultantes', async () => {
     await pasteInto('document', 'CPF: 529.982.247-25 abc');
-    expect(input('document').value).toBe('52998224725');
-    expect(page.document).toBe('52998224725');
+    expect(input('document').value).toBe('529.982.247-25');
+    expect(page.document).toBe('529.982.247-25');
     expect(page.registrationForm?.controls['document'].valid).toBe(true);
   });
 
@@ -183,22 +191,49 @@ describe('RegisterPage complete registration form', () => {
     expect(page.registrationForm?.controls['document'].valid).toBe(true);
   });
 
+  it('limita CPF a 11 dígitos ao digitar ou colar e trata campo apagado como obrigatório', async () => {
+    await typeInto('document', '529982247251234');
+    expect(input('document').value).toBe('529.982.247-25');
+    expect(page.document).toBe('529.982.247-25');
+    expect(page.registrationForm?.controls['document'].valid).toBe(true);
+
+    await pasteInto('document', '529982247251234');
+    expect(input('document').value).toBe('529.982.247-25');
+    expect(page.document).toBe('529.982.247-25');
+
+    await fill('document', '');
+    expect(page.registrationForm?.controls['document'].errors?.['required']).toBeTruthy();
+  });
+
   it('saneia CNPJ digitado e colado, distingue incompleto e inválido', async () => {
     selectType('Pessoa Jurídica');
     await typeInto('document', '1122233300018a');
-    expect(input('document').value).toBe('1122233300018');
-    expect(page.document).toBe('1122233300018');
+    expect(input('document').value).toBe('11.222.333/0001-8');
+    expect(page.document).toBe('11.222.333/0001-8');
     expect(page.registrationForm?.controls['document'].errors?.['documentIncomplete']).toBeTruthy();
 
     await pasteInto('document', 'CNPJ 11.222.333/0001-80 letras');
-    expect(input('document').value).toBe('11222333000180');
-    expect(page.document).toBe('11222333000180');
+    expect(input('document').value).toBe('11.222.333/0001-80');
+    expect(page.document).toBe('11.222.333/0001-80');
     expect(page.registrationForm?.controls['document'].errors?.['documentInvalid']).toBeTruthy();
 
     await pasteInto('document', '11.222.333/0001-81');
-    expect(input('document').value).toBe('11222333000181');
-    expect(page.document).toBe('11222333000181');
+    expect(input('document').value).toBe('11.222.333/0001-81');
+    expect(page.document).toBe('11.222.333/0001-81');
     expect(page.registrationForm?.controls['document'].valid).toBe(true);
+  });
+
+  it('limita CNPJ a 14 dígitos e reconhece campo apagado como obrigatório', async () => {
+    selectType('Pessoa Jurídica');
+    await typeInto('document', '112223330001811234');
+    expect(input('document').value).toBe('11.222.333/0001-81');
+    expect(page.document).toBe('11.222.333/0001-81');
+    expect(page.registrationForm?.controls['document'].valid).toBe(true);
+
+    await pasteInto('document', '112223330001811234');
+    expect(input('document').value).toBe('11.222.333/0001-81');
+    await fill('document', '');
+    expect(page.registrationForm?.controls['document'].errors?.['required']).toBeTruthy();
   });
 
   it('não submete o formulário com documento incompleto', async () => {

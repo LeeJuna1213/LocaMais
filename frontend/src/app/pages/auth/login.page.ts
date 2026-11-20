@@ -88,7 +88,7 @@ export class LoginPage {
   }
 
   async forgotPassword(): Promise<void> {
-    await this.toast.show('A recuperação de senha ainda não está disponível');
+    await this.router.navigateByUrl('/recuperar-senha');
   }
 
   async goToRegister(): Promise<void> {

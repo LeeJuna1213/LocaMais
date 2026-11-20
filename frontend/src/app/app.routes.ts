@@ -12,6 +12,14 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/auth/register.page').then((m) => m.RegisterPage),
   },
   {
+    path: 'recuperar-senha',
+    loadComponent: () => import('./pages/auth/forgot-password.page').then((m) => m.ForgotPasswordPage),
+  },
+  {
+    path: 'redefinir-senha',
+    loadComponent: () => import('./pages/auth/reset-password.page').then((m) => m.ResetPasswordPage),
+  },
+  {
     path: 'client',
     canActivate: [roleGuard('client')],
     children: [

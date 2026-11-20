@@ -32,9 +32,9 @@ export class DocumentInputDirective implements ControlValueAccessor, Validator {
 
   @HostListener('input')
   handleInput(): void {
-    const digits = this.element.value.replace(/\D/g, '');
-    if (this.element.value !== digits) this.renderer.setProperty(this.element, 'value', digits);
-    this.onChange(digits);
+    const formatted = this.format(this.digits(this.element.value));
+    if (this.element.value !== formatted) this.renderer.setProperty(this.element, 'value', formatted);
+    this.onChange(formatted);
   }
 
   @HostListener('blur')
@@ -43,8 +43,7 @@ export class DocumentInputDirective implements ControlValueAccessor, Validator {
   }
 
   writeValue(value: string | null): void {
-    const digits = String(value ?? '').replace(/\D/g, '');
-    this.renderer.setProperty(this.element, 'value', digits);
+    this.renderer.setProperty(this.element, 'value', this.format(this.digits(String(value ?? ''))));
   }
 
   registerOnChange(fn: (value: string) => void): void {
@@ -61,7 +60,7 @@ export class DocumentInputDirective implements ControlValueAccessor, Validator {
 
   validate(control: AbstractControl): ValidationErrors | null {
     if (!control.value) return null;
-    const digits = String(control.value);
+    const digits = this.digits(String(control.value));
     const expectedLength = this.personType === 'PF' ? 11 : 14;
     if (digits.length < expectedLength) {
       return { documentIncomplete: { message: `${this.personType === 'PF' ? 'CPF' : 'CNPJ'} incompleto. Informe ${expectedLength} dígitos.` } };
@@ -69,8 +68,30 @@ export class DocumentInputDirective implements ControlValueAccessor, Validator {
     if (digits.length > expectedLength) {
       return { documentInvalid: { message: `${this.personType === 'PF' ? 'CPF' : 'CNPJ'} deve conter exatamente ${expectedLength} dígitos.` } };
     }
-    const message = validateDocument(this.personType, digits);
+    const message = validateDocument(this.personType, String(control.value));
     return message ? { documentInvalid: { message } } : null;
+  }
+
+  private digits(value: string): string {
+    const maxDigits = this.personType === 'PF' ? 11 : 14;
+    return value.replace(/\D/g, '').slice(0, maxDigits);
+  }
+
+  private format(value: string): string {
+    if (this.personType === 'PF') {
+      const first = value.slice(0, 3);
+      const second = value.slice(3, 6);
+      const third = value.slice(6, 9);
+      const last = value.slice(9, 11);
+      return `${first}${second ? `.${second}` : ''}${third ? `.${third}` : ''}${last ? `-${last}` : ''}`;
+    }
+
+    const first = value.slice(0, 2);
+    const second = value.slice(2, 5);
+    const third = value.slice(5, 8);
+    const fourth = value.slice(8, 12);
+    const last = value.slice(12, 14);
+    return `${first}${second ? `.${second}` : ''}${third ? `.${third}` : ''}${fourth ? `/${fourth}` : ''}${last ? `-${last}` : ''}`;
   }
 
   registerOnValidatorChange(fn: () => void): void {

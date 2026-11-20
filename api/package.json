@@ -22,8 +22,9 @@
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
     "test:e2e:redis": "vitest run --config ./vitest.config.redis.e2e.ts",
-    "migration:run": "npx typeorm migration:run --dataSource src/database/data-source.ts",
-    "migration:revert": "npx typeorm migration:revert --dataSource src/database/data-source.ts",
+    "migration:show": "node --env-file=.env ./node_modules/typeorm/cli.js migration:show --dataSource src/database/data-source.ts",
+    "migration:run": "node --env-file=.env ./node_modules/typeorm/cli.js migration:run --dataSource src/database/data-source.ts",
+    "migration:revert": "node --env-file=.env ./node_modules/typeorm/cli.js migration:revert --dataSource src/database/data-source.ts",
     "migration:create": "npx typeorm migration:create -n"
   },
   "dependencies": {
@@ -43,6 +44,7 @@
     "class-validator": "^0.15.1",
     "ioredis": "^5.11.1",
     "mysql2": "^3.24.6",
+    "nodemailer": "^10.6.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
@@ -59,6 +61,7 @@
     "@types/express": "^5.0.0",
     "@types/multer": "^2.3.0",
     "@types/node": "^24.0.0",
+    "@types/nodemailer": "^8.0.2",
     "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^7.0.0",
     "@vitest/coverage-v8": "^4.1.2",

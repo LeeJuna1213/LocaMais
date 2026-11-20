@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { ClienteModule } from '../cliente/cliente.module.js';
 import { UsuarioModule } from '../usuario/usuario.module.js';
 import { AutenticacaoController } from './autenticacao.controller.js';
@@ -12,11 +13,16 @@ import {
   buildJwtSettings,
 } from './jwt.settings.js';
 import { JwtStrategy } from './strategies/jwt.strategy.js';
+import { PasswordResetToken } from './entities/password-reset-token.entity.js';
+import { PasswordRecoveryMailer } from './password-recovery.mailer.js';
+import { PasswordRecoveryService } from './password-recovery.service.js';
+import { PasswordRecoveryRateLimitGuard } from './password-recovery-rate-limit.guard.js';
 
 @Module({
   imports: [
     UsuarioModule,
     ClienteModule,
+    TypeOrmModule.forFeature([PasswordResetToken]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -32,6 +38,9 @@ import { JwtStrategy } from './strategies/jwt.strategy.js';
   providers: [
     { provide: JWT_SETTINGS, useFactory: buildJwtSettings, inject: [ConfigService] },
     AutenticacaoService,
+    PasswordRecoveryService,
+    PasswordRecoveryMailer,
+    PasswordRecoveryRateLimitGuard,
     JwtStrategy,
   ],
 })

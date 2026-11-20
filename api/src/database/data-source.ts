@@ -1,4 +1,3 @@
-import { DataSource } from 'typeorm';
 
 /**
  * DataSource utilizado exclusivamente para execucao de migrations do TypeORM.
@@ -14,7 +13,22 @@ import { DataSource } from 'typeorm';
  * O diretorio de migrations e apontado para src/database/migrations, onde
  * ficam os arquivos de versao do esquema do banco.
  */
+
+
+import { DataSource } from 'typeorm';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const currentDirectory = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * DataSource utilizado exclusivamente para execucao de migrations do TypeORM.
+ *
+ * Reutiliza as configuracoes de conexao definidas por variaveis de ambiente.
+ */
 const isMySQL = process.env.DATABASE_TYPE === 'mysql';
+
+const migrationPath = join(currentDirectory, 'migrations', '*.{ts,js}');
 
 export const AppDataSource = new DataSource(
   isMySQL
@@ -27,13 +41,13 @@ export const AppDataSource = new DataSource(
         database: process.env.DATABASE_NAME,
         synchronize: process.env.DATABASE_SYNCHRONIZE === 'true',
         logging: process.env.DATABASE_LOGGING === 'true',
-        migrations: [__dirname + '/migrations/*.{ts,js}'],
+        migrations: [migrationPath],
       }
     : {
         type: 'better-sqlite3',
         database: process.env.DATABASE_FILE ?? './data/locadora.sqlite',
         synchronize: process.env.DATABASE_SYNCHRONIZE === 'true',
         logging: process.env.DATABASE_LOGGING === 'true',
-        migrations: [__dirname + '/migrations/*.{ts,js}'],
+        migrations: [migrationPath],
       },
 ) as DataSource;

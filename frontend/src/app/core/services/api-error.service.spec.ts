@@ -10,6 +10,7 @@ describe('ApiErrorService', () => {
     [400, { message: ['email must be valid', 'password too short'] }, 'Informe um e-mail válido. A senha deve ter pelo menos 8 caracteres.'],
     [401, { message: 'email ou senha invalidos' }, 'E-mail ou senha inválidos, ou sessão expirada.'],
     [403, { message: 'forbidden' }, 'Você não tem permissão para realizar esta ação.'],
+    [503, { message: 'O envio de e-mails ainda não está configurado.' }, 'O envio de e-mails ainda não está configurado.'],
     [500, { message: 'internal error' }, 'O serviço está indisponível no momento. Tente novamente.'],
   ])('converte HTTP %i em mensagem segura', (status, body, expected) => {
     expect(errors.message(new HttpErrorResponse({ status, error: body }))).toBe(expected);
