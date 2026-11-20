@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Delete,
   Get,
@@ -9,12 +10,16 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
 
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
   ApiCreatedResponse,
+  ApiConsumes,
   ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
@@ -31,6 +36,9 @@ import { UpdateUsuarioDto } from './dto/update-usuario.dto.js';
 import { UsuarioResponseDto } from './dto/usuario-response.dto.js';
 import { TipoUsuario } from './enums/usuario.enum.js';
 import { UsuarioService } from './usuario.service.js';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { validarTipoFotoUsuario } from './usuario-foto.storage.js';
 
 // ============================================================
 // CONTROLLER DE USUÁRIOS
@@ -86,6 +94,32 @@ export class UsuarioController {
   constructor(
     private readonly usuarioService: UsuarioService,
   ) {}
+
+  @Post('me/foto')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor('foto', {
+    storage: memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+    fileFilter: validarTipoFotoUsuario,
+  }))
+  @ApiOperation({ summary: 'Envia ou substitui a foto do usuário autenticado' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { foto: { type: 'string', format: 'binary' } }, required: ['foto'] } })
+  @ApiOkResponse({ description: 'Foto de perfil atualizada.' })
+  uploadOwnPhoto(
+    @CurrentUser() actor: UsuarioAutenticado,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('O arquivo foto é obrigatório.');
+    return this.usuarioService.uploadOwnPhoto(actor.id, file);
+  }
+
+  @Delete('me/foto')
+  @ApiOperation({ summary: 'Remove a foto do usuário autenticado' })
+  @ApiOkResponse({ description: 'Foto de perfil removida.' })
+  removeOwnPhoto(@CurrentUser() actor: UsuarioAutenticado) {
+    return this.usuarioService.removeOwnPhoto(actor.id);
+  }
 
   // ==========================================================
   // CREATE - CADASTRAR CONTA DE USUÁRIO

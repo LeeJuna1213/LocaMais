@@ -89,4 +89,5 @@ export const defaultProfile = (): UserProfile => ({
   city: 'Belford Roxo',
   notifyReservations: true,
   notifyPromos: false,
+  foto: null,
 });

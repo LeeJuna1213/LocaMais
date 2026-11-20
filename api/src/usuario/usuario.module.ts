@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Usuario } from './entities/usuario.entity.js';
 import { UsuarioController } from './usuario.controller.js';
 import { UsuarioService } from './usuario.service.js';
+import { UsuarioFotoStorage } from './usuario-foto.storage.js';
 
 /**
  * MÓDULO DE USUÁRIOS — CONTAS DE USUÁRIO
@@ -20,7 +21,7 @@ import { UsuarioService } from './usuario.service.js';
 @Module({
   imports: [TypeOrmModule.forFeature([Usuario])],
   controllers: [UsuarioController],
-  providers: [UsuarioService],
+  providers: [UsuarioService, UsuarioFotoStorage],
   exports: [UsuarioService],
 })
 export class UsuarioModule {}

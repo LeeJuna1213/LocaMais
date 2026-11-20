@@ -59,9 +59,11 @@ describe('AuthService', () => {
     testing = TestBed.inject(HttpTestingController);
     const session = TestBed.inject(ApiSessionStore);
     const restored = auth.restoreSession();
-    testing.expectOne(`${environment.apiUrl}/autenticacao/me`).flush(user);
+    const recoveredUser = { ...user, foto: '/uploads/usuarios/persistida.webp' };
+    testing.expectOne(`${environment.apiUrl}/autenticacao/me`).flush(recoveredUser);
     await expect(restored).resolves.toBe(true);
     expect(session.user()?.email).toBe(user.email);
+    expect(auth.profile().foto).toBe('/uploads/usuarios/persistida.webp');
     sessionStorage.removeItem('locamais.access_token');
   });
 
@@ -149,5 +151,30 @@ describe('AuthService', () => {
     request.flush({ message: 'Senha alterada com sucesso.' });
     await expect(reset).resolves.toBeUndefined();
     expect(auth.isLoggedIn()).toBe(false);
+  });
+
+  it('envia multipart da foto e atualiza usuário e perfil compartilhados', async () => {
+    TestBed.inject(ApiSessionStore).setSession('jwt', user);
+    const file = new File(['image'], 'profile.png', { type: 'image/png' });
+    const upload = auth.uploadProfilePhoto(file);
+    const request = testing.expectOne(`${environment.apiUrl}/usuarios/me/foto`);
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toBeInstanceOf(FormData);
+    expect((request.request.body as FormData).get('foto')).toMatchObject({ name: 'profile.png', type: 'image/png' });
+    request.flush({ message: 'Foto de perfil atualizada com sucesso', foto: '/uploads/usuarios/a.webp' });
+    await upload;
+    expect(TestBed.inject(ApiSessionStore).user()?.foto).toBe('/uploads/usuarios/a.webp');
+    expect(auth.profile().foto).toBe('/uploads/usuarios/a.webp');
+  });
+
+  it('remove foto e atualiza o usuário compartilhado para null', async () => {
+    TestBed.inject(ApiSessionStore).setSession('jwt', { ...user, foto: '/uploads/usuarios/a.webp' });
+    const remove = auth.removeProfilePhoto();
+    const request = testing.expectOne(`${environment.apiUrl}/usuarios/me/foto`);
+    expect(request.request.method).toBe('DELETE');
+    request.flush({ message: 'Foto de perfil removida com sucesso', foto: null });
+    await remove;
+    expect(TestBed.inject(ApiSessionStore).user()?.foto).toBeNull();
+    expect(auth.profile().foto).toBeNull();
   });
 });

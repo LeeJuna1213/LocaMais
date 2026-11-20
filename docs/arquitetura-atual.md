@@ -67,6 +67,16 @@ TypeORM Repository -> MySQL
 - `JwtStrategy.validate()` recarrega o usuário do banco a cada request (não confia apenas no token).
 - `POST /autenticacao/login` e `POST /autenticacao/register` são públicas (`@Public()`).
 - `GET /autenticacao/me` retorna dados do usuário autenticado.
+- `POST /usuarios/me/foto` e `DELETE /usuarios/me/foto` exigem JWT e atuam apenas na conta do token.
+
+## Foto de perfil do usuário
+
+- `usuarios.foto` é `VARCHAR(500) NULL` e contém somente um caminho relativo como `/uploads/usuarios/<uuid>.webp`; o binário não é armazenado no MySQL nem no Redis.
+- Os arquivos ficam em `api/uploads/usuarios/`, com nomes UUID e extensões de imagem permitidas. O upload é limitado a 5 MB e valida extensão, MIME type e assinatura do conteúdo.
+- `GET /api/autenticacao/me` retorna `foto`. O cache `locamais:usuario:{id}` pode conter o caminho, nunca o arquivo; após a persistência da alteração/remocão são invalidados o cache do usuário e o cache do cliente relacionado, sem alterar TTLs.
+- As fotos estáticas são servidas por `/uploads/...`, fora do prefixo `/api`. Na aplicação Ionic, a URL completa é resolvida pelo `ImageUrlService` a partir de `environment.apiUrl`.
+- Para navegador local, `http://localhost:3000/api` resolve a `/uploads` na mesma origem. Em produção, `environment.apiUrl` deve apontar para a API pública. Em Capacitor num dispositivo físico, configure um hostname/IP da API alcançável pelo dispositivo (por exemplo, o IP LAN do computador); `localhost` no dispositivo é o próprio dispositivo.
+- A migration `1795100000000-AddFotoPerfilToUsuarios` adiciona a coluna; execute `npm run migration:run` dentro de `api` com o `.env` configurado.
 
 ## Cache (Redis / Memurai)
 

@@ -72,6 +72,7 @@ export interface UserProfile {
   city: string;
   notifyReservations: boolean;
   notifyPromos: boolean;
+  foto: string | null;
 }
 
 export type UserRole = 'client' | 'admin';
@@ -81,6 +82,7 @@ export interface UsuarioApi {
   id: number;
   name: string;
   email: string;
+  foto?: string | null;
   active: boolean;
   type: ApiUserType;
   client: {

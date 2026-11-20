@@ -16,6 +16,11 @@ export interface RegisterInput {
   address: { street: string; number: string; complement?: string; district: string; city: string; state: string; zipCode: string };
 }
 
+export interface ProfilePhotoResponse {
+  message: string;
+  foto: string | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly http = inject(HttpClient);
@@ -124,6 +129,44 @@ export class AuthService {
     }
   }
 
+  async uploadProfilePhoto(file: File): Promise<ProfilePhotoResponse> {
+    this._loading.set(true);
+    const body = new FormData();
+    body.append('foto', file, file.name);
+    try {
+      const result = await firstValueFrom(this.http.post<ProfilePhotoResponse>(
+        `${this.apiUrl}/usuarios/me/foto`, body,
+      ));
+      this.updateSessionPhoto(result.foto);
+      return result;
+    } catch (error) {
+      throw new Error(this.errors.message(error, 'Não foi possível enviar a foto de perfil.'));
+    } finally {
+      this._loading.set(false);
+    }
+  }
+
+  async removeProfilePhoto(): Promise<ProfilePhotoResponse> {
+    this._loading.set(true);
+    try {
+      const result = await firstValueFrom(this.http.delete<ProfilePhotoResponse>(
+        `${this.apiUrl}/usuarios/me/foto`,
+      ));
+      this.updateSessionPhoto(result.foto);
+      return result;
+    } catch (error) {
+      throw new Error(this.errors.message(error, 'Não foi possível remover a foto de perfil.'));
+    } finally {
+      this._loading.set(false);
+    }
+  }
+
+  private updateSessionPhoto(foto: string | null): void {
+    const user = this.session.user();
+    if (user) this.session.setUser({ ...user, foto });
+    this._profileOverride.update((current) => ({ ...current, foto }));
+  }
+
   async updateProfile(partial: Partial<UserProfile>): Promise<void> {
     // Preserva a edição visual local até o módulo de perfil ser integrado.
     this._profileOverride.update((current) => ({ ...current, ...partial }));
@@ -136,6 +179,13 @@ export class AuthService {
     const profile = defaultProfile();
     if (!user) return profile;
     const address = user.client?.address;
-    return { ...profile, name: user.name, email: user.email, street: address ? `${address.logradouro}, ${address.numero}` : '', city: address?.cidade ?? profile.city };
+    return {
+      ...profile,
+      name: user.name,
+      email: user.email,
+      foto: user.foto ?? null,
+      street: address ? `${address.logradouro}, ${address.numero}` : '',
+      city: address?.cidade ?? profile.city,
+    };
   }
 }

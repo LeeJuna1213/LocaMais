@@ -8,6 +8,7 @@ import { CacheInvalidationService } from '../redis/cache-invalidation.service.js
 import { Usuario } from './entities/usuario.entity.js';
 import { TipoUsuario } from './enums/usuario.enum.js';
 import { UsuarioService } from './usuario.service.js';
+import { UsuarioFotoStorage } from './usuario-foto.storage.js';
 
 const mockUser = Object.assign(new Usuario(), {
   id: 1,
@@ -15,6 +16,7 @@ const mockUser = Object.assign(new Usuario(), {
   email: 'test@exemplo.com',
   password: '$2b$10$hash',
   active: true,
+  foto: null,
   type: TipoUsuario.CLIENTE,
   client: null,
   created_at: new Date(),
@@ -48,6 +50,15 @@ const mockRedisService = {
   del: vi.fn(),
 };
 
+const mockFotoStorage = {
+  validar: vi.fn(),
+  salvar: vi.fn().mockResolvedValue('/uploads/usuarios/nova.webp'),
+  remover: vi.fn().mockResolvedValue(undefined),
+};
+const mockCacheInvalidation = {
+  invalidateUserDependents: vi.fn().mockResolvedValue(undefined),
+};
+
 /**
  * Testes do `UsuarioService`.
  *
@@ -64,6 +75,11 @@ describe('UsuarioService', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockUser.foto = null;
+    repoMocks.update.mockResolvedValue({ affected: 1 });
+    mockFotoStorage.salvar.mockResolvedValue('/uploads/usuarios/nova.webp');
+    mockFotoStorage.remover.mockResolvedValue(undefined);
+    mockCacheInvalidation.invalidateUserDependents.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -88,9 +104,11 @@ describe('UsuarioService', () => {
         },
         {
           provide: CacheInvalidationService,
-          useValue: {
-            invalidateUserDependents: vi.fn().mockResolvedValue(undefined),
-          },
+          useValue: mockCacheInvalidation,
+        },
+        {
+          provide: UsuarioFotoStorage,
+          useValue: mockFotoStorage,
         },
       ],
     }).compile();
@@ -262,6 +280,51 @@ describe('UsuarioService', () => {
       await expect(
         service.update(actor, 1, { name: 'Novo Nome' }),
       ).resolves.toBeDefined();
+    });
+  });
+
+  describe('foto de perfil', () => {
+    const file = { originalname: 'new.webp', mimetype: 'image/webp', size: 12, buffer: Buffer.from('RIFF0000WEBP') } as Express.Multer.File;
+
+    it('persiste a nova foto antes de remover a anterior e invalida caches após commit', async () => {
+      mockUser.foto = '/uploads/usuarios/anterior.jpg';
+
+      const result = await service.uploadOwnPhoto(1, file);
+
+      expect(result).toEqual({ message: 'Foto de perfil atualizada com sucesso', foto: '/uploads/usuarios/nova.webp' });
+      expect(repoMocks.update).toHaveBeenCalledWith({ id: 1 }, { foto: '/uploads/usuarios/nova.webp' });
+      expect(mockRedisService.del).toHaveBeenCalledWith('locamais:usuario:1');
+      expect(mockCacheInvalidation.invalidateUserDependents).toHaveBeenCalledWith(1);
+      expect(mockFotoStorage.remover).toHaveBeenCalledWith('/uploads/usuarios/anterior.jpg');
+    });
+
+    it('limpa novo arquivo e preserva a foto anterior quando a persistência falha', async () => {
+      mockUser.foto = '/uploads/usuarios/anterior.jpg';
+      repoMocks.update.mockRejectedValueOnce(new Error('database unavailable'));
+
+      await expect(service.uploadOwnPhoto(1, file)).rejects.toThrow('database unavailable');
+      expect(mockFotoStorage.remover).toHaveBeenCalledWith('/uploads/usuarios/nova.webp');
+      expect(mockFotoStorage.remover).not.toHaveBeenCalledWith('/uploads/usuarios/anterior.jpg');
+      expect(mockRedisService.del).not.toHaveBeenCalled();
+    });
+
+    it('remove caminho no MySQL, invalida caches e exclui o arquivo antigo', async () => {
+      mockUser.foto = '/uploads/usuarios/anterior.jpg';
+
+      await expect(service.removeOwnPhoto(1)).resolves.toEqual({
+        message: 'Foto de perfil removida com sucesso', foto: null,
+      });
+      expect(repoMocks.update).toHaveBeenCalledWith({ id: 1 }, { foto: null });
+      expect(mockRedisService.del).toHaveBeenCalledWith('locamais:usuario:1');
+      expect(mockFotoStorage.remover).toHaveBeenCalledWith('/uploads/usuarios/anterior.jpg');
+    });
+
+    it('não propaga falha de invalidação após persistência confirmada', async () => {
+      mockRedisService.del.mockRejectedValue(new Error('Redis unavailable'));
+      mockCacheInvalidation.invalidateUserDependents.mockRejectedValue(new Error('MySQL lookup unavailable'));
+
+      await expect(service.uploadOwnPhoto(1, file)).resolves.toMatchObject({ foto: '/uploads/usuarios/nova.webp' });
+      expect(repoMocks.update).toHaveBeenCalledWith({ id: 1 }, { foto: '/uploads/usuarios/nova.webp' });
     });
   });
 

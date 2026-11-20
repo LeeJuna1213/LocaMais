@@ -251,6 +251,10 @@ export class Usuario {
   })
   active: boolean;
 
+  /** Caminho público relativo da foto de perfil; o binário fica no filesystem. */
+  @Column({ type: 'varchar', length: 500, nullable: true, default: null })
+  foto: string | null;
+
   // ==========================================================
   // ENUM - TIPO DO USUÁRIO
   // ==========================================================
@@ -448,6 +452,7 @@ export class Usuario {
       name: this.name,
       email: this.email,
       active: this.active,
+      foto: this.foto ?? null,
       type: this.type,
       client: this.client,
       created_at: this.created_at,
@@ -455,4 +460,3 @@ export class Usuario {
     };
   }
 }
-

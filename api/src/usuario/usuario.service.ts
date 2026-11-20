@@ -21,6 +21,7 @@ import { CreateUsuarioDto } from './dto/create-usuario.dto.js';
 import { UpdateUsuarioDto } from './dto/update-usuario.dto.js';
 import { Usuario } from './entities/usuario.entity.js';
 import { TipoUsuario } from './enums/usuario.enum.js';
+import { UsuarioFotoStorage } from './usuario-foto.storage.js';
 
 /**
  * SERVIÇO DE USUÁRIOS — CONTAS E CREDENCIAIS
@@ -49,6 +50,7 @@ export class UsuarioService {
     private readonly redis: RedisService,
     configService: ConfigService,
     private readonly cacheInvalidation: CacheInvalidationService,
+    private readonly fotoStorage: UsuarioFotoStorage,
   ) {
     // O custo do bcrypt pode ser ajustado no ambiente. O fallback mantém o
     // comportamento anterior quando a variável não está configurada.
@@ -307,6 +309,48 @@ export class UsuarioService {
 
   /** Invalida caches após qualquer alteração de credenciais do usuário. */
   async passwordChanged(userId: number): Promise<void> {
+    await this.invalidateUserCaches(userId);
+  }
+
+  async uploadOwnPhoto(userId: number, file: Express.Multer.File): Promise<{ message: string; foto: string }> {
+    const user = await this.findOneOrFail(userId);
+    const newPath = await this.fotoStorage.salvar(file);
+
+    try {
+      const result = await this.usuariosRepository.update({ id: userId }, { foto: newPath });
+      if (result.affected !== 1) throw new NotFoundException(`usuario ${userId} nao encontrado`);
+    } catch (error) {
+      await this.fotoStorage.remover(newPath).catch(() => {
+        this.logger.warn('Não foi possível limpar o novo arquivo de foto após falha no banco.');
+      });
+      throw error;
+    }
+
+    await this.invalidateUserCaches(userId);
+    if (user.foto && user.foto !== newPath) {
+      await this.fotoStorage.remover(user.foto).catch(() => {
+        this.logger.warn('A nova foto foi salva; não foi possível limpar o arquivo de foto anterior.');
+      });
+    }
+
+    return { message: 'Foto de perfil atualizada com sucesso', foto: newPath };
+  }
+
+  async removeOwnPhoto(userId: number): Promise<{ message: string; foto: null }> {
+    const user = await this.findOneOrFail(userId);
+    if (user.foto) {
+      const result = await this.usuariosRepository.update({ id: userId }, { foto: null });
+      if (result.affected !== 1) throw new NotFoundException(`usuario ${userId} nao encontrado`);
+
+      await this.invalidateUserCaches(userId);
+      await this.fotoStorage.remover(user.foto).catch(() => {
+        this.logger.warn('A foto foi removida do perfil; não foi possível limpar o arquivo físico.');
+      });
+    }
+    return { message: 'Foto de perfil removida com sucesso', foto: null };
+  }
+
+  private async invalidateUserCaches(userId: number): Promise<void> {
     try {
       await this.redis.del(`locamais:usuario:${userId}`);
     } catch (error) {
@@ -316,7 +360,15 @@ export class UsuarioService {
         }`,
       );
     }
-    await this.cacheInvalidation.invalidateUserDependents(userId);
+    try {
+      await this.cacheInvalidation.invalidateUserDependents(userId);
+    } catch (error) {
+      this.logger.error(
+        `Falha ao invalidar caches dependentes do usuario ${userId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   /** Gera um hash bcrypt; a senha original não é armazenada. */

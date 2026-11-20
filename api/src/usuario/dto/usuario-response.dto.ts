@@ -20,6 +20,9 @@ export class UsuarioResponseDto {
   @ApiProperty({ example: true })
   active: boolean;
 
+  @ApiProperty({ type: String, nullable: true, example: '/uploads/usuarios/uuid.webp' })
+  foto: string | null;
+
   @ApiProperty({ enum: TipoUsuario, example: TipoUsuario.CLIENTE })
   type: TipoUsuario;
 
