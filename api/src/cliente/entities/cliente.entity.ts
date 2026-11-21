@@ -81,6 +81,18 @@ export class Cliente {
   @Column({ type: 'varchar', length: 200, nullable: true })
   razao_social: string | null;
 
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  telefone: string | null;
+
+  @Column({ type: 'varchar', length: 11, nullable: true })
+  cnh_numero: string | null;
+
+  @Column({ type: 'date', nullable: true })
+  cnh_validade: string | null;
+
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  metodo_pagamento_preferido: string | null;
+
   // Lado inverso do relacionamento Cliente -> Endereco.
   // O lado proprietário (com client_id) está na entidade Endereco.
   @OneToOne('Endereco', 'client')
@@ -113,6 +125,10 @@ export class Cliente {
       cnpj: this.cnpj,
       data_nascimento: this.data_nascimento,
       razao_social: this.razao_social,
+      telefone: this.telefone,
+      cnh_numero: this.cnh_numero,
+      cnh_validade: this.cnh_validade,
+      metodo_pagamento_preferido: this.metodo_pagamento_preferido,
       created_at: this.created_at,
       updated_at: this.updated_at,
       user: this.user ? this.user.toJSON() : null,

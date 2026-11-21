@@ -19,7 +19,7 @@ export class PaymentService {
     });
   }
 
-  async receive(id: number): Promise<void> {
+  async receive(id: string): Promise<void> {
     await this.reservationService.receivePayment(id);
   }
 }

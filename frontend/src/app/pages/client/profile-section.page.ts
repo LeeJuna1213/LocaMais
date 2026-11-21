@@ -9,6 +9,19 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
   selector: 'app-profile-section',
   standalone: true,
   imports: [FormsModule, AppShellComponent],
+  styles: [`
+    .preference-toggle {
+      display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px;
+      padding: 10px 12px; margin: 6px 0; border: 1px solid #eadfd5; border-radius: 12px;
+      background: #fffaf5; color: #2b1a0d; text-align: left; font: inherit; cursor: pointer;
+    }
+    .preference-toggle .indicator {
+      display: grid; place-items: center; width: 20px; height: 20px; flex: none;
+      border: 2px solid #c9a98c; border-radius: 6px; color: #fff;
+    }
+    .preference-toggle[aria-checked="true"] .indicator { border-color: #e86f12; background: #e86f12; }
+    .preference-toggle:focus-visible { outline: 2px solid #e86f12; outline-offset: 2px; }
+  `],
   template: `
     <app-shell
       [title]="section"
@@ -24,9 +37,9 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
             <label>Nome</label>
             <input [(ngModel)]="name" autocomplete="off" />
             <label>E-mail</label>
-            <input [(ngModel)]="email" autocomplete="off" />
+            <input [(ngModel)]="email" autocomplete="email" readonly aria-readonly="true" />
             <label>Telefone</label>
-            <input [(ngModel)]="phone" autocomplete="off" />
+            <input type="tel" [(ngModel)]="phone" autocomplete="tel" />
           }
           @case ('CNH') {
             <label>Número da CNH</label>
@@ -35,18 +48,39 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
             <input type="date" [(ngModel)]="cnhValidity" />
           }
           @case ('Endereço') {
-            <label>Rua e número</label>
-            <input [(ngModel)]="street" autocomplete="off" />
+            <label>Logradouro</label>
+            <input [(ngModel)]="street" autocomplete="address-line1" />
+            <label>Número</label>
+            <input [(ngModel)]="addressNumber" autocomplete="address-line2" />
+            <label>Complemento</label>
+            <input [(ngModel)]="addressComplement" autocomplete="off" />
+            <label>Bairro</label>
+            <input [(ngModel)]="addressDistrict" autocomplete="off" />
             <label>Cidade</label>
-            <input [(ngModel)]="city" autocomplete="off" />
+            <input [(ngModel)]="city" autocomplete="address-level2" />
+            <label>Estado (UF)</label>
+            <input [(ngModel)]="addressState" maxlength="2" autocomplete="address-level1" />
+            <label>CEP</label>
+            <input [(ngModel)]="addressZipCode" inputmode="numeric" maxlength="8" autocomplete="postal-code" />
           }
           @case ('Preferências') {
-            <div class="rd" [class.on]="notifyReservations" (click)="notifyReservations = !notifyReservations">
-              {{ notifyReservations ? '☑' : '☐' }} Notificações de reserva
-            </div>
-            <div class="rd" [class.on]="notifyPromos" (click)="notifyPromos = !notifyPromos">
-              {{ notifyPromos ? '☑' : '☐' }} Promoções por e-mail
-            </div>
+            <button class="preference-toggle" type="button" role="switch" [attr.aria-checked]="notifyReservations" (click)="notifyReservations = !notifyReservations">
+              <span class="indicator" aria-hidden="true">{{ notifyReservations ? '✓' : '' }}</span>Notificações de reserva
+            </button>
+            <button class="preference-toggle" type="button" role="switch" [attr.aria-checked]="notifyPromos" (click)="notifyPromos = !notifyPromos">
+              <span class="indicator" aria-hidden="true">{{ notifyPromos ? '✓' : '' }}</span>Promoções por e-mail
+            </button>
+          }
+          @case ('Pagamentos') {
+            <p class="small muted">Métodos suportados atualmente: PIX, cartão de crédito, cartão de débito e dinheiro. O sistema usa processamento demonstrativo e não possui integração de tokenização para cadastrar cartões.</p>
+            <label for="payment-preference">Forma de pagamento preferencial</label>
+            <select id="payment-preference" [(ngModel)]="paymentPreference">
+              <option value="">Sem preferência</option>
+              <option value="pix">PIX</option>
+              <option value="cartao_credito">Cartão de crédito</option>
+              <option value="cartao_debito">Cartão de débito</option>
+              <option value="dinheiro">Dinheiro</option>
+            </select>
           }
           @case ('Alterar senha') {
             <label>Senha atual</label>
@@ -78,8 +112,14 @@ export class ProfileSectionPage {
   cnhValidity = '';
   street = '';
   city = '';
+  addressNumber = '';
+  addressComplement = '';
+  addressDistrict = '';
+  addressState = '';
+  addressZipCode = '';
   notifyReservations = false;
   notifyPromos = false;
+  paymentPreference = '';
   currentPassword = '';
   newPassword = '';
   newPasswordConfirmation = '';
@@ -93,8 +133,14 @@ export class ProfileSectionPage {
     this.cnhValidity = profile.cnhValidity;
     this.street = profile.street;
     this.city = profile.city;
+    this.addressNumber = profile.addressNumber;
+    this.addressComplement = profile.addressComplement;
+    this.addressDistrict = profile.addressDistrict;
+    this.addressState = profile.addressState;
+    this.addressZipCode = profile.addressZipCode;
     this.notifyReservations = profile.notifyReservations;
     this.notifyPromos = profile.notifyPromos;
+    this.paymentPreference = profile.paymentPreference;
   }
 
   async save(): Promise<void> {
@@ -103,20 +149,35 @@ export class ProfileSectionPage {
         await this.toast.show('As senhas não conferem');
         return;
       }
-    } else if (this.section === 'Dados pessoais') {
-      await this.auth.updateProfile({ name: this.name, email: this.email, phone: this.phone });
-    } else if (this.section === 'CNH') {
-      await this.auth.updateProfile({ cnh: this.cnh, cnhValidity: this.cnhValidity });
-    } else if (this.section === 'Endereço') {
-      await this.auth.updateProfile({ street: this.street, city: this.city });
-    } else if (this.section === 'Preferências') {
-      await this.auth.updateProfile({
-        notifyReservations: this.notifyReservations,
-        notifyPromos: this.notifyPromos,
-      });
+    } else {
+      try {
+        if (this.section === 'Dados pessoais') {
+          await this.auth.updateProfile({ name: this.name, phone: this.phone });
+        } else if (this.section === 'CNH') {
+          await this.auth.updateProfile({ cnh: this.cnh, cnhValidity: this.cnhValidity });
+        } else if (this.section === 'Endereço') {
+          await this.auth.updateProfile({
+            street: this.street,
+            addressNumber: this.addressNumber,
+            addressComplement: this.addressComplement,
+            addressDistrict: this.addressDistrict,
+            city: this.city,
+            addressState: this.addressState,
+            addressZipCode: this.addressZipCode,
+          });
+        } else if (this.section === 'Preferências') {
+          await this.auth.updateProfile({ notifyReservations: this.notifyReservations, notifyPromos: this.notifyPromos });
+        } else if (this.section === 'Pagamentos') {
+          await this.auth.updateProfile({ paymentPreference: this.paymentPreference });
+        }
+      } catch (error) {
+        await this.toast.show(error instanceof Error ? error.message : 'Não foi possível salvar as alterações.');
+        return;
+      }
     }
 
     await this.toast.show('Alterações salvas');
-    await this.router.navigateByUrl('/client/perfil');
+    const returnVehicleId = Number(this.route.snapshot.queryParamMap.get('returnVehicleId'));
+    await this.router.navigateByUrl(returnVehicleId > 0 ? `/booking/reservar/${returnVehicleId}` : '/client/perfil');
   }
 }

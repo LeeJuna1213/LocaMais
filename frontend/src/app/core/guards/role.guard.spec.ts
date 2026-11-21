@@ -3,7 +3,7 @@ import { ActivatedRouteSnapshot, Router, RouterStateSnapshot, provideRouter } fr
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { ApiSessionStore } from '../services/api-session.store';
-import { authGuard, roleGuard } from './role.guard';
+import { authGuard, roleGuard, staffGuard } from './role.guard';
 
 describe('auth guards', () => {
   beforeEach(() => {
@@ -27,6 +27,33 @@ describe('auth guards', () => {
       email: 'staff@example.test',
       active: true,
       type: 'funcionario',
+      client: null,
+    });
+    const guard = TestBed.runInInjectionContext(() => staffGuard(route, state));
+    await expect(guard).resolves.toBe(true);
+  });
+
+  it('bloqueia funcionário em rota apenas para admin (gerenciar funcionários)', async () => {
+    TestBed.inject(ApiSessionStore).setSession('staff-token', {
+      id: 9,
+      name: 'Funcionário',
+      email: 'staff@example.test',
+      active: true,
+      type: 'funcionario',
+      client: null,
+    });
+    const guard = TestBed.runInInjectionContext(() => roleGuard('admin')(route, state));
+    const result = await guard;
+    expect(TestBed.inject(Router).serializeUrl(result as ReturnType<Router['createUrlTree']>)).toContain('/admin/painel');
+  });
+
+  it('permite admin em rota apenas para admin', async () => {
+    TestBed.inject(ApiSessionStore).setSession('admin-token', {
+      id: 1,
+      name: 'Admin',
+      email: 'admin@example.test',
+      active: true,
+      type: 'admin',
       client: null,
     });
     const guard = TestBed.runInInjectionContext(() => roleGuard('admin')(route, state));

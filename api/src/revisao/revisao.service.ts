@@ -43,6 +43,12 @@ export interface RevisaoPeriodicaStatus {
   situacao: StatusRevisao;
 }
 
+export interface RevisaoCustosVeiculos {
+  porVeiculo: { carro_id: number; quantidade: number; total: number }[];
+  totalGeral: number;
+  quantidadeGeral: number;
+}
+
 /**
  * Regras de negócio de revisão de veículos.
  *
@@ -147,6 +153,27 @@ export class RevisaoService {
     });
   }
 
+  /** Totais agregados diretamente no MySQL a partir do identificador único da revisão. */
+  async resumirCustosPorVeiculo(): Promise<RevisaoCustosVeiculos> {
+    const rows = await this.revisoesRepository
+      .createQueryBuilder('revisao')
+      .select('revisao.carro_id', 'carro_id')
+      .addSelect('COUNT(DISTINCT revisao.id)', 'quantidade')
+      .addSelect('COALESCE(SUM(revisao.valor), 0)', 'total')
+      .groupBy('revisao.carro_id')
+      .getRawMany<{ carro_id: number | string; quantidade: number | string; total: number | string }>();
+    const porVeiculo = rows.map((row) => ({
+      carro_id: Number(row.carro_id),
+      quantidade: Number(row.quantidade) || 0,
+      total: Number(row.total) || 0,
+    }));
+    return {
+      porVeiculo,
+      totalGeral: porVeiculo.reduce((total, row) => total + row.total, 0),
+      quantidadeGeral: porVeiculo.reduce((count, row) => count + row.quantidade, 0),
+    };
+  }
+
   /**
    * Consulta uma revisão pelo seu identificador.
    *
@@ -212,6 +239,7 @@ export class RevisaoService {
     // Invalida o status somente quando algum campo permitido foi alterado.
     if (Object.keys(changes).length > 0) {
       await this.invalidateStatusCache(revisao.carro_id);
+      await this.cacheInvalidation.invalidateRevisionDependents(revisao.carro_id);
     }
 
     return this.findOne(id);
@@ -234,6 +262,7 @@ export class RevisaoService {
     // Invalida o status do carro após a exclusão no MySQL: a revisão removida
     // pode ser a última considerada no cálculo periódico.
     await this.invalidateStatusCache(revisao.carro_id);
+    await this.cacheInvalidation.invalidateRevisionDependents(revisao.carro_id);
   }
 
   /**

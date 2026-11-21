@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -15,6 +16,8 @@ import { CreatePagamentoDto } from './dto/create-pagamento.dto.js';
 import { ConfirmacaoPagamentoDto } from './dto/confirmacao-pagamento.dto.js';
 import { UpdatePagamentoDto } from './dto/update-pagamento.dto.js';
 import { GatewayPagamentoService } from './gateway-pagamento.service.js';
+import type { UsuarioAutenticado } from '../common/interfaces/usuario-autenticado.interface.js';
+import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
 
 /**
  * Regras de negócio de pagamento de locações.
@@ -129,6 +132,17 @@ export class PagamentoService {
     });
   }
 
+  async findMine(actor: UsuarioAutenticado): Promise<Pagamento[]> {
+    return this.pagamentosRepository.createQueryBuilder('payment')
+      .leftJoinAndSelect('payment.locacao', 'locacao')
+      .leftJoinAndSelect('locacao.reservation', 'reservation')
+      .leftJoinAndSelect('reservation.client', 'client')
+      .leftJoinAndSelect('reservation.car', 'car')
+      .where('client.user_id = :userId', { userId: actor.id })
+      .orderBy('payment.data', 'DESC')
+      .getMany();
+  }
+
   /**
    * Consulta um pagamento pelo seu identificador.
    *
@@ -139,7 +153,7 @@ export class PagamentoService {
   async findOne(id: string): Promise<Pagamento> {
     const pagamento = await this.pagamentosRepository.findOne({
       where: { id },
-      relations: { locacao: true, gateway: true },
+      relations: { locacao: { reservation: { client: { user: true }, car: true } }, gateway: true },
     });
 
     if (!pagamento) {
@@ -208,7 +222,7 @@ export class PagamentoService {
     }
 
     if (Object.keys(changes).length > 0) {
-      await this.pagamentosRepository.update({ id }, changes);
+      await this.pagamentosRepository.update({ id }, { valor: changes.valor });
     }
 
     return this.findOne(id);
@@ -275,6 +289,9 @@ export class PagamentoService {
       ? StatusPagamento.APROVADO
       : StatusPagamento.RECUSADO;
     pagamento.valor = valorConfirmacao;
+    if (resultado.aprovado && !pagamento.comprovante_snapshot) {
+      pagamento.comprovante_snapshot = this.buildReceiptSnapshot(pagamento, new Date());
+    }
 
     return this.pagamentosRepository.save(pagamento);
   }
@@ -374,6 +391,28 @@ export class PagamentoService {
       );
     }
 
+    if (!pagamento.comprovante_snapshot) {
+      pagamento.comprovante_snapshot = this.buildReceiptSnapshot(pagamento, pagamento.updated_at ?? pagamento.data);
+      await this.pagamentosRepository.save(pagamento);
+    }
+    return pagamento.comprovante_snapshot as {
+      empresa: string; reciboId: string; pagamentoId: string; locacaoId: string;
+      cliente?: string; veiculo?: string; placa?: string; valorPago: number;
+      metodoPagamento: string; dataConfirmacao: Date; status: StatusPagamento; aviso: string;
+    };
+  }
+
+  async gerarComprovanteParaActor(id: string, actor: UsuarioAutenticado) {
+    const pagamento = await this.findOne(id);
+    const isStaff = actor.type === TipoUsuario.ADMIN || actor.type === TipoUsuario.FUNCIONARIO;
+    const ownerUserId = pagamento.locacao?.reservation?.client?.user_id;
+    if (!isStaff && ownerUserId !== actor.id) {
+      throw new NotFoundException(`pagamento com ID ${id} nao encontrado`);
+    }
+    return this.gerarComprovante(id);
+  }
+
+  private buildReceiptSnapshot(pagamento: Pagamento, confirmedAt: Date): Record<string, unknown> {
     const locacao = pagamento.locacao;
     const cliente = locacao.reservation?.client
       ? locacao.reservation.client.user?.name ??
@@ -381,9 +420,7 @@ export class PagamentoService {
           undefined
       : undefined;
 
-    const veiculo = locacao.reservation?.car
-      ? `${locacao.reservation.car.marca} ${locacao.reservation.car.modelo} (${locacao.reservation.car.placa})`
-      : undefined;
+    const car = locacao.reservation?.car;
 
     return {
       empresa: 'LocaMais',
@@ -391,10 +428,11 @@ export class PagamentoService {
       pagamentoId: pagamento.id,
       locacaoId: pagamento.locacao_id,
       cliente,
-      veiculo,
+      veiculo: car ? `${car.marca} ${car.modelo}` : undefined,
+      placa: car?.placa,
       valorPago: Number(pagamento.valor),
       metodoPagamento: pagamento.metodo,
-      dataConfirmacao: pagamento.data,
+      dataConfirmacao: confirmedAt,
       status: pagamento.status,
       aviso:
         'Pagamento simulado para fins demonstrativos. Nao representa uma transacao financeira real.',

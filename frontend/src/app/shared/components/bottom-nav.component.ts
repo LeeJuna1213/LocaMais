@@ -2,7 +2,7 @@
 import { Router } from '@angular/router';
 import { IonIcon } from '@ionic/angular';
 import { addIcons } from 'ionicons';
-import { calendarOutline, carSportOutline, homeOutline, menuOutline, personOutline, timeOutline } from 'ionicons/icons';
+import { calendarOutline, carSportOutline, homeOutline, menuOutline, personOutline, walletOutline } from 'ionicons/icons';
 import { UserRole } from '../../core/models';
 
 interface NavItem {
@@ -16,7 +16,7 @@ interface NavItem {
 const CLIENT_NAV: NavItem[] = [
   { key: 'inicio', label: 'Início', icon: 'home-outline', route: '/client/veiculos' },
   { key: 'reservas', label: 'Reservas', icon: 'calendar-outline', route: '/client/minhas', queryParams: { tab: 'Futuras' } },
-  { key: 'historico', label: 'Histórico', icon: 'time-outline', route: '/client/minhas', queryParams: { tab: 'Histórico' } },
+  { key: 'pagamentos', label: 'Pagamentos', icon: 'wallet-outline', route: '/client/pagamentos' },
   { key: 'perfil', label: 'Perfil', icon: 'person-outline', route: '/client/perfil' },
 ];
 
@@ -49,7 +49,7 @@ export class BottomNavComponent {
   @Input() active = 'inicio';
 
   constructor() {
-    addIcons({ homeOutline, calendarOutline, timeOutline, personOutline, carSportOutline, menuOutline });
+    addIcons({ homeOutline, calendarOutline, walletOutline, personOutline, carSportOutline, menuOutline });
   }
 
   get items(): NavItem[] {

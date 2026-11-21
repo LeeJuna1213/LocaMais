@@ -1,6 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { addDays, daysBetween, todayISO } from '../data';
-import { PaymentMethod, Vehicle } from '../models';
+import { PaymentMethod, Reservation, Vehicle } from '../models';
 import { VehicleService } from './vehicle.service';
 
 @Injectable({ providedIn: 'root' })
@@ -12,14 +12,22 @@ export class BookingService {
   private readonly _end = signal(addDays(todayISO(), 3));
   private readonly _location = signal('Loja Centro - Belford Roxo');
   private readonly _clientName = signal('');
+  private readonly _clientId = signal<number | null>(null);
   private readonly _method = signal<PaymentMethod>('PIX');
+  private readonly _pickupTime = signal('10:00');
+  private readonly _returnTime = signal('10:00');
+  private readonly _createdReservation = signal<Reservation | null>(null);
 
   readonly vehicleId = this._vehicleId.asReadonly();
   readonly start = this._start.asReadonly();
   readonly end = this._end.asReadonly();
   readonly location = this._location.asReadonly();
   readonly clientName = this._clientName.asReadonly();
+  readonly clientId = this._clientId.asReadonly();
   readonly method = this._method.asReadonly();
+  readonly pickupTime = this._pickupTime.asReadonly();
+  readonly returnTime = this._returnTime.asReadonly();
+  readonly createdReservation = this._createdReservation.asReadonly();
 
   readonly vehicle = computed<Vehicle | undefined>(() => {
     const id = this._vehicleId();
@@ -48,7 +56,19 @@ export class BookingService {
     this._location.set(location);
   }
 
+  setTimes(pickup: string, returned: string): void {
+    this._pickupTime.set(pickup);
+    this._returnTime.set(returned);
+  }
+
+  setCreatedReservation(reservation: Reservation): void { this._createdReservation.set(reservation); }
+
   setClientName(name: string): void {
+    this._clientName.set(name);
+  }
+
+  setClient(id: number | null, name: string): void {
+    this._clientId.set(id);
     this._clientName.set(name);
   }
 
@@ -62,6 +82,10 @@ export class BookingService {
     this._end.set(addDays(todayISO(), 3));
     this._location.set('Loja Centro - Belford Roxo');
     this._clientName.set('');
+    this._clientId.set(null);
     this._method.set('PIX');
+    this._pickupTime.set('10:00');
+    this._returnTime.set('10:00');
+    this._createdReservation.set(null);
   }
 }

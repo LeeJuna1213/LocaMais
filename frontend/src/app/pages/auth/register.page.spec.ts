@@ -40,16 +40,25 @@ describe('RegisterPage complete registration form', () => {
     fixture.detectChanges();
   });
 
-  function input(name: string): HTMLInputElement {
-    const element = fixture.nativeElement.querySelector(`input[name="${name}"]`) as HTMLInputElement | null;
+  type FieldElement = HTMLElement & { value: string };
+
+  function input(name: string): FieldElement {
+    const element = fixture.nativeElement.querySelector(`[name="${name}"]`) as FieldElement | null;
     if (!element) throw new Error(`Campo ${name} não encontrado no formulário`);
     return element;
   }
 
   async function fill(name: string, value: string): Promise<void> {
     const element = input(name);
-    element.value = value;
-    element.dispatchEvent(new Event('input', { bubbles: true }));
+    if (element.tagName.toLowerCase() === 'ion-input') {
+      // ion-input é um web component: o valor entra pelo controle do Angular.
+      const control = page.registrationForm?.control.get(name);
+      if (!control) throw new Error(`Controle ${name} não registrado no formulário`);
+      control.setValue(value);
+    } else {
+      element.value = value;
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+    }
     element.dispatchEvent(new Event('blur', { bubbles: true }));
     fixture.detectChanges();
     await fixture.whenStable();
@@ -138,6 +147,15 @@ describe('RegisterPage complete registration form', () => {
     expect(auth.register).toHaveBeenCalledTimes(1);
     expect(auth.register).toHaveBeenCalledWith(expect.objectContaining({ type, [key]: normalized }));
     expect(router.navigateByUrl).toHaveBeenCalledWith('/client/veiculos');
+  });
+
+  it('renders each password as one native input with a non-submitting visibility button', () => {
+    for (const name of ['password', 'passwordConfirmation']) {
+      const field = input(name);
+      expect(field.tagName.toLowerCase()).toBe('input');
+      expect(field.parentElement?.querySelectorAll('input')).toHaveLength(1);
+      expect(field.parentElement?.querySelector('button[type="button"]')).not.toBeNull();
+    }
   });
 
   it('mantém PF inválido para CPF com dígito verificador incorreto e explica o campo', async () => {
@@ -290,5 +308,37 @@ describe('RegisterPage complete registration form', () => {
     await fill('document', '52998224725');
     await fill('birthDate', '1990-05-10');
     expect(page.registrationForm?.valid).toBe(true);
+  });
+
+  it('alterna a visibilidade de cada senha de forma independente, sem mudar valores nem submeter', async () => {
+    await fill('password', 'SenhaTeste1');
+    await fill('passwordConfirmation', 'SenhaTeste1');
+
+    const passwordField = input('password') as HTMLIonInputElement;
+    const confirmationField = input('passwordConfirmation') as HTMLIonInputElement;
+    const toggles = [...fixture.nativeElement.querySelectorAll('.pw-toggle')] as HTMLButtonElement[];
+    expect(toggles).toHaveLength(2);
+    expect(toggles.every((button) => button.getAttribute('type') === 'button')).toBe(true);
+    expect(passwordField.type).toBe('password');
+    expect(confirmationField.type).toBe('password');
+
+    toggles[0].click();
+    fixture.detectChanges();
+    expect(passwordField.type).toBe('text');
+    expect(confirmationField.type).toBe('password');
+    expect(page.password).toBe('SenhaTeste1');
+
+    toggles[1].click();
+    fixture.detectChanges();
+    expect(passwordField.type).toBe('text');
+    expect(confirmationField.type).toBe('text');
+    expect(page.passwordConfirmation).toBe('SenhaTeste1');
+    expect(auth.register).not.toHaveBeenCalled();
+
+    toggles[0].click();
+    toggles[1].click();
+    fixture.detectChanges();
+    expect(passwordField.type).toBe('password');
+    expect(confirmationField.type).toBe('password');
   });
 });

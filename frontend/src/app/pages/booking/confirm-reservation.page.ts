@@ -5,30 +5,36 @@ import { AuthService } from '../../core/services/auth.service';
 import { BookingService } from '../../core/services/booking.service';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
 import { CarComponent } from '../../shared/components/car.component';
+import { ImageUrlService } from '../../core/services/image-url.service';
 
 @Component({
   selector: 'app-confirm-reservation',
   standalone: true,
   imports: [AppShellComponent, CarComponent, CurrencyPipe, DatePipe],
+  styles: [`.confirm-photo{width:100px;height:72px;object-fit:cover;border-radius:10px;flex:none}.vehicle-summary{align-items:center}.small{font-size:12px;color:#7a5a40}`],
   template: `
     <app-shell title="Confirmar reserva" [back]="true" [defaultHref]="backHref">
       @if (booking.vehicle(); as vehicle) {
-        <div class="card row">
-          <app-car [color]="vehicle.color" />
-          <b>{{ vehicle.name }}</b>
+        <div class="card row vehicle-summary">
+          @if (vehiclePhoto; as photo) { <img class="confirm-photo" [src]="photo" [alt]="'Foto de ' + vehicle.name" (error)="photoFailed = true" /> }
+          @else { <app-car [color]="vehicle.color" /> }
+          <div><b>{{ vehicle.name }}</b><div class="small">{{ vehicle.version }}</div></div>
         </div>
 
         <div class="card">
           <div class="kv"><span>Cliente</span><b>{{ clientName }}</b></div>
           <div class="kv">
-            <span>Retirada</span><b>{{ booking.start() | date: 'dd/MM/yyyy' }} · 10:00</b>
+            <span>Data de retirada</span><b>{{ booking.start() | date: 'dd/MM/yyyy' }}</b>
           </div>
+          <div class="kv"><span>Horário de retirada</span><b>{{ booking.pickupTime() }}</b></div>
           <div class="kv">
-            <span>Devolução</span><b>{{ booking.end() | date: 'dd/MM/yyyy' }} · 10:00</b>
+            <span>Data de devolução</span><b>{{ booking.end() | date: 'dd/MM/yyyy' }}</b>
           </div>
+          <div class="kv"><span>Horário de devolução</span><b>{{ booking.returnTime() }}</b></div>
           <div class="kv"><span>Local</span><b>{{ booking.location() }}</b></div>
           <div class="kv"><span>Diárias</span><b>{{ booking.days() }}</b></div>
-          <div class="kv"><span>Valor total</span><b>{{ booking.total() | currency: 'BRL' }}</b></div>
+          <div class="kv"><span>Subtotal de diárias</span><b>{{ booking.total() | currency: 'BRL' }}</b></div>
+          <div class="kv"><span>Taxa de serviço</span><b>Informada pela API ao confirmar</b></div>
 
           <button class="btn" type="button" (click)="confirm()">Confirmar reserva</button>
           <button class="lnk dark" type="button" (click)="edit()">Voltar e editar</button>
@@ -43,11 +49,17 @@ export class ConfirmReservationPage implements OnInit {
   private readonly router = inject(Router);
   private readonly auth = inject(AuthService);
   readonly booking = inject(BookingService);
+  private readonly imageUrls = inject(ImageUrlService);
+  photoFailed = false;
 
-  readonly isAdmin = this.auth.role() === 'admin';
+  get vehiclePhoto(): string | null {
+    return this.photoFailed ? null : this.imageUrls.resolve(this.booking.vehicle()?.photo);
+  }
+
+  readonly isStaff = this.auth.role() === 'admin' || this.auth.role() === 'funcionario';
 
   get clientName(): string {
-    return this.isAdmin ? this.booking.clientName() : this.auth.profile().name;
+    return this.isStaff ? this.booking.clientName() : this.auth.profile().name;
   }
 
   get backHref(): string {

@@ -15,17 +15,24 @@ import { SegmentTabsComponent } from '../../shared/components/segment-tabs.compo
     <app-shell title="Minhas reservas" [showNav]="true" role="client" [activeTab]="activeTab">
       <app-segment-tabs variant="tabs" [options]="tabs" [active]="tab" (activeChange)="setTab($event)" />
 
-      @for (reservation of reservations; track reservation.id) {
-        <app-reservation-card
-          [reservation]="reservation"
-          [vehicle]="vehicleOf(reservation)"
-          (selected)="open($event)"
-        />
-      } @empty {
-        <div class="card empty">
-          Nenhuma reserva aqui.
-          <button class="btn" type="button" (click)="newReservation()">Reservar um veículo</button>
-        </div>
+      @if (reservationService.loading()) {
+        <div class="card empty" role="status">Carregando reservas...</div>
+      } @else if (reservationService.error(); as error) {
+        <div class="card empty" role="alert">{{ error }}</div>
+        <button class="btn" type="button" (click)="load()">Tentar novamente</button>
+      } @else {
+        @for (reservation of reservations; track reservation.id) {
+          <app-reservation-card
+            [reservation]="reservation"
+            [vehicle]="vehicleOf(reservation)"
+            (selected)="open($event)"
+          />
+        } @empty {
+          <div class="card empty">
+            Nenhuma reserva aqui.
+            <button class="btn" type="button" (click)="newReservation()">Reservar um veículo</button>
+          </div>
+        }
       }
     </app-shell>
   `,
@@ -33,18 +40,24 @@ import { SegmentTabsComponent } from '../../shared/components/segment-tabs.compo
 export class MyReservationsPage {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
-  private readonly reservationService = inject(ReservationService);
+  readonly reservationService = inject(ReservationService);
 
   readonly tabs: ClientReservationTab[] = ['Futuras', 'Em andamento', 'Histórico'];
   tab: ClientReservationTab = 'Futuras';
 
   constructor() {
+    void this.reservationService.load();
+
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
       const value = params.get('tab');
       if (value === 'Futuras' || value === 'Em andamento' || value === 'Histórico') {
         this.tab = value;
       }
     });
+  }
+
+  async load(): Promise<void> {
+    await this.reservationService.load();
   }
 
   get reservations(): Reservation[] {

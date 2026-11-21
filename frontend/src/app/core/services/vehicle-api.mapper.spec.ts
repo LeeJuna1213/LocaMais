@@ -15,6 +15,7 @@ describe('mapCarroApi', () => {
       valorDiaria: '125.50',
       quilometragem: 12000,
       foto: null,
+      cambio: 'Automático',
       created_at: '2026-11-17T10:00:00.000Z',
       updated_at: '2026-11-17T10:00:00.000Z',
     } satisfies CarroApi);
@@ -28,7 +29,7 @@ describe('mapCarroApi', () => {
       plate: 'ABC1D23',
       mileage: 12000,
       photo: null,
-      transmission: null,
+      transmission: 'Automático',
       favorite: false,
       revisions: [],
     });

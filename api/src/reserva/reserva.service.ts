@@ -18,6 +18,8 @@ import type { UsuarioAutenticado } from '../common/interfaces/usuario-autenticad
 import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
 import { RedisService } from '../redis/redis.service.js';
 import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
+import { ConfiguracaoService } from '../configuracao/configuracao.service.js';
+import { ReservationPublicCodeSequence } from './entities/reservation-public-code-sequence.entity.js';
 
 import { ConsultarDisponibilidadeDto } from './dto/consultar-disponibilidade.dto.js';
 import { CreateReservaDto } from './dto/create-reserva.dto.js';
@@ -85,6 +87,7 @@ export class ReservaService {
     private readonly carroService: CarroService,
     private readonly redis: RedisService,
     private readonly cacheInvalidation: CacheInvalidationService,
+    private readonly configuracaoService: ConfiguracaoService,
   ) {}
 
   /**
@@ -100,6 +103,17 @@ export class ReservaService {
   ): Promise<Reserva> {
     const client = await this.resolveClientForActor(actor, dto.client_id);
     this.assertClientActive(client);
+    if (actor.type === TipoUsuario.CLIENTE) {
+      const completeness = await this.clienteService.getOwnCompleteness(actor.id);
+      if (!completeness.completo) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'CLIENT_PROFILE_INCOMPLETE',
+          message: 'Complete seu cadastro antes de realizar a reserva.',
+          pendencias: completeness.pendencias,
+        });
+      }
+    }
 
     const dataRetirada = this.parseDate(dto.dataRetirada, 'dataRetirada');
     const dataDevolucao = this.parseDate(dto.dataDevolucao, 'dataDevolucao');
@@ -109,6 +123,7 @@ export class ReservaService {
     // no projeto.
     this.assertPeriod(dataRetirada, dataDevolucao, true);
 
+    const taxaServico = (await this.configuracaoService.getTaxaServico()).valor;
     const saved = await this.dataSource.transaction(async (manager) => {
       const car = await this.findCarForUpdate(manager, dto.car_id);
       const repository = manager.getRepository(Reserva);
@@ -116,6 +131,7 @@ export class ReservaService {
       await this.assertAvailable(repository, car, dataRetirada, dataDevolucao);
 
       const reservation = repository.create({
+        codigo: await this.nextPublicCode(manager),
         dataRetirada,
         dataDevolucao,
         status: StatusReserva.PENDENTE,
@@ -127,7 +143,9 @@ export class ReservaService {
 
       // O carro foi carregado acima, então calcularValor() usa o preço real
       // do banco e não um valor enviado pelo cliente.
-      reservation.valorTotal = reservation.calcularValor();
+      reservation.valorSubtotal = reservation.calcularValor();
+      reservation.taxaServico = taxaServico;
+      reservation.valorTotal = Math.round((reservation.valorSubtotal + taxaServico) * 100) / 100;
 
       return repository.save(reservation);
     });
@@ -351,7 +369,8 @@ export class ReservaService {
       reservation.car = car;
 
       if (hasCommercialChanges) {
-        reservation.valorTotal = reservation.calcularValor();
+        reservation.valorSubtotal = reservation.calcularValor();
+        reservation.valorTotal = Math.round((Number(reservation.valorSubtotal) + Number(reservation.taxaServico)) * 100) / 100;
       }
 
       if (dto.status && dto.status !== current.status) {
@@ -374,6 +393,11 @@ export class ReservaService {
     await this.cacheInvalidation.invalidateReservationInspections(id);
 
     return this.findOne(saved.id);
+  }
+
+  private async nextPublicCode(manager: import('typeorm').EntityManager): Promise<string> {
+    const sequence = await manager.getRepository(ReservationPublicCodeSequence).save({});
+    return `RES-${String(sequence.id).padStart(6, '0')}`;
   }
 
   /**

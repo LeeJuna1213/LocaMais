@@ -31,18 +31,19 @@ export class AuthService {
   private readonly _profile = computed(() => ({ ...this.profileFromUser(this.session.user()), ...this._profileOverride() }));
   readonly role = computed<UserRole | null>(() => {
     const type = this.session.user()?.type;
-    return type === 'cliente' ? 'client' : type === 'admin' || type === 'funcionario' ? 'admin' : null;
+    return type === 'cliente' ? 'client' : type === 'funcionario' ? 'funcionario' : type === 'admin' ? 'admin' : null;
   });
   readonly profile = this._profile;
   readonly isLoggedIn = computed(() => this.session.isAuthenticated());
   readonly isAdmin = computed(() => this.role() === 'admin');
+  readonly isFuncionario = computed(() => this.role() === 'funcionario');
   private readonly _loading = signal(false);
   readonly loading = this._loading.asReadonly();
   private recovery?: Promise<boolean>;
 
-  home(): string { return this.role() === 'admin' ? '/admin/painel' : '/client/veiculos'; }
+  home(): string { return this.role() === 'client' ? '/client/veiculos' : '/admin/painel'; }
 
-  async login(identifier: string, password: string, _selectedRole?: UserRole): Promise<void> {
+  async login(identifier: string, password: string, selectedRole?: UserRole): Promise<void> {
     const email = identifier.trim();
     if (!email || !password) throw new Error('Informe e-mail e senha');
     this._loading.set(true);
@@ -50,6 +51,13 @@ export class AuthService {
       const response = await firstValueFrom(this.http.post<AutenticacaoApiResponse>(
         `${this.apiUrl}/autenticacao/login`, { email, password }, { context: new HttpContext().set(SKIP_AUTH, true) },
       ));
+      const actualRole = response.user.type === 'cliente' ? 'client' : response.user.type;
+      if (selectedRole === 'client' && actualRole !== 'client') {
+        throw new Error('Esta conta é de funcionário. Selecione o acesso de funcionário.');
+      }
+      if (selectedRole === 'admin' && actualRole !== 'admin' && actualRole !== 'funcionario') {
+        throw new Error('Esta conta é de cliente. Selecione o acesso de cliente.');
+      }
       this.session.setSession(response.access_token, response.user);
       this._profileOverride.set({});
       await this.reservations.renameMine(response.user.name);
@@ -168,8 +176,40 @@ export class AuthService {
   }
 
   async updateProfile(partial: Partial<UserProfile>): Promise<void> {
-    // Preserva a edição visual local até o módulo de perfil ser integrado.
-    this._profileOverride.update((current) => ({ ...current, ...partial }));
+    const user = this.session.user();
+    if (!user?.client) throw new Error('Cadastro de cliente não encontrado.');
+    const payload: Record<string, unknown> = {};
+    if (partial.name !== undefined) payload['name'] = partial.name;
+    if (partial.phone !== undefined) payload['telefone'] = partial.phone;
+    if (partial.cnh !== undefined) payload['cnh_numero'] = partial.cnh.replace(/\D/g, '');
+    if (partial.cnhValidity !== undefined) payload['cnh_validade'] = partial.cnhValidity;
+    if (partial.paymentPreference !== undefined) payload['metodo_pagamento_preferido'] = partial.paymentPreference || null;
+    const addressKeys: Array<keyof UserProfile> = ['street', 'addressNumber', 'addressDistrict', 'addressComplement', 'city', 'addressState', 'addressZipCode'];
+    if (addressKeys.some((key) => partial[key] !== undefined)) {
+      const existing = user.client.address;
+      const streetParts = partial.street?.split(',') ?? [];
+      payload['endereco'] = {
+        logradouro: partial.street?.trim() || existing?.logradouro || '',
+        numero: partial.addressNumber?.trim() || existing?.numero || streetParts.slice(1).join(',').trim() || '',
+        complemento: partial.addressComplement ?? existing?.complemento ?? undefined,
+        bairro: partial.addressDistrict?.trim() || existing?.bairro || '',
+        cidade: partial.city?.trim() || existing?.cidade || '',
+        uf: partial.addressState?.trim().toUpperCase() || existing?.uf || '',
+        cep: partial.addressZipCode?.replace(/\D/g, '') || existing?.cep || '',
+      };
+    }
+    if (Object.keys(payload).length === 0) {
+      this._profileOverride.update((current) => ({ ...current, ...partial }));
+      return;
+    }
+    try {
+      await firstValueFrom(this.http.patch(`${this.apiUrl}/clientes/me`, payload));
+      const refreshed = await firstValueFrom(this.http.get<UsuarioApi>(`${this.apiUrl}/autenticacao/me`));
+      this.session.setUser(refreshed);
+      this._profileOverride.set({});
+    } catch (error) {
+      throw new Error(this.errors.message(error, 'Não foi possível salvar as alterações do perfil.'));
+    }
   }
 
   logout(): void { this.session.clear(); this._profileOverride.set({}); }
@@ -184,8 +224,17 @@ export class AuthService {
       name: user.name,
       email: user.email,
       foto: user.foto ?? null,
-      street: address ? `${address.logradouro}, ${address.numero}` : '',
-      city: address?.cidade ?? profile.city,
+      phone: user.client?.telefone ?? '',
+      cnh: user.client?.cnh_numero ?? '',
+      cnhValidity: user.client?.cnh_validade ?? '',
+      street: address?.logradouro ?? '',
+      addressNumber: address?.numero ?? '',
+      addressComplement: address?.complemento ?? '',
+      addressDistrict: address?.bairro ?? '',
+      city: address?.cidade ?? '',
+      addressState: address?.uf ?? '',
+      addressZipCode: address?.cep ?? '',
+      paymentPreference: user.client?.metodo_pagamento_preferido ?? '',
     };
   }
 }

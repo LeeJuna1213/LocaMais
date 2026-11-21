@@ -3,8 +3,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { CarroModule } from '../carro/carro.module.js';
 import { ClienteModule } from '../cliente/cliente.module.js';
+import { ConfiguracaoModule } from '../configuracao/configuracao.module.js';
 
 import { Reserva } from './entities/reserva.entity.js';
+import { ReservationPublicCodeSequence } from './entities/reservation-public-code-sequence.entity.js';
 import { ReservaController } from './reserva.controller.js';
 import { ReservaService } from './reserva.service.js';
 
@@ -21,7 +23,7 @@ import { ReservaService } from './reserva.service.js';
  * reaproveitar as regras de disponibilidade e cancelamento.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([Reserva]), ClienteModule, CarroModule],
+  imports: [TypeOrmModule.forFeature([Reserva, ReservationPublicCodeSequence]), ClienteModule, CarroModule, ConfiguracaoModule],
   controllers: [ReservaController],
   providers: [ReservaService],
   exports: [ReservaService],

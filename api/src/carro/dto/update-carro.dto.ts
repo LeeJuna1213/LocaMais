@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsPositive,
   IsString,
+  IsIn,
   Max,
   MaxLength,
   Min,
@@ -35,6 +36,21 @@ export class UpdateCarroDto {
   @IsOptional()
   @IsString()
   categoria?: string;
+
+  @IsOptional()
+  @IsIn(['Automático', 'Manual'], { message: 'Câmbio inválido' })
+  cambio?: 'Automático' | 'Manual';
+
+  @IsOptional()
+  @IsInt({ message: 'Lugares deve ser um número inteiro' })
+  @Min(1, { message: 'Lugares deve ser pelo menos 1' })
+  @Max(9, { message: 'Lugares não pode ser maior que 9' })
+  lugares?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000, { message: 'Descrição não pode exceder 1000 caracteres' })
+  descricao?: string | null;
 
   @IsOptional()
   @IsInt()

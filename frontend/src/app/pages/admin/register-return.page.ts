@@ -20,7 +20,11 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
       role="admin"
       activeTab="reservas"
     >
-      @if (reservation; as r) {
+      @if (reservationService.loading()) {
+        <div class="card empty" role="status">Carregando reserva...</div>
+      } @else if (reservationService.error(); as error) {
+        <div class="card empty" role="alert">{{ error }}</div>
+      } @else if (reservation; as r) {
         <div class="card">
           <h2>Locação #{{ r.id }}</h2>
           <div class="kv"><span>Cliente</span><b>{{ r.clientName }}</b></div>
@@ -55,7 +59,7 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
           <button class="btn" type="button" (click)="confirm()">Finalizar devolução</button>
         </div>
       } @else {
-        <div class="card empty">Nenhuma locação em andamento</div>
+        <div class="card empty">Reserva não encontrada</div>
       }
     </app-shell>
   `,
@@ -63,18 +67,26 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
 export class RegisterReturnPage {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly reservationService = inject(ReservationService);
+  readonly reservationService = inject(ReservationService);
   private readonly toast = inject(ToastService);
 
-  private readonly id = Number(this.route.snapshot.paramMap.get('id'));
+  private readonly id = this.route.snapshot.paramMap.get('id') ?? '';
 
   fuel = 'Cheio';
   damages = 'Nenhuma';
   fines = 0;
   extraDays = 0;
 
+  constructor() {
+    if (this.id) {
+      void this.reservationService.getById(this.id).catch(async (error: unknown) => {
+        await this.toast.show(error instanceof Error ? error.message : 'Não foi possível carregar a reserva');
+      });
+    }
+  }
+
   get reservation(): Reservation | undefined {
-    return this.reservationService.getById(this.id);
+    return this.reservationService.reservations().find((r) => r.id === this.id);
   }
 
   get vehicle(): Vehicle | undefined {
@@ -92,8 +104,12 @@ export class RegisterReturnPage {
   }
 
   async confirm(): Promise<void> {
-    await this.reservationService.registerReturn(this.id, this.extraDays, this.fines);
-    await this.toast.show('Devolução finalizada');
-    await this.router.navigate(['/admin/reservas'], { queryParams: { tab: 'Todas' } });
+    try {
+      await this.reservationService.registerReturn(this.id, this.extraDays, this.fines);
+      await this.toast.show('Devolução finalizada');
+      await this.router.navigate(['/admin/reservas'], { queryParams: { tab: 'Todas' } });
+    } catch (error) {
+      await this.toast.show(error instanceof Error ? error.message : 'Não foi possível finalizar a devolução.');
+    }
   }
 }

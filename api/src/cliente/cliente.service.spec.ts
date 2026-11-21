@@ -96,6 +96,34 @@ describe('ClienteService', () => {
     expect(service).toBeDefined();
   });
 
+  describe('completude de cadastro para reserva', () => {
+    const completeClient = {
+      ...mockClient,
+      cpf: '52998224725',
+      telefone: '+5521999990000',
+      cnh_numero: '12345678901',
+      cnh_validade: '2030-12-31',
+      address: { logradouro: 'Rua A', numero: '1', bairro: 'Centro', cidade: 'Rio', uf: 'RJ', cep: '20000000' },
+    };
+
+    it('aceita dados pessoais, telefone, CNH vigente e endereço completos', async () => {
+      repoMocks.findOne.mockResolvedValueOnce(completeClient as any);
+      await expect(service.getOwnCompleteness(1)).resolves.toEqual({ completo: true, pendencias: [] });
+    });
+
+    it('identifica telefone e CNH faltantes sem esconder pendências', async () => {
+      repoMocks.findOne.mockResolvedValueOnce({ ...completeClient, telefone: null, cnh_numero: null, cnh_validade: null } as any);
+      const result = await service.getOwnCompleteness(1);
+      expect(result.completo).toBe(false);
+      expect(result.pendencias).toEqual(expect.arrayContaining(['telefone', 'cnh']));
+    });
+
+    it('identifica ausência ou incompletude do endereço', async () => {
+      repoMocks.findOne.mockResolvedValueOnce({ ...completeClient, address: null } as any);
+      await expect(service.getOwnCompleteness(1)).resolves.toEqual({ completo: false, pendencias: ['endereco'] });
+    });
+  });
+
   /**
    * `findOneForActor` e o metodo cacheado (GET /clientes/:id, TTL 300s).
    * Segue o padrao: HIT retorna do Redis sem MySQL; MISS consulta o MySQL e

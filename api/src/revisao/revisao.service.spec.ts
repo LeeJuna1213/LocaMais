@@ -52,6 +52,12 @@ describe('RevisaoService', () => {
   };
 
   beforeEach(() => {
+    const aggregateQuery = {
+      select: vi.fn().mockReturnThis(),
+      addSelect: vi.fn().mockReturnThis(),
+      groupBy: vi.fn().mockReturnThis(),
+      getRawMany: vi.fn().mockResolvedValue([]),
+    };
     revisoesRepository = {
       find: vi.fn().mockResolvedValue([]),
       findOne: vi.fn(),
@@ -59,6 +65,8 @@ describe('RevisaoService', () => {
       save: vi.fn().mockImplementation((entity: any) => entity),
       update: vi.fn().mockResolvedValue(undefined),
       remove: vi.fn().mockResolvedValue(undefined),
+      createQueryBuilder: vi.fn().mockReturnValue(aggregateQuery),
+      aggregateQuery,
     };
 
     transactionManager = {
@@ -353,6 +361,7 @@ describe('RevisaoService', () => {
       expect(redisService.del).toHaveBeenCalledWith(
         'locamais:revisao:carro:1',
       );
+      expect(cacheInvalidation.invalidateRevisionDependents).toHaveBeenCalledWith(1);
     });
 
     // Se a criacao falhar no MySQL (km invalido), nada e gravado e nada e
@@ -444,6 +453,7 @@ describe('RevisaoService', () => {
       expect(redisService.del).toHaveBeenCalledWith(
         'locamais:revisao:carro:1',
       );
+      expect(cacheInvalidation.invalidateRevisionDependents).toHaveBeenCalledWith(1);
     });
 
     // Exclusao pode alterar a ultima revisao => invalida o cache.
@@ -472,6 +482,7 @@ describe('RevisaoService', () => {
       );
 
       expect(redisService.del).not.toHaveBeenCalled();
+      expect(cacheInvalidation.invalidateRevisionDependents).not.toHaveBeenCalled();
     });
 
     // Falha na invalidação nao desfaz a atualizacao confirmada no MySQL.
@@ -543,6 +554,29 @@ describe('RevisaoService', () => {
       expect(segundo).toEqual(primeiro);
       expect(carroFindOne).toHaveBeenCalledTimes(1);
       expect(revisoesRepository.findOne).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('relatório de custos de revisão', () => {
+    it('agrupa registros distintos por veículo e soma os custos reais sem NaN', async () => {
+      const query = revisoesRepository.aggregateQuery;
+      query.getRawMany.mockResolvedValue([
+        { carro_id: '1', quantidade: '3', total: '1250.00' },
+        { carro_id: 2, quantidade: '2', total: '850.00' },
+        { carro_id: 3, quantidade: '1', total: null },
+      ]);
+
+      await expect(service.resumirCustosPorVeiculo()).resolves.toEqual({
+        porVeiculo: [
+          { carro_id: 1, quantidade: 3, total: 1250 },
+          { carro_id: 2, quantidade: 2, total: 850 },
+          { carro_id: 3, quantidade: 1, total: 0 },
+        ],
+        totalGeral: 2100,
+        quantidadeGeral: 6,
+      });
+      expect(query.addSelect).toHaveBeenCalledWith('COUNT(DISTINCT revisao.id)', 'quantidade');
+      expect(query.addSelect).toHaveBeenCalledWith('COALESCE(SUM(revisao.valor), 0)', 'total');
     });
   });
 });

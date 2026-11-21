@@ -118,6 +118,11 @@ describe('Locações (e2e)', () => {
     }
     clientId = client.body.id;
     clientToken = await login(app, 'cliente.locacao@exemplo.com', 'senha-secreta');
+    await patch(app, '/clientes/me', {
+      telefone: '+5521999991111',
+      cnh_numero: '12345678901',
+      cnh_validade: '2030-12-31',
+    }, clientToken);
 
     const car = await post<CarroBody>(
       app,
@@ -251,6 +256,59 @@ describe('Locações (e2e)', () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
     locacaoId = body.id;
+  });
+
+  it('lista pagamentos apenas do cliente e conserva o snapshot do comprovante aprovado', async () => {
+    const created = await post<{ id: string; status: string }>(app, '/pagamentos', {
+      locacaoId,
+      metodo: 'pix',
+      valor: 75,
+    }, adminToken);
+    expect(created.status).toBe(201);
+    expect(created.body.status).toBe('pendente');
+
+    const pending = await get<Array<{ id: string; status: string }>>(app, '/pagamentos/meus', clientToken);
+    expect(pending.status).toBe(200);
+    expect(pending.body).toContainEqual(expect.objectContaining({ id: created.body.id, status: 'pendente' }));
+    const pendingReceipt = await get(app, `/pagamentos/${created.body.id}/comprovante`, clientToken);
+    expect(pendingReceipt.status).toBe(409);
+
+    const confirmed = await patch<{ status: string }>(app, `/pagamentos/${created.body.id}/confirmar`, {}, adminToken);
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.status).toBe('aprovado');
+
+    const receipt = await get<{ pagamentoId: string; locacaoId: string; valorPago: number; status: string; cliente: string; veiculo: string; placa: string }>(
+      app,
+      `/pagamentos/${created.body.id}/comprovante`,
+      clientToken,
+    );
+    expect(receipt.status).toBe(200);
+    expect(receipt.body).toMatchObject({
+      pagamentoId: created.body.id,
+      locacaoId,
+      valorPago: 75,
+      status: 'aprovado',
+      cliente: 'Cliente Locacao',
+      veiculo: 'Honda Civic',
+      placa: 'LOC1A23',
+    });
+
+    const other = await post<ClienteBody>(app, '/clientes', {
+      name: 'Cliente Sem Pagamentos',
+      email: 'sem.pagamentos@exemplo.com',
+      password: 'senha-secreta',
+      cliente: { tipo_pessoa: 'PF', cpf: makeCpf('876543219'), data_nascimento: '1992-02-02', endereco: ENDERECO },
+    }, adminToken);
+    expect(other.status).toBe(201);
+    const otherToken = await login(app, 'sem.pagamentos@exemplo.com', 'senha-secreta');
+    const isolated = await get<Array<{ id: string }>>(app, '/pagamentos/meus', otherToken);
+    expect(isolated.status).toBe(200);
+    expect(isolated.body).toEqual([]);
+    const forbiddenReceipt = await get(app, `/pagamentos/${created.body.id}/comprovante`, otherToken);
+    expect(forbiddenReceipt.status).toBe(404);
+
+    const reread = await get<typeof receipt.body>(app, `/pagamentos/${created.body.id}/comprovante`, clientToken);
+    expect(reread.body).toEqual(receipt.body);
   });
 
   it('cliente não cria locação para reserva de outro cliente (403)', async () => {

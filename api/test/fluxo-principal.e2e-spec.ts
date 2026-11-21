@@ -55,6 +55,7 @@ describe('Fluxo principal (e2e)', () => {
   let app: INestApplication;
   let adminToken: string;
   let clienteToken: string;
+  let funcionarioToken: string;
   let clientePjId: number;
   let enderecoId: number;
   let cpfPf: string;
@@ -115,6 +116,19 @@ describe('Fluxo principal (e2e)', () => {
     expect(status).toBe(200);
     expect(body.email).toBe('maria.e2e@exemplo.com');
     expect(body.password).toBeUndefined();
+  });
+
+  it('persiste somente uma forma de pagamento preferencial suportada', async () => {
+    const changed = await patch(app, '/clientes/me', { metodo_pagamento_preferido: 'pix' }, clienteToken);
+    expect(changed.status).toBe(200);
+    const profile = await get<{ client: { metodo_pagamento_preferido: string } }>(app, '/autenticacao/me', clienteToken);
+    expect(profile.body.client.metodo_pagamento_preferido).toBe('pix');
+    const invalid = await patch(app, '/clientes/me', { metodo_pagamento_preferido: 'cartao_fake' }, clienteToken);
+    expect(invalid.status).toBe(400);
+    const cleared = await patch(app, '/clientes/me', { metodo_pagamento_preferido: null }, clienteToken);
+    expect(cleared.status).toBe(200);
+    const refreshed = await get<{ client: { metodo_pagamento_preferido: string | null } }>(app, '/autenticacao/me', clienteToken);
+    expect(refreshed.body.client.metodo_pagamento_preferido).toBeNull();
   });
 
   it('bloqueia cliente em rotas administrativas (403)', async () => {
@@ -237,6 +251,24 @@ describe('Fluxo principal (e2e)', () => {
     expect(created.status).toBe(201);
     expect(created.body.type).toBe('funcionario');
     expect(created.body.client).toBeNull();
+    funcionarioToken = await login(app, 'funcionario.e2e@exemplo.com', 'senha-secreta');
+  });
+
+  it('admin gerencia lojas e bloqueia funcionários e clientes', async () => {
+    const payload = {
+      codigo: 'CENTRO-E2E', nome: 'Loja Centro E2E', telefone: '+5521999990000', email: 'centro@locamais.test',
+      logradouro: 'Rua das Lojas', numero: '10', complemento: '', bairro: 'Centro', cidade: 'Niterói', uf: 'RJ', cep: '24000000', ativa: true,
+    };
+    const created = await post<{ id: number; codigo: string; nome: string; ativa: boolean }>(app, '/lojas', payload, adminToken);
+    expect(created.status).toBe(201);
+    expect(created.body.codigo).toBe('CENTRO-E2E');
+    const list = await get<Array<{ id: number; codigo: string }>>(app, '/lojas', adminToken);
+    expect(list.body.some((item) => item.id === created.body.id)).toBe(true);
+    const changed = await patch<{ nome: string; ativa: boolean }>(app, `/lojas/${created.body.id}`, { nome: 'Loja Centro Atualizada', ativa: false }, adminToken);
+    expect(changed.status).toBe(200);
+    expect(changed.body).toMatchObject({ nome: 'Loja Centro Atualizada', ativa: false });
+    expect((await get(app, '/lojas', funcionarioToken)).status).toBe(403);
+    expect((await post(app, '/lojas', { ...payload, codigo: 'CLIENTE-E2E' }, clienteToken)).status).toBe(403);
   });
 
   it('endpoint de usuarios recusa cadastro de cliente (400)', async () => {

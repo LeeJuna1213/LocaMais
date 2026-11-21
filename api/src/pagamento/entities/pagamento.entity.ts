@@ -89,6 +89,10 @@ export class Pagamento {
   @Column({ type: 'uuid', nullable: true })
   gateway_id: string | null;
 
+  /** Recibo emitido no primeiro processamento aprovado, imutável após emissão. */
+  @Column({ type: 'simple-json', nullable: true })
+  comprovante_snapshot: Record<string, unknown> | null;
+
   /** Relação 1:1 com o gateway de pagamento. */
   @OneToOne('GatewayPagamento', { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'gateway_id' })
@@ -139,6 +143,7 @@ export class Pagamento {
       locacao,
       gateway_id,
       gateway,
+      comprovante_snapshot,
       created_at,
       updated_at,
     } = this;
@@ -153,6 +158,7 @@ export class Pagamento {
       locacao,
       gateway_id,
       gateway,
+      comprovante_snapshot,
       created_at,
       updated_at,
     };

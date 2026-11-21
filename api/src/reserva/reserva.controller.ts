@@ -53,6 +53,7 @@ export class ReservaController {
    * próprio cadastro; admin/funcionário podem informar qualquer cliente.
    */
   @Post()
+  @Roles(TipoUsuario.CLIENTE, TipoUsuario.FUNCIONARIO, TipoUsuario.ADMIN)
   @ApiOperation({
     summary: 'Cria uma reserva',
     description:
@@ -66,7 +67,7 @@ export class ReservaController {
       'Veiculo indisponivel no periodo, cliente inativo ou conflito com outra reserva.',
   })
   @ApiForbiddenResponse({
-    description: 'Cliente tentando reservar para outro cliente.',
+    description: 'Papel sem permissão ou cliente tentando reservar para outra conta.',
   })
   create(
     @CurrentUser() actor: UsuarioAutenticado,

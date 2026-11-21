@@ -2,13 +2,13 @@ import { Component, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { ReservationService } from '../../core/services/reservation.service';
 import { VehicleService } from '../../core/services/vehicle.service';
-import { AdminMenuComponent } from '../../shared/components/admin-menu.component';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
+import { CurrencyPipe } from '@angular/common';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [AppShellComponent, AdminMenuComponent],
+  imports: [AppShellComponent, CurrencyPipe],
   template: `
     <app-shell title="Painel administrativo" [logo]="true" [showNav]="true" role="admin" activeTab="inicio">
       <div class="st">
@@ -26,14 +26,61 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
         </div>
       </div>
 
-      <app-admin-menu />
+      <div class="card report-card" style="margin-top: 16px;">
+        <h3 style="margin: 0 0 10px 0; font-size: 16px">Relatório JPA (Resumo)</h3>
+        <div class="kv"><span>Receita (sem canceladas)</span><b>{{ revenue | currency: 'BRL' }}</b></div>
+        <div class="kv"><span>Reservas totais</span><b>{{ reservations.length }}</b></div>
+        <div class="kv"><span>Canceladas</span><b>{{ canceledCount }}</b></div>
+        <div class="kv"><span>Pagamentos pendentes</span><b>{{ pendingPayments }}</b></div>
+        <label style="margin-top: 10px">Ocupação da frota: {{ occupancy }}%</label>
+        <div class="bar"><i [style.width.%]="occupancy"></i></div>
+        <div style="margin-top: 10px">
+          <button class="btn" type="button" (click)="go('/admin/relatorios')">Ver relatório completo</button>
+        </div>
+      </div>
     </app-shell>
   `,
+  styles: [`
+    .report-card h3 { border-bottom: 1px solid #ddd; padding-bottom: 6px; margin-bottom: 10px; }
+    .kv { display: flex; justify-content: space-between; font-size: 13px; margin: 4px 0; }
+    .bar { background: #eee; height: 8px; border-radius: 4px; margin-top: 4px; overflow: hidden; }
+    .bar i { background: #e86f12; height: 100%; display: block; }
+  `],
 })
 export class DashboardPage {
   private readonly router = inject(Router);
   readonly vehicleService = inject(VehicleService);
   readonly reservationService = inject(ReservationService);
+
+  constructor() {
+    void this.vehicleService.load();
+    void this.reservationService.load();
+  }
+
+  get reservations(): import('../../core/models').Reservation[] {
+    return this.reservationService.reservations();
+  }
+
+  get revenue(): number {
+    return this.reservations.filter((reservation) => reservation.status !== 'Cancelada').reduce((sum, r) => sum + r.total, 0);
+  }
+
+  get canceledCount(): number {
+    return this.reservations.filter((reservation) => reservation.status === 'Cancelada').length;
+  }
+
+  get pendingPayments(): number {
+    return this.reservations.filter((reservation) => reservation.payment === 'Pendente').length;
+  }
+
+  get occupancy(): number {
+    const vehicles = this.vehicleService.vehicles();
+    if (!vehicles.length) {
+      return 0;
+    }
+    const rented = vehicles.filter((vehicle) => vehicle.status === 'Alugado').length;
+    return Math.round((rented / vehicles.length) * 100);
+  }
 
   async go(route: string): Promise<void> {
     await this.router.navigateByUrl(route);

@@ -11,6 +11,9 @@ export interface CarroApi {
   valorDiaria: number | string;
   quilometragem: number;
   foto: string | null;
+  cambio?: 'Automático' | 'Manual' | null;
+  lugares?: number | null;
+  descricao?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -24,8 +27,6 @@ const statusMap: Record<string, VehicleStatus> = {
 export function mapCarroApi(carro: CarroApi): Vehicle {
   const status = statusMap[carro.status];
   if (!status) throw new Error('Status de veículo não suportado pela interface');
-  const category = ['SUV', 'Hatch', 'Picape'].includes(carro.categoria)
-    ? carro.categoria as Vehicle['category'] : 'Hatch';
   return {
     id: carro.id,
     name: `${carro.marca} ${carro.modelo} ${carro.ano}`,
@@ -33,12 +34,17 @@ export function mapCarroApi(carro: CarroApi): Vehicle {
     pricePerDay: Number(carro.valorDiaria),
     status,
     color: '#4a6fa5',
-    category,
-    transmission: null,
+    category: carro.categoria,
+    transmission: carro.cambio ?? null,
     revisions: [],
     favorite: false,
     plate: carro.placa,
     mileage: carro.quilometragem,
     photo: carro.foto,
+    make: carro.marca,
+    model: carro.modelo,
+    year: carro.ano,
+    lugares: carro.lugares,
+    descricao: carro.descricao,
   };
 }

@@ -18,21 +18,36 @@ import { ReservationCardComponent } from '../../shared/components/reservation-ca
       role="admin"
       activeTab="reservas"
     >
-      @for (reservation of reservations; track reservation.id) {
-        <app-reservation-card
-          [reservation]="reservation"
-          [vehicle]="vehicleOf(reservation)"
-          (selected)="open($event)"
-        />
-      } @empty {
-        <div class="card empty">Nenhuma reserva aguardando retirada</div>
+      @if (reservationService.loading()) {
+        <div class="card empty" role="status">Carregando retiradas...</div>
+      } @else if (reservationService.error(); as error) {
+        <div class="card empty" role="alert">{{ error }}</div>
+        <button class="btn" type="button" (click)="load()">Tentar novamente</button>
+      } @else {
+        @for (reservation of reservations; track reservation.id) {
+          <app-reservation-card
+            [reservation]="reservation"
+            [vehicle]="vehicleOf(reservation)"
+            (selected)="open($event)"
+          />
+        } @empty {
+          <div class="card empty">Nenhuma reserva aguardando retirada</div>
+        }
       }
     </app-shell>
   `,
 })
 export class PickupListPage {
   private readonly router = inject(Router);
-  private readonly reservationService = inject(ReservationService);
+  readonly reservationService = inject(ReservationService);
+
+  constructor() {
+    void this.reservationService.load();
+  }
+
+  async load(): Promise<void> {
+    await this.reservationService.load();
+  }
 
   get reservations(): Reservation[] {
     return this.reservationService.byStatus('Confirmada');

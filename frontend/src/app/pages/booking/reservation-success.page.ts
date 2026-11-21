@@ -13,22 +13,28 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
     <app-shell>
       @if (booking.vehicle(); as vehicle) {
         <div class="ok">✓</div>
-        <h2 style="text-align: center">Reserva confirmada!</h2>
-        <p style="text-align: center; font-size: 13px">Seu veículo foi reservado com sucesso.</p>
+        <h2 style="text-align: center">Reserva registrada</h2>
+        <p style="text-align: center; font-size: 13px">A reserva foi persistida pela API e aguarda confirmação operacional.</p>
 
         <div class="card">
           <b>{{ vehicle.name }}</b>
+          @if (booking.createdReservation(); as reservation) {
+            <div class="kv"><span>Reserva</span><b>{{ reservation.publicCode || reservation.id }}</b></div>
+            <div class="kv"><span>Status</span><b>{{ reservation.status }}</b></div>
+            <div class="kv"><span>Subtotal</span><b>{{ reservation.subtotal | currency: 'BRL' }}</b></div>
+            <div class="kv"><span>Taxa de serviço</span><b>{{ reservation.serviceFee | currency: 'BRL' }}</b></div>
+          }
           <div style="font-size: 12px; color: #7a5a40">{{ vehicle.version }}</div>
           <div class="kv"><span>Cliente</span><b>{{ clientName }}</b></div>
           <div class="kv">
             <span>Período</span>
-            <b>{{ booking.start() | date: 'dd/MM/yyyy' }} - {{ booking.end() | date: 'dd/MM/yyyy' }}</b>
+            <b>{{ booking.start() | date: 'dd/MM/yyyy' }} {{ booking.pickupTime() }} - {{ booking.end() | date: 'dd/MM/yyyy' }} {{ booking.returnTime() }}</b>
           </div>
           <div class="kv"><span>Valor total</span><b>{{ booking.total() | currency: 'BRL' }}</b></div>
         </div>
 
         <button class="btn" type="button" (click)="goToReservations()">
-          {{ isAdmin ? 'Ver reservas' : 'Ver minhas reservas' }}
+          {{ isStaff ? 'Ver reservas' : 'Ver minhas reservas' }}
         </button>
         <button class="lnk" type="button" (click)="goHome()">Voltar ao início</button>
       } @else {
@@ -42,10 +48,10 @@ export class ReservationSuccessPage implements OnInit {
   private readonly auth = inject(AuthService);
   readonly booking = inject(BookingService);
 
-  readonly isAdmin = this.auth.role() === 'admin';
+  readonly isStaff = this.auth.role() === 'admin' || this.auth.role() === 'funcionario';
 
   get clientName(): string {
-    return this.isAdmin ? this.booking.clientName() : this.auth.profile().name;
+    return this.isStaff ? this.booking.clientName() : this.auth.profile().name;
   }
 
   ngOnInit(): void {
@@ -56,7 +62,7 @@ export class ReservationSuccessPage implements OnInit {
 
   async goToReservations(): Promise<void> {
     this.booking.reset();
-    if (this.isAdmin) {
+    if (this.isStaff) {
       await this.router.navigate(['/admin/reservas'], { queryParams: { tab: 'Todas' } });
     } else {
       await this.router.navigate(['/client/minhas'], { queryParams: { tab: 'Futuras' } });

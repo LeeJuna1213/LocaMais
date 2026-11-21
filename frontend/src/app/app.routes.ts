@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { authGuard, roleGuard } from './core/guards/role.guard';
+import { authGuard, roleGuard, staffGuard } from './core/guards/role.guard';
 
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'login' },
@@ -33,6 +33,10 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/client/my-reservations.page').then((m) => m.MyReservationsPage),
       },
       {
+        path: 'pagamentos',
+        loadComponent: () => import('./pages/client/customer-payments.page').then((m) => m.CustomerPaymentsPage),
+      },
+      {
         path: 'reservas/:id',
         loadComponent: () => import('./pages/client/reservation-details.page').then((m) => m.ReservationDetailsPage),
       },
@@ -48,7 +52,7 @@ export const routes: Routes = [
   },
   {
     path: 'admin',
-    canActivate: [roleGuard('admin')],
+    canActivate: [staffGuard],
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'painel' },
       {
@@ -69,6 +73,10 @@ export const routes: Routes = [
       },
       {
         path: 'veiculos/novo',
+        loadComponent: () => import('./pages/admin/new-vehicle.page').then((m) => m.NewVehiclePage),
+      },
+      {
+        path: 'veiculos/:id/editar',
         loadComponent: () => import('./pages/admin/new-vehicle.page').then((m) => m.NewVehiclePage),
       },
       {
@@ -114,6 +122,30 @@ export const routes: Routes = [
       {
         path: 'reserva',
         loadComponent: () => import('./pages/client/vehicle-list.page').then((m) => m.VehicleListPage),
+      },
+      {
+        path: 'usuarios',
+        loadComponent: () => import('./pages/admin/usuarios.page').then((m) => m.UsuariosPage),
+        canActivate: [roleGuard('admin')],
+      },
+      {
+        path: 'lojas',
+        loadComponent: () => import('./pages/admin/shops.page').then((m) => m.ShopsPage),
+        canActivate: [roleGuard('admin')],
+      },
+      {
+        path: 'taxa-servico',
+        loadComponent: () => import('./pages/admin/service-fee.page').then((m) => m.ServiceFeePage),
+      },
+      {
+        path: 'usuarios/novo',
+        loadComponent: () => import('./pages/admin/usuario-edit.page').then((m) => m.UsuarioEditPage),
+        canActivate: [roleGuard('admin')],
+      },
+      {
+        path: 'usuarios/:id',
+        loadComponent: () => import('./pages/admin/usuario-edit.page').then((m) => m.UsuarioEditPage),
+        canActivate: [roleGuard('admin')],
       },
     ],
   },

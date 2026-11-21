@@ -49,6 +49,10 @@ export class Reserva {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  /** Código curto de exibição; o UUID segue como chave técnica. */
+  @Column({ type: 'varchar', length: 20, unique: true, nullable: true })
+  codigo: string | null;
+
   /** Data e hora previstas para a retirada do veículo. */
   @Column({ type: 'datetime', nullable: false })
   dataRetirada: Date;
@@ -80,6 +84,12 @@ export class Reserva {
     default: 0,
   })
   valorTotal: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: false, default: 0 })
+  valorSubtotal: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: false, default: 0 })
+  taxaServico: number;
 
   /** Chave estrangeira para `clients.id`. */
   @Index()
@@ -167,10 +177,13 @@ export class Reserva {
   toJSON(): Omit<Reserva, 'toJSON' | 'calcularValor'> {
     const {
       id,
+      codigo,
       dataRetirada,
       dataDevolucao,
       status,
       valorTotal,
+      valorSubtotal,
+      taxaServico,
       client_id,
       client,
       car_id,
@@ -181,10 +194,13 @@ export class Reserva {
 
     return {
       id,
+      codigo,
       dataRetirada,
       dataDevolucao,
       status,
       valorTotal: Number(valorTotal),
+      valorSubtotal: Number(valorSubtotal),
+      taxaServico: Number(taxaServico),
       client_id,
       client,
       car_id,

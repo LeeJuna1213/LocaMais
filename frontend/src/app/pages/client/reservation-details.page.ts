@@ -21,7 +21,11 @@ import { BadgeComponent } from '../../shared/components/badge.component';
       [role]="role"
       activeTab="reservas"
     >
-      @if (reservation; as r) {
+      @if (reservationService.loading()) {
+        <div class="card empty" role="status">Carregando reserva...</div>
+      } @else if (reservationService.error(); as error) {
+        <div class="card empty" role="alert">{{ error }}</div>
+      } @else if (reservation; as r) {
         <div class="card">
           <div class="row">
             <b>{{ vehicle?.name }}</b>
@@ -56,10 +60,10 @@ export class ReservationDetailsPage {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly auth = inject(AuthService);
-  private readonly reservationService = inject(ReservationService);
+  readonly reservationService = inject(ReservationService);
   private readonly toast = inject(ToastService);
 
-  readonly id = Number(this.route.snapshot.paramMap.get('id'));
+  readonly id = this.route.snapshot.paramMap.get('id') ?? '';
   readonly isAdmin = this.auth.role() === 'admin';
   confirmCancel = false;
 
@@ -71,8 +75,16 @@ export class ReservationDetailsPage {
     return this.isAdmin ? '/admin/reservas' : '/client/minhas';
   }
 
+  constructor() {
+    if (this.id) {
+      void this.reservationService.getById(this.id).catch(async (error: unknown) => {
+        await this.toast.show(error instanceof Error ? error.message : 'Não foi possível carregar a reserva');
+      });
+    }
+  }
+
   get reservation(): Reservation | undefined {
-    return this.reservationService.getById(this.id);
+    return this.reservationService.reservations().find((r) => r.id === this.id);
   }
 
   get vehicle(): Vehicle | undefined {
@@ -85,9 +97,13 @@ export class ReservationDetailsPage {
       this.confirmCancel = true;
       return;
     }
-    await this.reservationService.cancel(reservation.id);
-    this.confirmCancel = false;
-    await this.toast.show('Reserva cancelada');
+    try {
+      await this.reservationService.cancel(reservation.id);
+      this.confirmCancel = false;
+      await this.toast.show('Reserva cancelada');
+    } catch (error) {
+      await this.toast.show(error instanceof Error ? error.message : 'Não foi possível cancelar a reserva.');
+    }
   }
 
   async registerPickup(reservation: Reservation): Promise<void> {

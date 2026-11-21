@@ -1,7 +1,9 @@
 ﻿import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { IonContent } from '@ionic/angular';
+import { IonContent, IonIcon } from '@ionic/angular';
+import { addIcons } from 'ionicons';
+import { eyeOutline, eyeOffOutline } from 'ionicons/icons';
 import { UserRole } from '../../core/models';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -11,7 +13,7 @@ import { SegmentTabsComponent } from '../../shared/components/segment-tabs.compo
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [IonContent, FormsModule, LogoComponent, SegmentTabsComponent],
+  imports: [IonContent, FormsModule, IonIcon, LogoComponent, SegmentTabsComponent],
   template: `
     <ion-content class="app-content">
       <div class="page">
@@ -29,25 +31,16 @@ import { SegmentTabsComponent } from '../../shared/components/segment-tabs.compo
             (activeChange)="setRole($event)"
           />
 
-          <input
-            [(ngModel)]="identifier"
-            [placeholder]="mode === 'admin' ? 'E-mail corporativo' : 'E-mail'"
-            autocomplete="off"
-            data-lpignore="true"
-          />
-          <input
-            type="password"
-            class="pw"
-            [(ngModel)]="password"
-            placeholder="Senha"
-            autocomplete="off"
-            data-lpignore="true"
-            data-1p-ignore
-          />
-
-          <button class="btn" type="button" (click)="login()" [disabled]="auth.loading()">
-            {{ mode === 'admin' ? 'Entrar no painel' : 'Entrar' }}
-          </button>
+          <form #loginForm="ngForm" novalidate (ngSubmit)="login()">
+            <input name="identifier" [(ngModel)]="identifier" [placeholder]="mode === 'admin' ? 'E-mail corporativo' : 'E-mail'" autocomplete="username" aria-label="E-mail" data-lpignore="true" required />
+            <div class="password-field">
+              <input name="password" class="login-password" [type]="showPassword ? 'text' : 'password'" [(ngModel)]="password" placeholder="Senha" autocomplete="current-password" aria-label="Senha" data-lpignore="true" data-1p-ignore="true" required />
+              <button type="button" class="pw-toggle" (click)="togglePassword()" [attr.aria-label]="showPassword ? 'Ocultar senha' : 'Exibir senha'">
+                <ion-icon [name]="showPassword ? 'eye-off-outline' : 'eye-outline'"></ion-icon>
+              </button>
+            </div>
+            <button class="btn" type="submit" [disabled]="auth.loading()">{{ mode === 'admin' ? 'Entrar no painel' : 'Entrar' }}</button>
+          </form>
           <button class="lnk dark" type="button" (click)="forgotPassword()">Esqueci minha senha</button>
         </div>
 
@@ -61,6 +54,17 @@ import { SegmentTabsComponent } from '../../shared/components/segment-tabs.compo
       </div>
     </ion-content>
   `,
+  styles: [`
+    form { margin: 0; }
+    .password-field { position: relative; margin-bottom: 8px; }
+    .password-field .login-password { padding-right: 52px; margin-bottom: 0; }
+    .pw-toggle {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      display: grid; place-items: center; width: 36px; height: 36px;
+      background: transparent; border: none; cursor: pointer; padding: 4px; line-height: 1; color: #e86f12;
+    }
+    .pw-toggle ion-icon { font-size: 20px; color: #e86f12; }
+  `],
 })
 export class LoginPage {
   readonly auth = inject(AuthService);
@@ -71,9 +75,18 @@ export class LoginPage {
   mode: UserRole = 'client';
   identifier = '';
   password = '';
+  showPassword = false;
+
+  constructor() {
+    addIcons({ eyeOutline, eyeOffOutline });
+  }
 
   setRole(label: string): void {
     this.mode = label === 'Funcionário' ? 'admin' : 'client';
+  }
+
+  togglePassword(): void {
+    this.showPassword = !this.showPassword;
   }
 
   async login(): Promise<void> {

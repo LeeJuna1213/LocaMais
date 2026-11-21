@@ -28,15 +28,25 @@ describe('AuthService', () => {
   });
   afterEach(() => testing.verify());
 
-  it('autentica e define papel pelo usuário da API, ignorando papel escolhido na tela', async () => {
+  it('recusa uma conta de cliente quando a tela selecionada é funcionário', async () => {
     const login = auth.login('ana@example.test', 'senha-segura', 'admin');
     const request = testing.expectOne(`${environment.apiUrl}/autenticacao/login`);
     expect(request.request.body).toEqual({ email: 'ana@example.test', password: 'senha-segura' });
     request.flush({ access_token: 'jwt', expires_in: 'PT1H', token_type: 'Bearer', user });
+    await expect(login).rejects.toThrow('Esta conta é de cliente. Selecione o acesso de cliente.');
+    expect(auth.role()).toBeNull();
+    expect(auth.isLoggedIn()).toBe(false);
+  });
+
+  it('allows employee and admin accounts through the staff login choice based on the API identity', async () => {
+    const login = auth.login('staff@example.test', 'senha-segura', 'admin');
+    testing.expectOne(`${environment.apiUrl}/autenticacao/login`).flush({
+      access_token: 'staff-jwt', expires_in: 'PT1H', token_type: 'Bearer',
+      user: { ...user, id: 4, type: 'funcionario', name: 'Funcionário' },
+    });
     await login;
-    expect(auth.role()).toBe('client');
-    expect(auth.profile().name).toBe('Ana');
-    expect(auth.isLoggedIn()).toBe(true);
+    expect(auth.role()).toBe('funcionario');
+    expect(auth.home()).toBe('/admin/painel');
   });
 
   it('propaga erro de credenciais inválidas sem criar sessão', async () => {

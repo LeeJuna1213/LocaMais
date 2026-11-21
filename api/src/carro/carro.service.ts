@@ -53,6 +53,9 @@ export class CarroService {
         modelo: dto.modelo,
         marca: dto.marca,
         categoria: dto.categoria,
+        lugares: dto.lugares ?? null,
+        descricao: dto.descricao ?? null,
+        cambio: dto.cambio ?? null,
         ano: dto.ano,
         status: dto.status ?? StatusVeiculo.DISPONIVEL,
         valorDiaria: dto.valorDiaria,
@@ -160,6 +163,9 @@ export class CarroService {
     if (dto.modelo !== undefined) changes.modelo = dto.modelo;
     if (dto.marca !== undefined) changes.marca = dto.marca;
     if (dto.categoria !== undefined) changes.categoria = dto.categoria;
+    if (dto.lugares !== undefined) changes.lugares = dto.lugares;
+    if (dto.descricao !== undefined) changes.descricao = dto.descricao;
+    if (dto.cambio !== undefined) changes.cambio = dto.cambio;
     if (dto.ano !== undefined) changes.ano = dto.ano;
     if (dto.status !== undefined) changes.status = dto.status;
     if (dto.valorDiaria !== undefined) changes.valorDiaria = dto.valorDiaria;

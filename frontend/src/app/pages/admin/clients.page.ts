@@ -13,16 +13,23 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
     <app-shell title="Clientes" [back]="true" defaultHref="/admin/menu" [showNav]="true" role="admin" activeTab="menu">
       <input placeholder="Buscar cliente..." [ngModel]="query" (ngModelChange)="query = $event" autocomplete="off" />
 
-      @for (client of filteredClients; track client.id) {
-        <div class="card row card-click" (click)="edit(client)">
-          <div>
-            <b>{{ client.name }}</b>
-            <div class="small muted">{{ client.type }} - {{ client.status }}</div>
+      @if (clientService.loading()) {
+        <div class="card empty" role="status">Carregando clientes...</div>
+      } @else if (clientService.error(); as error) {
+        <div class="card empty" role="alert">{{ error }}</div>
+        <button class="btn" type="button" (click)="load()">Tentar novamente</button>
+      } @else {
+        @for (client of filteredClients; track client.id) {
+          <div class="card row card-click" (click)="edit(client)">
+            <div>
+              <b>{{ client.name }}</b>
+              <div class="small muted">{{ client.type }} - {{ client.status }}</div>
+            </div>
+            <span class="chev">›</span>
           </div>
-          <span class="chev">›</span>
-        </div>
-      } @empty {
-        <div class="card empty">Nenhum cliente</div>
+        } @empty {
+          <div class="card empty">Nenhum cliente</div>
+        }
       }
 
       <button class="btn" type="button" (click)="newClient()">Novo cliente</button>
@@ -31,9 +38,17 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
 })
 export class ClientsPage {
   private readonly router = inject(Router);
-  private readonly clientService = inject(ClientService);
+  readonly clientService = inject(ClientService);
 
   query = '';
+
+  constructor() {
+    void this.clientService.load();
+  }
+
+  async load(): Promise<void> {
+    await this.clientService.load();
+  }
 
   get filteredClients(): Client[] {
     const term = this.query.trim().toLowerCase();

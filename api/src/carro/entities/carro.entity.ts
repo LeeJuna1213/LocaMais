@@ -41,6 +41,16 @@ export class Carro {
   @Column({ type: 'varchar', length: 50, nullable: false })
   categoria: string;
 
+  @Column({ type: 'int', nullable: true })
+  lugares: number | null;
+
+  @Column({ type: 'varchar', length: 1000, nullable: true })
+  descricao: string | null;
+
+  /** Câmbio atual; nulo preserva a compatibilidade de carros cadastrados antes deste campo. */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  cambio: 'Automático' | 'Manual' | null;
+
   @Column({ type: 'int', nullable: false })
   ano: number;
 
@@ -105,6 +115,9 @@ export class Carro {
       modelo,
       marca,
       categoria,
+      lugares,
+      descricao,
+      cambio,
       ano,
       status,
       valorDiaria,
@@ -120,6 +133,9 @@ export class Carro {
       modelo,
       marca,
       categoria,
+      lugares,
+      descricao,
+      cambio,
       ano,
       status,
       valorDiaria,

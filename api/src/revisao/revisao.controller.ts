@@ -83,6 +83,13 @@ export class RevisaoController {
     return this.revisaoService.findAll();
   }
 
+  @Get('relatorio/custos')
+  @ApiOperation({ summary: 'Resume quantidade e custos de revisões por veículo' })
+  @ApiOkResponse({ description: 'Totais de revisão agrupados por veículo.' })
+  resumirCustos() {
+    return this.revisaoService.resumirCustosPorVeiculo();
+  }
+
   /**
    * Consulta uma revisão pelo identificador.
    */

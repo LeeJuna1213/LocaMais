@@ -323,7 +323,8 @@ ion-content.app-content {
 /* ---------------------------------------------------------------- forms */
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   font-family: inherit;
   border: 1.5px solid #eadfd5;
@@ -339,6 +340,19 @@ select {
   appearance: none;
 }
 
+input[type="number"] {
+  -webkit-appearance: auto;
+  appearance: auto;
+  color-scheme: light;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1;
+  background: transparent;
+  filter: brightness(0);
+}
+
 select {
   background-image: linear-gradient(45deg, transparent 50%, #7a5a40 50%),
     linear-gradient(135deg, #7a5a40 50%, transparent 50%);
@@ -349,7 +363,8 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   outline: 0;
   border-color: #f57c1f;
   box-shadow: 0 0 0 3px #f57c1f33;

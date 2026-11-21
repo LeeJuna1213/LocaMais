@@ -21,6 +21,8 @@ interface CarroBody {
   placa: string;
   status: string;
   valorDiaria: number;
+  lugares: number;
+  descricao: string | null;
 }
 
 interface ReservaBody {
@@ -94,6 +96,8 @@ describe('Reservas (e2e)', () => {
   let adminToken: string;
   let clientToken: string;
   let otherClientToken: string;
+  let funcionarioToken: string;
+  let incompleteClientToken: string;
   let clientId: number;
   let otherClientId: number;
   let carId: number;
@@ -142,6 +146,11 @@ describe('Reservas (e2e)', () => {
       'cliente.reserva@exemplo.com',
       'senha-secreta',
     );
+    await patch(app, '/clientes/me', {
+      telefone: '+5521999990000',
+      cnh_numero: '12345678901',
+      cnh_validade: '2030-12-31',
+    }, clientToken);
 
     const otherClient = await post<ClienteBody>(
       app,
@@ -172,6 +181,41 @@ describe('Reservas (e2e)', () => {
       'outro.cliente.reserva@exemplo.com',
       'senha-secreta',
     );
+    await patch(app, '/clientes/me', {
+      telefone: '+5521999990001',
+      cnh_numero: '10987654321',
+      cnh_validade: '2030-12-31',
+    }, otherClientToken);
+
+    const incompleteClient = await post<ClienteBody>(app, '/clientes', {
+      name: 'Cliente Cadastro Pendente',
+      email: 'cliente.incompleto@exemplo.com',
+      password: 'senha-secreta',
+      cliente: {
+        tipo_pessoa: 'PF',
+        cpf: makeCpf('192837465'),
+        data_nascimento: '1992-03-04',
+        endereco: ENDERECO,
+      },
+    }, adminToken);
+    if (incompleteClient.status !== 201) throw new Error(`nao foi possivel criar cliente incompleto: ${JSON.stringify(incompleteClient.body)}`);
+    incompleteClientToken = await login(app, 'cliente.incompleto@exemplo.com', 'senha-secreta');
+
+    const funcionario = await post<{ id: number }>(
+      app,
+      '/usuarios',
+      {
+        name: 'Funcionário Reserva',
+        email: 'funcionario.reserva@locamais.test',
+        password: 'SenhaFuncionario1!',
+        type: 'funcionario',
+      },
+      adminToken,
+    );
+    if (funcionario.status !== 201) {
+      throw new Error(`nao foi possivel criar funcionario: ${JSON.stringify(funcionario.body)}`);
+    }
+    funcionarioToken = await login(app, 'funcionario.reserva@locamais.test', 'SenhaFuncionario1!');
 
     const car = await post<CarroBody>(
       app,
@@ -181,6 +225,8 @@ describe('Reservas (e2e)', () => {
         modelo: 'Corolla',
         marca: 'Toyota',
         categoria: 'Sedan',
+        lugares: 5,
+        descricao: 'Sedan de teste da frota',
         ano: 2024,
         valorDiaria: 100.5,
       },
@@ -218,6 +264,89 @@ describe('Reservas (e2e)', () => {
     expect(body.disponivel).toBe(true);
     expect(body.motivo).toBeNull();
     expect(body.conflito).toBeNull();
+  });
+
+  it('bloqueia reserva incompleta com pendências e permite tentar novamente após salvar CNH e telefone', async () => {
+    const initial = await get<{ completo: boolean; pendencias: string[] }>(app, '/clientes/me/completude', incompleteClientToken);
+    expect(initial.status).toBe(200);
+    expect(initial.body.completo).toBe(false);
+    expect(initial.body.pendencias).toContain('telefone');
+    expect(initial.body.pendencias).toContain('cnh');
+
+    const start = futureIso(100);
+    const blocked = await post<{ code: string; pendencias: string[] }>(app, '/reservas', {
+      dataRetirada: start,
+      dataDevolucao: addHours(start, 24),
+      client_id: initial.body && (await get<{ client: { id: number } }>(app, '/autenticacao/me', incompleteClientToken)).body.client.id,
+      car_id: carId,
+    }, incompleteClientToken);
+    expect(blocked.status).toBe(400);
+    expect(blocked.body.code).toBe('CLIENT_PROFILE_INCOMPLETE');
+    expect(blocked.body.pendencias).toEqual(expect.arrayContaining(['telefone', 'cnh']));
+
+    await patch(app, '/clientes/me', {
+      telefone: '+5521988880000',
+      cnh_numero: '12345098765',
+      cnh_validade: '2030-12-31',
+    }, incompleteClientToken);
+    const complete = await get<{ completo: boolean; pendencias: string[] }>(app, '/clientes/me/completude', incompleteClientToken);
+    expect(complete.body).toEqual({ completo: true, pendencias: [] });
+
+    const retried = await post<ReservaBody>(app, '/reservas', {
+      dataRetirada: start,
+      dataDevolucao: addHours(start, 24),
+      client_id: (await get<{ client: { id: number } }>(app, '/autenticacao/me', incompleteClientToken)).body.client.id,
+      car_id: carId,
+    }, incompleteClientToken);
+    expect(retried.status).toBe(201);
+  });
+
+  it('cliente não autenticado recebe 401 ao tentar criar uma reserva', async () => {
+    const start = futureIso(80);
+    const response = await post(app, '/reservas', {
+      dataRetirada: start,
+      dataDevolucao: addHours(start, 24),
+      client_id: clientId,
+      car_id: carId,
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it('funcionário cria reserva para o cliente selecionado, não para o próprio usuário', async () => {
+    const start = futureIso(90);
+    const { status, body } = await post<ReservaBody>(
+      app,
+      '/reservas',
+      {
+        dataRetirada: start,
+        dataDevolucao: addHours(start, 24),
+        client_id: clientId,
+        car_id: carId,
+      },
+      funcionarioToken,
+    );
+    expect(status).toBe(201);
+    expect(body.client_id).toBe(clientId);
+    expect(body.client?.user_id).not.toBeUndefined();
+    expect(body.status).toBe('pendente');
+  });
+
+  it('GET /carros retorna lugares e descrição persistidos e PATCH atualiza os dois campos', async () => {
+    const initial = await get<CarroBody>(app, `/carros/${carId}`, adminToken);
+    expect(initial.status).toBe(200);
+    expect(initial.body.lugares).toBe(5);
+    expect(initial.body.descricao).toBe('Sedan de teste da frota');
+
+    const updated = await patch<CarroBody>(app, `/carros/${carId}`, {
+      lugares: 7,
+      descricao: 'Sedan revisado com sete lugares',
+    }, adminToken);
+    expect(updated.status).toBe(200);
+    expect(updated.body.lugares).toBe(7);
+    expect(updated.body.descricao).toBe('Sedan revisado com sete lugares');
+
+    const readback = await get<CarroBody>(app, `/carros/${carId}`, adminToken);
+    expect(readback.body).toMatchObject({ lugares: 7, descricao: 'Sedan revisado com sete lugares' });
   });
 
   it('cliente cria reserva para si e o servidor calcula o valor', async () => {

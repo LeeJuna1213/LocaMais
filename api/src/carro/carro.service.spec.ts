@@ -17,6 +17,9 @@ describe('CarroService', () => {
     modelo: 'Sedan',
     marca: 'Marca',
     categoria: 'Economico',
+    lugares: 5,
+    descricao: null,
+    cambio: 'Manual',
     ano: 2025,
     status: StatusVeiculo.DISPONIVEL,
     valorDiaria: 100,
@@ -249,6 +252,19 @@ describe('CarroService', () => {
   });
 
   describe('update', () => {
+    it('persiste capacidade e descrição recebidas no DTO', async () => {
+      await service.update(1, { lugares: 7, descricao: 'SUV com porta-malas amplo' });
+      expect(carrosRepository.update).toHaveBeenCalledWith(
+        { id: 1 },
+        { lugares: 7, descricao: 'SUV com porta-malas amplo' },
+      );
+    });
+    it('persiste o câmbio informado sem alterar campos não enviados', async () => {
+      await service.update(1, { cambio: 'Automático' });
+      expect(carrosRepository.update).toHaveBeenCalledWith({ id: 1 }, { cambio: 'Automático' });
+      expect(cacheInvalidation.invalidateCarDependents).toHaveBeenCalledWith(1);
+    });
+
     // Toda edição muda a resposta do carro; só a troca de placa afeta revisão.
     it('deve atualizar o veiculo e invalidar o cache de revisao quando a placa muda', async () => {
       const dto = { placa: 'XYZ-9999' };

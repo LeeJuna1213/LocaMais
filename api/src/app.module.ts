@@ -19,6 +19,8 @@ import { LocacaoModule } from './locacao/locacao.module.js';
 import { PagamentoModule } from './pagamento/pagamento.module.js';
 import { RevisaoModule } from './revisao/revisao.module.js';
 import { VistoriaModule } from './vistoria/vistoria.module.js';
+import { LojaModule } from './loja/loja.module.js';
+import { ConfiguracaoModule } from './configuracao/configuracao.module.js';
 import { RedisModule } from './redis/redis.module.js';
 import { CacheInvalidationModule } from './redis/cache-invalidation.module.js';
 
@@ -63,6 +65,8 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     PagamentoModule,
     RevisaoModule,
     VistoriaModule,
+    LojaModule,
+    ConfiguracaoModule,
   ],
   controllers: [AppController],
   providers: [

@@ -1,6 +1,9 @@
 import { Component, ViewChild, inject } from '@angular/core';
 import { FormsModule, NgForm, NgModel } from '@angular/forms';
 import { Router } from '@angular/router';
+import { IonIcon } from '@ionic/angular';
+import { addIcons } from 'ionicons';
+import { eyeOutline, eyeOffOutline } from 'ionicons/icons';
 import { ClientType } from '../../core/models';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -12,9 +15,23 @@ import { SegmentTabsComponent } from '../../shared/components/segment-tabs.compo
 @Component({
   selector: 'app-register',
   standalone: true,
-  imports: [FormsModule, AppShellComponent, SegmentTabsComponent, DocumentInputDirective, MatchValueValidatorDirective],
+  imports: [FormsModule, AppShellComponent, SegmentTabsComponent, DocumentInputDirective, MatchValueValidatorDirective, IonIcon],
   styles: [`
     .field-error { display: block; margin: -6px 0 10px; color: #b42318; font-size: 12px; }
+    /* Caixa igual aos inputs globais, com foco dentro da identidade laranja. */
+    .password-field { position: relative; margin-bottom: 8px; }
+    .password-field input { padding-right: 52px; margin-bottom: 0; }
+    .pw-toggle {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      display: grid; place-items: center; width: 36px; height: 36px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px 8px;
+      line-height: 1;
+      color: #e86f12;
+    }
+    .pw-toggle ion-icon { font-size: 20px; color: #e86f12; }
   `],
   template: `
     <app-shell title="Cadastro" [back]="true" defaultHref="/login">
@@ -65,9 +82,40 @@ import { SegmentTabsComponent } from '../../shared/components/segment-tabs.compo
         @if (showError(stateControl)) { <small class="field-error">Informe a sigla do estado com 2 letras.</small> }
         <input name="zipCode" [(ngModel)]="zipCode" #zipCodeControl="ngModel" required pattern="[0-9]{5}-?[0-9]{3}" placeholder="CEP * (ex.: 24000-000)" inputmode="numeric" autocomplete="postal-code" />
         @if (showError(zipCodeControl)) { <small class="field-error">Informe um CEP com 8 dígitos, com ou sem hífen.</small> }
-        <input name="password" type="password" class="pw" [(ngModel)]="password" #passwordControl="ngModel" required minlength="8" maxlength="72" placeholder="Senha * (8 a 72 caracteres)" autocomplete="new-password" />
+        <div class="password-field">
+          <input
+            name="password"
+            [type]="showPassword ? 'text' : 'password'"
+            [(ngModel)]="password"
+            #passwordControl="ngModel"
+            required
+            [minlength]="8"
+            [maxlength]="72"
+            placeholder="Senha * (8 a 72 caracteres)"
+            autocomplete="new-password"
+            aria-label="Senha"
+          />
+            <button type="button" class="pw-toggle" (click)="togglePassword('password')" [attr.aria-label]="showPassword ? 'Ocultar senha' : 'Exibir senha'">
+              <ion-icon [name]="showPassword ? 'eye-off-outline' : 'eye-outline'"></ion-icon>
+            </button>
+        </div>
         @if (showError(passwordControl)) { <small class="field-error">A senha deve ter entre 8 e 72 caracteres.</small> }
-        <input name="passwordConfirmation" type="password" class="pw" [(ngModel)]="passwordConfirmation" #passwordConfirmationControl="ngModel" required [appMatchValue]="password" placeholder="Confirmar senha *" autocomplete="new-password" />
+        <div class="password-field">
+          <input
+            name="passwordConfirmation"
+            [type]="showPasswordConfirmation ? 'text' : 'password'"
+            [(ngModel)]="passwordConfirmation"
+            #passwordConfirmationControl="ngModel"
+            required
+            [appMatchValue]="password"
+            placeholder="Confirmar senha *"
+            autocomplete="new-password"
+            aria-label="Confirmar senha"
+          />
+            <button type="button" class="pw-toggle" (click)="togglePassword('confirmation')" [attr.aria-label]="showPasswordConfirmation ? 'Ocultar senha' : 'Exibir senha'">
+              <ion-icon [name]="showPasswordConfirmation ? 'eye-off-outline' : 'eye-outline'"></ion-icon>
+            </button>
+        </div>
         @if (showError(passwordConfirmationControl)) {
           <small class="field-error">{{ passwordConfirmationControl.errors?.['required'] ? 'Confirme a senha.' : 'As senhas não conferem.' }}</small>
         }
@@ -99,6 +147,12 @@ export class RegisterPage {
   city = '';
   state = '';
   zipCode = '';
+  showPassword = false;
+  showPasswordConfirmation = false;
+
+  constructor() {
+    addIcons({ eyeOutline, eyeOffOutline });
+  }
 
   setType(label: string): void {
     const nextType = label === 'Pessoa Jurídica' ? 'PJ' : 'PF';
@@ -112,6 +166,14 @@ export class RegisterPage {
 
   showError(control: NgModel | null | undefined): boolean {
     return !!control?.invalid && (!!control.touched || this.submitted);
+  }
+
+  togglePassword(field: 'password' | 'confirmation'): void {
+    if (field === 'password') {
+      this.showPassword = !this.showPassword;
+    } else {
+      this.showPasswordConfirmation = !this.showPasswordConfirmation;
+    }
   }
 
   async register(form: NgForm): Promise<void> {

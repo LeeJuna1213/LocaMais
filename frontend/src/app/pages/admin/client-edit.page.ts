@@ -19,7 +19,12 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
       role="admin"
       activeTab="menu"
     >
-      @if (isNew || client) {
+      @if (clientService.loading() && !isNew) {
+        <div class="card empty" role="status">Carregando cliente...</div>
+      } @else if (clientService.error(); as error) {
+        <div class="card empty" role="alert">{{ error }}</div>
+        <button class="btn" type="button" (click)="load()">Tentar novamente</button>
+      } @else if (isNew || client) {
         <div class="card">
           <label>Nome</label>
           <input [(ngModel)]="name" autocomplete="off" />
@@ -47,7 +52,7 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
 export class ClientEditPage {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly clientService = inject(ClientService);
+  readonly clientService = inject(ClientService);
   private readonly toast = inject(ToastService);
 
   private readonly idParam = this.route.snapshot.paramMap.get('id') ?? 'novo';
@@ -59,7 +64,13 @@ export class ClientEditPage {
   document = '';
 
   constructor() {
-    const client = this.client;
+    if (!this.isNew) {
+      void this.load();
+    }
+  }
+
+  async load(): Promise<void> {
+    const client = await this.clientService.getById(this.id);
     if (client) {
       this.name = client.name;
       this.type = client.type;
@@ -68,7 +79,7 @@ export class ClientEditPage {
   }
 
   get client(): Client | undefined {
-    return this.isNew ? undefined : this.clientService.getById(this.id);
+    return this.isNew ? undefined : this.clientService.clients().find((c) => c.id === this.id);
   }
 
   async save(): Promise<void> {

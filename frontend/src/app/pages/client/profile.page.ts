@@ -89,7 +89,7 @@ export class ProfilePage {
   private readonly actionSheets = inject(ActionSheetController);
   private readonly imageUrls = inject(ImageUrlService);
 
-  readonly sections = ['Dados pessoais', 'CNH', 'Alterar senha', 'Endereço', 'Preferências'];
+  readonly sections = ['Dados pessoais', 'CNH', 'Alterar senha', 'Endereço', 'Preferências', 'Pagamentos'];
   selectedPhoto: File | null = null;
   previewUrl: string | null = null;
   imageFailed = false;

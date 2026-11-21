@@ -3,6 +3,7 @@ import { Component, inject } from '@angular/core';
 import { Reservation, Vehicle } from '../../core/models';
 import { ReservationService } from '../../core/services/reservation.service';
 import { VehicleService } from '../../core/services/vehicle.service';
+import { RevisaoService } from '../../core/services/revisao.service';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
 
 @Component({
@@ -26,12 +27,53 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
           <div class="kv"><span>{{ item.vehicle.name }}</span><b>{{ item.count }}</b></div>
         }
       </div>
+
+      <div class="card">
+        <b>Custos de revisões</b>
+        @if (revisaoService.loading()) {
+          <div class="small muted" role="status">Carregando custos...</div>
+        } @else if (revisaoService.error(); as error) {
+          <div class="small" role="alert">{{ error }}</div>
+          <button class="btn" type="button" (click)="loadRevisionCosts()">Tentar novamente</button>
+        } @else {
+          <div class="kv"><span>Total geral ({{ revisionCosts.quantidadeGeral }} revisões)</span><b>{{ revisionCosts.totalGeral | currency: 'BRL' }}</b></div>
+          @for (item of revisionCostsByVehicle; track item.vehicle.id) {
+            <div class="kv"><span>{{ item.vehicle.name }} · {{ item.quantidade }} {{ item.quantidade === 1 ? 'revisão' : 'revisões' }}</span><b>{{ item.total | currency: 'BRL' }}</b></div>
+          }
+        }
+      </div>
     </app-shell>
   `,
 })
 export class ReportsPage {
   private readonly reservationService = inject(ReservationService);
   private readonly vehicleService = inject(VehicleService);
+  readonly revisaoService = inject(RevisaoService);
+
+  constructor() {
+    void this.vehicleService.load();
+    void this.loadRevisionCosts();
+  }
+
+  async loadRevisionCosts(): Promise<void> {
+    await this.revisaoService.loadCostsReport();
+  }
+
+  get revisionCosts() {
+    return this.revisaoService.costs();
+  }
+
+  get revisionCostsByVehicle(): { vehicle: Vehicle; quantidade: number; total: number }[] {
+    const totals = new Map(this.revisionCosts.porVeiculo.map((item) => [Number(item.carro_id), item]));
+    return this.vehicleService.vehicles().map((vehicle) => {
+      const report = totals.get(vehicle.id);
+      return {
+        vehicle,
+        quantidade: Number(report?.quantidade) || 0,
+        total: Number(report?.total) || 0,
+      };
+    });
+  }
 
   get reservations(): Reservation[] {
     return this.reservationService.reservations();

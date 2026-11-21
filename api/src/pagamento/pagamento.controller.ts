@@ -84,10 +84,18 @@ export class PagamentoController {
    * Lista todos os pagamentos registrados.
    */
   @Get()
+  @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
   @ApiOperation({ summary: 'Lista todos os pagamentos' })
   @ApiOkResponse({ description: 'Lista de pagamentos retornada com sucesso.' })
   findAll(@CurrentUser() _actor: UsuarioAutenticado): Promise<Pagamento[]> {
     return this.pagamentoService.findAll();
+  }
+
+  @Get('meus')
+  @Roles(TipoUsuario.CLIENTE)
+  @ApiOperation({ summary: 'Lista somente os pagamentos do cliente autenticado' })
+  findMine(@CurrentUser() actor: UsuarioAutenticado): Promise<Pagamento[]> {
+    return this.pagamentoService.findMine(actor);
   }
 
   /**
@@ -96,6 +104,7 @@ export class PagamentoController {
    * Retorna o valor total, o valor pago (aprovado) e o saldo restante.
    */
   @Get('locacao/:locacaoId/saldo')
+  @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
   @ApiOperation({
     summary: 'Consulta o saldo restante de uma locação',
   })
@@ -124,6 +133,7 @@ export class PagamentoController {
    * Consulta o histórico de pagamentos de uma locação.
    */
   @Get('locacao/:locacaoId')
+  @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
   @ApiOperation({
     summary: 'Consulta o histórico de pagamentos de uma locação',
   })
@@ -138,6 +148,7 @@ export class PagamentoController {
   })
   @ApiNotFoundResponse({ description: 'Locação não encontrada.' })
   findByLocacao(
+    @CurrentUser() _actor: UsuarioAutenticado,
     @Param('locacaoId', ParseUUIDPipe) locacaoId: string,
   ): Promise<Pagamento[]> {
     return this.pagamentoService.findByLocacao(locacaoId);
@@ -157,6 +168,7 @@ export class PagamentoController {
   })
   @ApiOkResponse({ description: 'Pagamento encontrado com sucesso.' })
   @ApiNotFoundResponse({ description: 'Pagamento com o ID informado não existe.' })
+  @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
   findOne(@Param('id', ParseUUIDPipe) id: string): Promise<Pagamento> {
     return this.pagamentoService.findOne(id);
   }
@@ -224,6 +236,7 @@ export class PagamentoController {
     description: 'O pagamento não está aprovado.',
   })
   async gerarComprovante(
+    @CurrentUser() actor: UsuarioAutenticado,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<{
     empresa: string;
@@ -238,7 +251,7 @@ export class PagamentoController {
     status: StatusPagamento;
     aviso: string;
   }> {
-    return this.pagamentoService.gerarComprovante(id);
+    return this.pagamentoService.gerarComprovanteParaActor(id, actor);
   }
 
   /**

@@ -11,8 +11,9 @@ import { DataSource, Repository } from 'typeorm';
 
 import type { RegistroDto } from '../autenticacao/dto/registro.dto.js';
 import { EnderecoService } from '../endereco/endereco.service.js';
+import { CreateEnderecoDto } from '../endereco/dto/create-endereco.dto.js';
 import type { UsuarioAutenticado } from '../common/interfaces/usuario-autenticado.interface.js';
-import { normalizeDocument } from '../common/utils/normalize.utility.js';
+import { isValidCnpj, isValidCpf, normalizeDocument } from '../common/utils/normalize.utility.js';
 import type { Usuario } from '../usuario/entities/usuario.entity.js';
 import { TipoPessoa, TipoUsuario } from '../usuario/enums/usuario.enum.js';
 import { UsuarioService } from '../usuario/usuario.service.js';
@@ -22,6 +23,7 @@ import { CacheInvalidationService } from '../redis/cache-invalidation.service.js
 import { CreateClienteAccountDto } from './dto/create-cliente-account.dto.js';
 import type { CreateClienteDto } from './dto/create-cliente.dto.js';
 import { UpdateClienteDto } from './dto/update-cliente.dto.js';
+import { UpdateOwnClientDto } from './dto/update-own-client.dto.js';
 import { Cliente } from './entities/cliente.entity.js';
 
 /**
@@ -63,6 +65,59 @@ export class ClienteService {
       where: { user_id: userId },
       relations: { user: true, address: true },
     });
+  }
+
+  async getOwnCompleteness(userId: number): Promise<{ completo: boolean; pendencias: string[] }> {
+    const client = await this.findByUserId(userId);
+    if (!client) throw new NotFoundException('cadastro de cliente nao encontrado');
+    const issues: string[] = [];
+    if (!client.user?.name?.trim()) issues.push('dados-pessoais');
+    if (client.tipo_pessoa === TipoPessoa.PF) {
+      if (!client.cpf || !isValidCpf(client.cpf) || !client.data_nascimento || Number.isNaN(Date.parse(client.data_nascimento))) issues.push('dados-pessoais');
+    } else if (!client.cnpj || !isValidCnpj(client.cnpj) || !client.razao_social?.trim()) {
+      issues.push('dados-pessoais');
+    }
+    const phoneDigits = client.telefone?.replace(/\D/g, '') ?? '';
+    if (!/^\d{10,13}$/.test(phoneDigits)) issues.push('telefone');
+    if (!client.cnh_numero || !/^\d{11}$/.test(client.cnh_numero)
+      || !client.cnh_validade || new Date(`${client.cnh_validade}T23:59:59`) <= new Date()) issues.push('cnh');
+    const address = client.address;
+    if (!address || !address.logradouro?.trim() || !address.numero?.trim() || !address.bairro?.trim()
+      || !address.cidade?.trim() || !/^[A-Z]{2}$/.test(address.uf) || !/^\d{8}$/.test(address.cep)) {
+      issues.push('endereco');
+    }
+    const pendencias = [...new Set(issues)];
+    return { completo: pendencias.length === 0, pendencias };
+  }
+
+  async updateOwnProfile(actor: UsuarioAutenticado, dto: UpdateOwnClientDto): Promise<Cliente> {
+    const client = await this.findByUserId(actor.id);
+    if (!client) throw new NotFoundException('cadastro de cliente nao encontrado');
+    const changes: Partial<Cliente> = {};
+    if (dto.telefone !== undefined) changes.telefone = dto.telefone.trim() || null;
+    if (dto.cnh_numero !== undefined) changes.cnh_numero = dto.cnh_numero.replace(/\D/g, '');
+    if (dto.cnh_validade !== undefined) changes.cnh_validade = dto.cnh_validade;
+    if (dto.metodo_pagamento_preferido !== undefined) changes.metodo_pagamento_preferido = dto.metodo_pagamento_preferido;
+    if (Object.keys(changes).length) await this.clientesRepository.update({ id: client.id }, changes);
+    if (dto.name !== undefined) {
+      await this.usuarioService.update(actor, actor.id, { name: dto.name });
+    }
+    if (dto.endereco) {
+      if (client.address) {
+        await this.enderecoService.update(client.address.id, dto.endereco);
+      } else {
+        const fields = dto.endereco;
+        if (!fields.logradouro || !fields.numero || !fields.bairro || !fields.cidade || !fields.uf || !fields.cep) {
+          throw new BadRequestException({ message: 'endereco incompleto', code: 'ADDRESS_INCOMPLETE' });
+        }
+        await this.enderecoService.create(client.id, fields as CreateEnderecoDto);
+      }
+    }
+    try { await this.redis.del(`locamais:cliente:${client.id}`); } catch (error) {
+      this.logger.error(`Falha ao invalidar cache do cliente ${client.id}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    await this.cacheInvalidation.invalidateClientDependents(client.id);
+    return this.findOne(client.id);
   }
 
   /** Busca um cliente pelo ID; lança 404 quando não existe. */

@@ -32,6 +32,7 @@ import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
 import { ClienteService } from './cliente.service.js';
 import { CreateClienteAccountDto } from './dto/create-cliente-account.dto.js';
 import { UpdateClienteDto } from './dto/update-cliente.dto.js';
+import { UpdateOwnClientDto } from './dto/update-own-client.dto.js';
 
 /**
  * Rotas de CADASTRO DO CLIENTE.
@@ -84,6 +85,23 @@ export class ClienteController {
   @ApiOkResponse({ description: 'Lista de clientes retornada com sucesso.' })
   findAll() {
     return this.clienteService.findAll();
+  }
+
+  @Get('me/completude')
+  @Roles(TipoUsuario.CLIENTE)
+  @ApiOperation({ summary: 'Consulta pendências do cadastro do cliente autenticado' })
+  getOwnCompleteness(@CurrentUser() actor: UsuarioAutenticado) {
+    return this.clienteService.getOwnCompleteness(actor.id);
+  }
+
+  @Patch('me')
+  @Roles(TipoUsuario.CLIENTE)
+  @ApiOperation({ summary: 'Atualiza dados pessoais, CNH, telefone e endereço do próprio cliente' })
+  updateOwn(
+    @CurrentUser() actor: UsuarioAutenticado,
+    @Body() dto: UpdateOwnClientDto,
+  ) {
+    return this.clienteService.updateOwnProfile(actor, dto);
   }
 
   // -------------------------------------------------------
