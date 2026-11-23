@@ -85,6 +85,10 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/admin/vehicle-revisions.page').then((m) => m.VehicleRevisionsPage),
       },
       {
+        path: 'veiculos/:id/vistorias',
+        loadComponent: () => import('./pages/admin/vehicle-inspections.page').then((m) => m.VehicleInspectionsPage),
+      },
+      {
         path: 'reservas',
         loadComponent: () => import('./pages/admin/admin-reservations.page').then((m) => m.AdminReservationsPage),
       },

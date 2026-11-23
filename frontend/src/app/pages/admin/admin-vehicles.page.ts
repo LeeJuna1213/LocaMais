@@ -92,7 +92,15 @@ export class AdminVehiclesPage implements OnDestroy {
   }
 
   async open(vehicle: Vehicle): Promise<void> {
-    await this.router.navigate(['/admin/veiculos', vehicle.id, 'revisoes']);
+    const actionSheet = await this.actionSheets.create({
+      header: vehicle.name,
+      buttons: [
+        { text: 'Revisão e Status', handler: () => { void this.router.navigate(['/admin/veiculos', vehicle.id, 'revisoes']); } },
+        { text: 'Vistorias', handler: () => { void this.router.navigate(['/admin/veiculos', vehicle.id, 'vistorias']); } },
+        { text: 'Cancelar', role: 'cancel' },
+      ],
+    });
+    await actionSheet.present();
   }
 
   async newVehicle(): Promise<void> {

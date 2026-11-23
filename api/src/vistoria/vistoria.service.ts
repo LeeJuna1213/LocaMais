@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 
 import type { UsuarioAutenticado } from '../common/interfaces/usuario-autenticado.interface.js';
 import { LocacaoService } from '../locacao/locacao.service.js';
@@ -18,6 +18,27 @@ import { CreateVistoriaDto } from './dto/create-vistoria.dto.js';
 import { UpdateVistoriaDto } from './dto/update-vistoria.dto.js';
 import { Vistoria } from './entities/vistoria.entity.js';
 import { TipoVistoria } from './enums/tipo-vistoria.enum.js';
+import { Carro } from '../carro/entities/carro.entity.js';
+import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
+import { CreateVistoriaVeiculoDto } from './dto/create-vistoria-veiculo.dto.js';
+import { VistoriaCustosQueryDto } from './dto/vistoria-custos-query.dto.js';
+
+export interface VistoriaCustosPorVeiculo {
+  carro_id: number;
+  modelo: string;
+  placa: string;
+  quantidade: number;
+  total: number;
+  vistorias: Array<{ id: string; data: Date; descricao: string; km: number; valor: number }>;
+}
+
+export interface VistoriaCustosRelatorio {
+  porVeiculo: VistoriaCustosPorVeiculo[];
+  totalGeral: number;
+  quantidadeGeral: number;
+  de: string | null;
+  ate: string | null;
+}
 
 /**
  * Regras de negócio das vistorias.
@@ -44,7 +65,97 @@ export class VistoriaService {
     private readonly vistoriasRepository: Repository<Vistoria>,
     private readonly locacaoService: LocacaoService,
     private readonly redis: RedisService,
+    private readonly dataSource: DataSource,
+    private readonly cacheInvalidation: CacheInvalidationService,
   ) {}
+
+  /** Registra uma vistoria periódica concluída e configura o próximo limite individual. */
+  async createForVehicle(dto: CreateVistoriaVeiculoDto): Promise<Vistoria> {
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const carro = await manager.findOne(Carro, { where: { id: dto.carroId } });
+      if (!carro) throw new NotFoundException(`veiculo com ID ${dto.carroId} nao encontrado`);
+      if (dto.km < carro.quilometragem) {
+        throw new ConflictException(`a quilometragem da vistoria (${dto.km} km) não pode ser inferior ao odômetro atual (${carro.quilometragem} km).`);
+      }
+      if (dto.proximaVistoriaKm <= dto.km) {
+        throw new ConflictException('o próximo limite de vistoria deve ser maior que a quilometragem desta inspeção.');
+      }
+
+      const vistoria = this.vistoriasRepository.create({
+        tipo: TipoVistoria.PERIODICA,
+        data: new Date(dto.data),
+        observacoes: dto.descricao.trim(),
+        fotos: '[]',
+        locacao_id: null,
+        locacao: null,
+        carro_id: carro.id,
+        carro,
+        km: dto.km,
+        valor: dto.valor,
+      });
+      carro.quilometragem = dto.km;
+      carro.proximaVistoriaKm = dto.proximaVistoriaKm;
+      await manager.save(vistoria);
+      await manager.save(carro);
+      return vistoria;
+    });
+
+    // Após o commit no banco, invalida os dados do carro e reservas relacionadas.
+    try {
+      await this.redis.del(`locamais:carro:${dto.carroId}`);
+    } catch (error) {
+      this.logger.error(`Falha ao invalidar cache do carro ${dto.carroId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    await this.cacheInvalidation.invalidateCarDependents(dto.carroId);
+    return saved;
+  }
+
+  /** Histórico periódico restrito a um único veículo; rota protegida para staff. */
+  async findByCarro(actor: UsuarioAutenticado, carroId: number): Promise<Vistoria[]> {
+    if (!this.isStaff(actor)) throw new ForbiddenException('gerenciamento de vistorias restrito a admin/funcionário');
+    const carro = await this.dataSource.getRepository(Carro).findOne({ where: { id: carroId } });
+    if (!carro) throw new NotFoundException(`veiculo com ID ${carroId} nao encontrado`);
+    return this.vistoriasRepository.find({
+      where: { carro_id: carroId, tipo: TipoVistoria.PERIODICA },
+      order: { data: 'DESC' },
+    });
+  }
+
+  /** Relatório de despesas efetivamente concluídas, separado das revisões. */
+  async resumirCustosPorVeiculo(query: VistoriaCustosQueryDto = {}): Promise<VistoriaCustosRelatorio> {
+    const builder = this.vistoriasRepository.createQueryBuilder('vistoria')
+      .leftJoinAndSelect('vistoria.carro', 'carro')
+      .where('vistoria.tipo = :tipo', { tipo: TipoVistoria.PERIODICA })
+      .andWhere('vistoria.carro_id IS NOT NULL');
+    if (query.de) builder.andWhere('vistoria.data >= :de', { de: new Date(`${query.de}T00:00:00.000Z`) });
+    if (query.ate) builder.andWhere('vistoria.data <= :ate', { ate: new Date(`${query.ate}T23:59:59.999Z`) });
+    const rows = await builder.orderBy('vistoria.data', 'DESC').getMany() as Vistoria[];
+    const grouped = new Map<number, VistoriaCustosPorVeiculo>();
+    for (const item of rows) {
+      if (!item.carro_id || !item.carro || item.km === null || item.valor === null) continue;
+      const group = grouped.get(item.carro_id) ?? {
+        carro_id: item.carro_id,
+        modelo: `${item.carro.marca} ${item.carro.modelo}`,
+        placa: item.carro.placa,
+        quantidade: 0,
+        total: 0,
+        vistorias: [],
+      };
+      const valor = Number(item.valor);
+      group.quantidade += 1;
+      group.total += valor;
+      group.vistorias.push({ id: item.id, data: item.data, descricao: item.observacoes ?? '', km: item.km, valor });
+      grouped.set(item.carro_id, group);
+    }
+    const porVeiculo = [...grouped.values()];
+    return {
+      porVeiculo,
+      totalGeral: porVeiculo.reduce((total, item) => total + item.total, 0),
+      quantidadeGeral: porVeiculo.reduce((total, item) => total + item.quantidade, 0),
+      de: query.de ?? null,
+      ate: query.ate ?? null,
+    };
+  }
 
   /**
    * Registra uma nova vistoria vinculada a uma locação.

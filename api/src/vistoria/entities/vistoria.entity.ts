@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 
 import type { Locacao } from '../../locacao/entities/locacao.entity.js';
+import type { Carro } from '../../carro/entities/carro.entity.js';
 import { TipoVistoria } from '../enums/tipo-vistoria.enum.js';
 
 /**
@@ -42,6 +43,7 @@ import { TipoVistoria } from '../enums/tipo-vistoria.enum.js';
  */
 @Entity('vistorias')
 @Index('idx_vistorias_locacao', ['locacao_id'])
+@Index('idx_vistorias_carro_tipo_data', ['carro_id', 'tipo', 'data'])
 export class Vistoria {
   /** Identificador público da vistoria. */
   @PrimaryGeneratedColumn('uuid')
@@ -63,6 +65,13 @@ export class Vistoria {
   @Column({ type: 'varchar', length: 2000, nullable: true, default: null })
   observacoes: string | null;
 
+  /** Quilometragem e custo são usados somente nas vistorias periódicas. */
+  @Column({ type: 'int', nullable: true })
+  km: number | null;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  valor: number | null;
+
   /**
    * Referencias às fotos registradas durante a vistoria.
    *
@@ -80,6 +89,14 @@ export class Vistoria {
   @ManyToOne('Locacao', 'vistorias', { nullable: true, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'locacao_id' })
   locacao: Locacao | null;
+
+  /** Relação direta para vistorias periódicas sem locação associada. */
+  @Column({ type: 'int', nullable: true })
+  carro_id: number | null;
+
+  @ManyToOne('Carro', { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'carro_id' })
+  carro?: Carro | null;
 
   @CreateDateColumn()
   created_at: Date;
@@ -104,9 +121,13 @@ export class Vistoria {
       tipo,
       data,
       observacoes,
+      km,
+      valor,
       fotos,
       locacao_id,
       locacao,
+      carro_id,
+      carro,
       created_at,
       updated_at,
     } = this;
@@ -116,9 +137,13 @@ export class Vistoria {
       tipo,
       data,
       observacoes,
+      km,
+      valor: valor === null || valor === undefined ? valor : Number(valor),
       fotos,
       locacao_id,
       locacao,
+      carro_id,
+      carro,
       created_at,
       updated_at,
     };

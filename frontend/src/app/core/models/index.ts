@@ -28,6 +28,8 @@ export interface Vehicle {
   year?: number;
   lugares?: number | null;
   descricao?: string | null;
+  nextInspectionKm?: number | null;
+  inspectionDue?: boolean;
 }
 
 export type ClientType = 'PF' | 'PJ';
@@ -202,6 +204,53 @@ export interface CreateRevisaoInput {
   km: number;
   valor: number;
   carroId: number;
+}
+
+export interface VehicleInspectionApi {
+  id: string;
+  tipo: 'periodica';
+  data: string;
+  observacoes: string;
+  fotos: string;
+  carro_id: number;
+  km: number;
+  valor: number | string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VehicleInspectionCostApi {
+  id: string;
+  data: string;
+  descricao: string;
+  km: number;
+  valor: number | string;
+}
+
+export interface VehicleInspectionCostByVehicleApi {
+  carro_id: number;
+  modelo: string;
+  placa: string;
+  quantidade: number | string;
+  total: number | string;
+  vistorias: VehicleInspectionCostApi[];
+}
+
+export interface VehicleInspectionCostsReportApi {
+  porVeiculo: VehicleInspectionCostByVehicleApi[];
+  totalGeral: number | string;
+  quantidadeGeral: number | string;
+  de: string | null;
+  ate: string | null;
+}
+
+export interface CreateVehicleInspectionInput {
+  carroId: number;
+  data: string;
+  descricao: string;
+  valor: number;
+  km: number;
+  proximaVistoriaKm: number;
 }
 
 export interface UpdateRevisaoInput {

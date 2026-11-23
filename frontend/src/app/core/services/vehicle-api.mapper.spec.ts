@@ -14,6 +14,8 @@ describe('mapCarroApi', () => {
       status: 'disponivel',
       valorDiaria: '125.50',
       quilometragem: 12000,
+      proximaVistoriaKm: 12000,
+      vistoriaPendente: true,
       foto: null,
       cambio: 'Automático',
       created_at: '2026-11-17T10:00:00.000Z',
@@ -28,6 +30,8 @@ describe('mapCarroApi', () => {
       category: 'Hatch',
       plate: 'ABC1D23',
       mileage: 12000,
+      nextInspectionKm: 12000,
+      inspectionDue: true,
       photo: null,
       transmission: 'Automático',
       favorite: false,
@@ -70,5 +74,19 @@ describe('mapCarroApi', () => {
       created_at: '',
       updated_at: '',
     } as unknown as CarroApi)).toThrow('Status de veículo não suportado pela interface');
+  });
+
+  it.each([
+    [49999, 50000, false],
+    [50000, 50000, true],
+    [50001, 50000, true],
+    [50001, null, false],
+  ])('deriva vistoria pendente para km %s e próximo limite %s', (km, limit, due) => {
+    const mapped = mapCarroApi({
+      id: 3, placa: 'TST0001', modelo: 'Teste', marca: 'LocaMais', categoria: 'Teste', ano: 2026,
+      status: 'disponivel', valorDiaria: 100, quilometragem: km, foto: null,
+      proximaVistoriaKm: limit, created_at: '', updated_at: '',
+    });
+    expect(mapped.inspectionDue).toBe(due);
   });
 });

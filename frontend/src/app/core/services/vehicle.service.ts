@@ -17,6 +17,7 @@ export interface VehicleWriteInput {
   cambio?: 'Automático' | 'Manual' | null;
   lugares?: number | null;
   descricao?: string | null;
+  proximaVistoriaKm?: number | null;
 }
 
 @Injectable({ providedIn: 'root' })

@@ -4,6 +4,8 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Query,
+  ParseIntPipe,
   Patch,
   Post,
 } from '@nestjs/common';
@@ -28,6 +30,10 @@ import { CreateVistoriaDto } from './dto/create-vistoria.dto.js';
 import type { Vistoria } from './entities/vistoria.entity.js';
 import { UpdateVistoriaDto } from './dto/update-vistoria.dto.js';
 import { VistoriaService } from './vistoria.service.js';
+import { Roles } from '../common/decorators/roles.decorator.js';
+import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
+import { CreateVistoriaVeiculoDto } from './dto/create-vistoria-veiculo.dto.js';
+import { VistoriaCustosQueryDto } from './dto/vistoria-custos-query.dto.js';
 
 /**
  * Rotas de vistorias.
@@ -45,6 +51,34 @@ import { VistoriaService } from './vistoria.service.js';
 @Controller('vistorias')
 export class VistoriaController {
   constructor(private readonly vistoriaService: VistoriaService) {}
+
+  @Post('veiculo')
+  @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
+  @ApiOperation({ summary: 'Registra vistoria periódica concluída de um veículo' })
+  @ApiCreatedResponse({ description: 'Vistoria salva e próximo limite do veículo atualizado.' })
+  @ApiForbiddenResponse({ description: 'Acesso restrito a administrador ou funcionário.' })
+  @ApiConflictResponse({ description: 'Quilometragem inválida ou próximo limite não posterior à vistoria.' })
+  createForVehicle(@Body() dto: CreateVistoriaVeiculoDto) {
+    return this.vistoriaService.createForVehicle(dto);
+  }
+
+  @Get('carro/:carroId')
+  @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
+  @ApiOperation({ summary: 'Consulta o histórico de vistorias periódicas de um veículo' })
+  @ApiForbiddenResponse({ description: 'Acesso restrito a administrador ou funcionário.' })
+  findByCarro(
+    @CurrentUser() actor: UsuarioAutenticado,
+    @Param('carroId', ParseIntPipe) carroId: number,
+  ): Promise<Vistoria[]> {
+    return this.vistoriaService.findByCarro(actor, carroId);
+  }
+
+  @Get('relatorio/custos')
+  @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
+  @ApiOperation({ summary: 'Consulta custos de vistorias por veículo em um período' })
+  resumirCustos(@Query() query: VistoriaCustosQueryDto) {
+    return this.vistoriaService.resumirCustosPorVeiculo(query);
+  }
 
   /**
    * Registra uma nova vistoria vinculada a uma locação.

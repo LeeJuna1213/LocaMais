@@ -84,6 +84,13 @@ describe('AdminVehiclesPage vehicle management', () => {
     ]);
   });
 
+  it('offers both revision/status and inspection history when a vehicle is selected', async () => {
+    await fixture.componentInstance.open(vehicle);
+    expect(options?.buttons.map((button) => button.text)).toEqual(['Revisão e Status', 'Vistorias', 'Cancelar']);
+    options?.buttons[1]?.handler?.();
+    expect(router.navigate).toHaveBeenCalledWith(['/admin/veiculos', vehicle.id, 'vistorias']);
+  });
+
   it('does not expose photo removal in the listing action menu', async () => {
     await fixture.componentInstance.openActions({ ...vehicle, photo: null }, document.createElement('input'));
     expect(options?.buttons.map((button) => button.text)).toEqual([

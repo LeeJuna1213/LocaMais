@@ -21,6 +21,8 @@ describe('VistoriaService', () => {
   let vistoriasRepository: any;
   let locacaoService: any;
   let redisService: any;
+  let dataSource: any;
+  let cacheInvalidation: any;
 
   const mockVistoria = Object.assign(new Vistoria(), {
     id: 'vist-123',
@@ -86,11 +88,15 @@ describe('VistoriaService', () => {
       set: vi.fn().mockResolvedValue(undefined),
       del: vi.fn().mockResolvedValue(1),
     };
+    dataSource = { transaction: vi.fn(), getRepository: vi.fn(() => ({ findOne: vi.fn().mockResolvedValue({ id: 12 }) })) };
+    cacheInvalidation = { invalidateCarDependents: vi.fn().mockResolvedValue(undefined) };
 
     service = new VistoriaService(
       vistoriasRepository as any,
       locacaoService as any,
       redisService as unknown as RedisService,
+      dataSource as any,
+      cacheInvalidation as any,
     );
   });
 
@@ -153,15 +159,19 @@ describe('VistoriaService', () => {
 
       expect(payload).toEqual(resultado);
       expect(Object.keys(payload).sort()).toEqual([
+        'carro',
+        'carro_id',
         'created_at',
         'data',
         'fotos',
         'id',
+        'km',
         'locacao',
         'locacao_id',
         'observacoes',
         'tipo',
         'updated_at',
+        'valor',
       ]);
     });
 

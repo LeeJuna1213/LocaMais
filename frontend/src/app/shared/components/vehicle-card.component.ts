@@ -17,6 +17,7 @@ import { CarComponent } from './car.component';
     .vehicle-menu { border: 0; background: transparent; color: #69513f; padding: 8px; border-radius: 8px; cursor: pointer; }
     .vehicle-menu ion-icon { font-size: 20px; }
     .vehicle-menu:focus-visible { outline: 2px solid #e86f12; outline-offset: 2px; }
+    .inspection-pending { display:inline-block; margin-top:5px; padding:3px 8px; border-radius:999px; background:#fff0e2; color:#9a3f06; font-size:11px; font-weight:700; }
   `],
   template: `
     <div class="card row card-click" (click)="selected.emit(vehicle)">
@@ -29,6 +30,7 @@ import { CarComponent } from './car.component';
         <div style="font-size: 11px"><app-badge [status]="vehicle.status" /></div>
         <b style="font-size: 14px">{{ vehicle.name }}</b>
         <div style="font-size: 12px; color: #7a5a40">{{ vehicle.category }}{{ vehicle.plate ? ' · ' + vehicle.plate : '' }}</div>
+        @if (adminActions && vehicle.inspectionDue) { <span class="inspection-pending">Vistoria pendente</span> }
         <div class="pr" style="font-size: 13px">{{ vehicle.pricePerDay | currency: 'BRL' }} / diária</div>
       </div>
       @if (adminActions) {

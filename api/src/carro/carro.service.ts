@@ -65,6 +65,7 @@ export class CarroService {
         ano: dto.ano,
         status: dto.status ?? StatusVeiculo.DISPONIVEL,
         valorDiaria: dto.valorDiaria,
+        proximaVistoriaKm: dto.proximaVistoriaKm ?? null,
       }),
     );
 
@@ -99,7 +100,15 @@ export class CarroService {
         throw new NotFoundException(`veiculo com ID ${id} nao encontrado`);
       }
       // Nunca confiar em `foto` presente em uma chave antiga do Redis.
-      return { ...cached, categoria: fotoCarro.categoria, categoria_id: fotoCarro.categoria_id, foto: fotoCarro.foto } as Carro;
+      return {
+        ...cached,
+        categoria: fotoCarro.categoria,
+        categoria_id: fotoCarro.categoria_id,
+        foto: fotoCarro.foto,
+        quilometragem: fotoCarro.quilometragem,
+        proximaVistoriaKm: fotoCarro.proximaVistoriaKm,
+        vistoriaPendente: fotoCarro.proximaVistoriaKm !== null && fotoCarro.quilometragem >= fotoCarro.proximaVistoriaKm,
+      } as Carro;
     }
 
     // Cache MISS (ou Redis indisponível): consulta o MySQL.
@@ -130,10 +139,10 @@ export class CarroService {
   /** Consulta somente ID e foto; usada para completar dados gerais cacheados. */
   private buscarFoto(
     id: number,
-  ): Promise<Pick<Carro, 'id' | 'foto' | 'categoria' | 'categoria_id'> | null> {
+  ): Promise<Pick<Carro, 'id' | 'foto' | 'categoria' | 'categoria_id' | 'quilometragem' | 'proximaVistoriaKm'> | null> {
     return this.carrosRepository.findOne({
       where: { id },
-      select: { id: true, foto: true, categoria: true, categoria_id: true },
+      select: { id: true, foto: true, categoria: true, categoria_id: true, quilometragem: true, proximaVistoriaKm: true },
     });
   }
 
@@ -184,6 +193,7 @@ export class CarroService {
     if (dto.ano !== undefined) changes.ano = dto.ano;
     if (dto.status !== undefined) changes.status = dto.status;
     if (dto.valorDiaria !== undefined) changes.valorDiaria = dto.valorDiaria;
+    if (dto.proximaVistoriaKm !== undefined) changes.proximaVistoriaKm = dto.proximaVistoriaKm;
 
     if (Object.keys(changes).length > 0) {
       await this.carrosRepository.update({ id }, changes);

@@ -29,7 +29,7 @@ describe('Vistoria (unit)', () => {
   it('enum TipoVistoria possui os valores esperados', () => {
     expect(TipoVistoria.RETIRADA).toBe('retirada');
     expect(TipoVistoria.DEVOLUCAO).toBe('devolucao');
-    expect(Object.values(TipoVistoria)).toEqual(['retirada', 'devolucao']);
+    expect(Object.values(TipoVistoria)).toEqual(['retirada', 'devolucao', 'periodica']);
   });
 
   it('fotos aceita um array vazio serializado', () => {

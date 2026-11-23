@@ -1,5 +1,6 @@
 import { CurrencyPipe } from '@angular/common';
 import { Component, inject } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Reservation, Vehicle } from '../../core/models';
 import { CustomerPaymentService } from '../../core/services/customer-payment.service';
@@ -8,6 +9,8 @@ import { AdminReservationTab, filterAdminReservations, ReservationService } from
 import { RevisaoService } from '../../core/services/revisao.service';
 import { VehicleService } from '../../core/services/vehicle.service';
 import { RevisionCostByVehicleApi } from '../../core/models';
+import { VehicleInspectionCostByVehicleApi } from '../../core/models';
+import { VehicleInspectionService } from '../../core/services/vehicle-inspection.service';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
 
 export interface ReservationReportCategory {
@@ -39,11 +42,16 @@ export function buildReservationReportCategories(reservations: Reservation[]): R
   ];
 }
 
+export function buildInspectionCostsByVehicle(rows: VehicleInspectionCostByVehicleApi[]): VehicleInspectionCostByVehicleApi[] {
+  return rows.filter((row) => Number(row.quantidade) > 0)
+    .map((row) => ({ ...row, quantidade: Number(row.quantidade), total: Number(row.total), vistorias: row.vistorias.map((item) => ({ ...item, valor: Number(item.valor) })) }));
+}
+
 @Component({
   selector: 'app-reports',
   standalone: true,
-  imports: [AppShellComponent, CurrencyPipe],
-  styles: [`.report-link{width:100%;border:0;background:transparent;text-align:left;font:inherit;color:inherit;cursor:pointer;padding:8px 0}.report-link:hover span{text-decoration:underline;color:#b84c09}`],
+  imports: [AppShellComponent, CurrencyPipe, FormsModule],
+  styles: [`.report-link{width:100%;border:0;background:transparent;text-align:left;font:inherit;color:inherit;cursor:pointer;padding:8px 0}.report-link:hover span{text-decoration:underline;color:#b84c09}.report-date-filter{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end;margin:12px 0}.report-date-filter .btn{grid-column:1/-1;margin:0}`],
   template: `
     <app-shell title="Relatórios" [back]="true" defaultHref="/admin/menu" [showNav]="true" role="admin" activeTab="menu">
       <div class="card">
@@ -78,6 +86,29 @@ export function buildReservationReportCategories(reservations: Reservation[]): R
           }
         }
       </div>
+      <div class="card">
+        <b>Custos de vistorias</b>
+        <div class="report-date-filter">
+          <div><label for="inspection-cost-from">De</label><input id="inspection-cost-from" type="date" [(ngModel)]="inspectionCostFrom" /></div>
+          <div><label for="inspection-cost-to">Até</label><input id="inspection-cost-to" type="date" [(ngModel)]="inspectionCostTo" /></div>
+          <button class="btn" type="button" [disabled]="inspectionCostsLoading" (click)="loadInspectionCosts()">{{ inspectionCostsLoading ? 'Carregando...' : 'Aplicar período' }}</button>
+        </div>
+        @if (inspectionCostsError) { <div class="small" role="alert">{{ inspectionCostsError }}</div> }
+        @else if (inspectionCostsLoading) { <div class="small muted" role="status">Carregando custos das vistorias...</div> }
+        @else {
+          <div class="kv"><span>Total de vistorias no período ({{ inspectionCosts.quantidadeGeral }})</span><b>{{ inspectionCosts.totalGeral | currency:'BRL' }}</b></div>
+          @for (vehicle of inspectionCostsByVehicle; track vehicle.carro_id) {
+            <article class="card">
+              <b>{{ vehicle.modelo }} · {{ vehicle.placa }}</b>
+              <div class="kv"><span>{{ vehicle.quantidade }} {{ vehicle.quantidade === 1 ? 'vistoria' : 'vistorias' }}</span><b>Total: {{ vehicle.total | currency:'BRL' }}</b></div>
+              <div class="kv"><span>Total de manutenção neste veículo (revisões + vistorias)</span><b>{{ maintenanceTotalFor(vehicle.carro_id) | currency:'BRL' }}</b></div>
+              @for (inspection of vehicle.vistorias; track inspection.id) {
+                <div class="kv"><span>{{ formatInspectionDate(inspection.data) }} · {{ inspection.descricao }} · {{ inspection.km }} km</span><b>Vistoria: {{ inspection.valor | currency:'BRL' }}</b></div>
+              }
+            </article>
+          } @empty { <div class="small muted">Nenhuma vistoria concluída neste período.</div> }
+        }
+      </div>
     </app-shell>
   `,
 })
@@ -87,12 +118,19 @@ export class ReportsPage {
   private readonly vehicleService = inject(VehicleService);
   readonly revisaoService = inject(RevisaoService);
   private readonly paymentService = inject(CustomerPaymentService);
+  private readonly inspectionService = inject(VehicleInspectionService);
+  inspectionCostFrom = '';
+  inspectionCostTo = '';
+  inspectionCostsLoading = false;
+  inspectionCostsError: string | null = null;
+  inspectionCosts: { porVeiculo: VehicleInspectionCostByVehicleApi[]; totalGeral: number; quantidadeGeral: number } = { porVeiculo: [], totalGeral: 0, quantidadeGeral: 0 };
 
   constructor() {
     void this.vehicleService.load();
     void this.reservationService.load();
     void this.paymentService.loadOperational();
     void this.loadRevisionCosts();
+    void this.loadInspectionCosts();
   }
 
   async loadRevisionCosts(): Promise<void> { await this.revisaoService.loadCostsReport(); }
@@ -100,6 +138,37 @@ export class ReportsPage {
 
   get revisionCostsByVehicle(): { vehicle: Vehicle; quantidade: number; total: number }[] {
     return buildRevisionCostsByVehicle(this.vehicleService.vehicles(), this.revisionCosts.porVeiculo);
+  }
+
+  get inspectionCostsByVehicle(): VehicleInspectionCostByVehicleApi[] {
+    return buildInspectionCostsByVehicle(this.inspectionCosts.porVeiculo);
+  }
+
+  async loadInspectionCosts(): Promise<void> {
+    if (this.inspectionCostFrom && this.inspectionCostTo && this.inspectionCostFrom > this.inspectionCostTo) {
+      this.inspectionCostsError = 'A data inicial não pode ser posterior à data final.';
+      return;
+    }
+    this.inspectionCostsLoading = true;
+    this.inspectionCostsError = null;
+    try {
+      const report = await this.inspectionService.loadCosts({ de: this.inspectionCostFrom || undefined, ate: this.inspectionCostTo || undefined });
+      this.inspectionCosts = { ...report, totalGeral: Number(report.totalGeral) || 0, quantidadeGeral: Number(report.quantidadeGeral) || 0 };
+    } catch (error) {
+      this.inspectionCostsError = error instanceof Error ? error.message : 'Não foi possível carregar os custos das vistorias.';
+    } finally { this.inspectionCostsLoading = false; }
+  }
+
+  maintenanceTotalFor(vehicleId: number): number {
+    const revisions = this.revisionCostsByVehicle.find((item) => item.vehicle.id === vehicleId)?.total ?? 0;
+    const inspections = this.inspectionCostsByVehicle.find((item) => item.carro_id === vehicleId)?.total ?? 0;
+    return revisions + Number(inspections);
+  }
+
+  formatInspectionDate(value: string): string {
+    const date = value.slice(0, 10);
+    const [year, month, day] = date.split('-');
+    return year && month && day ? `${day}/${month}/${year}` : value;
   }
 
   get reservations(): Reservation[] { return this.reservationService.reservations(); }

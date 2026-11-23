@@ -13,7 +13,7 @@ import { CategoryService } from '../../core/services/category.service';
 import { vehiclePhotoError } from '../../core/utils/photo.validation';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
 
-type VehicleField = 'placa' | 'marca' | 'modelo' | 'categoria' | 'ano' | 'valorDiaria' | 'lugares';
+type VehicleField = 'placa' | 'marca' | 'modelo' | 'categoria' | 'ano' | 'valorDiaria' | 'lugares' | 'proximaVistoriaKm';
 
 @Component({
   selector: 'app-new-vehicle',
@@ -158,6 +158,11 @@ type VehicleField = 'placa' | 'marca' | 'modelo' | 'categoria' | 'ano' | 'valorD
           <input id="vehicle-seats" name="lugares" type="number" inputmode="numeric" [(ngModel)]="lugares" required min="1" max="9" step="1" [attr.aria-invalid]="fieldError('lugares') ? 'true' : null" />
           @if (fieldError('lugares'); as error) { <div class="field-error" role="alert">{{ error }}</div> }
 
+          <label for="vehicle-next-inspection">Quilometragem para próxima vistoria (km)</label>
+          <input id="vehicle-next-inspection" name="proximaVistoriaKm" type="number" inputmode="numeric" [(ngModel)]="proximaVistoriaKm" min="0" step="1" placeholder="Ex.: 50000" [attr.aria-invalid]="fieldError('proximaVistoriaKm') ? 'true' : null" />
+          <small class="muted">Informe a quilometragem em que este veículo deverá realizar a próxima vistoria. Deixe em branco para não configurar um limite.</small>
+          @if (fieldError('proximaVistoriaKm'); as error) { <div class="field-error" role="alert">{{ error }}</div> }
+
           <label for="vehicle-description">Descrição</label>
           <textarea id="vehicle-description" class="vehicle-description" name="descricao" [(ngModel)]="descricao" maxlength="1000" rows="4" placeholder="Descrição opcional do veículo"></textarea>
 
@@ -199,6 +204,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
   transmission: Transmission | '' = '';
   lugares: number | null = null;
   descricao = '';
+  proximaVistoriaKm: number | null = null;
   currentPhoto: string | null = null;
   removeCurrentPhoto = false;
   ready = !this.editing;
@@ -245,6 +251,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
       this.transmission = vehicle.transmission ?? '';
       this.lugares = vehicle.lugares ?? null;
       this.descricao = vehicle.descricao ?? '';
+      this.proximaVistoriaKm = vehicle.nextInspectionKm ?? null;
       this.currentPhoto = vehicle.photo ?? null;
       this.baselinePhoto = this.currentPhoto;
       this.baseline = this.payload();
@@ -285,6 +292,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
 
   fieldError(field: VehicleField): string | null {
     if (!this.submitted) return null;
+    if (field === 'proximaVistoriaKm' && this.proximaVistoriaKm === null) return null;
     const values: Record<VehicleField, string | number | null> = {
       placa: this.placa,
       marca: this.marca,
@@ -293,6 +301,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
       ano: this.ano,
       valorDiaria: this.valorDiaria,
       lugares: this.lugares,
+      proximaVistoriaKm: this.proximaVistoriaKm,
     };
     const value = values[field];
     if (value === null || (typeof value === 'string' && !value.trim())) return 'Este campo é obrigatório.';
@@ -308,6 +317,10 @@ export class NewVehiclePage implements OnInit, OnDestroy {
     }
     if (field === 'lugares' && (this.lugares === null || !Number.isInteger(this.lugares) || this.lugares < 1 || this.lugares > 9)) {
       return 'Informe um número inteiro de lugares entre 1 e 9.';
+    }
+    if (field === 'proximaVistoriaKm' && this.proximaVistoriaKm !== null
+      && (!Number.isInteger(this.proximaVistoriaKm) || this.proximaVistoriaKm < 0)) {
+      return 'Informe um limite de vistoria em quilômetros como número inteiro não negativo.';
     }
     return null;
   }
@@ -347,7 +360,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
   async save(): Promise<void> {
     if (this.saving) return;
     this.submitted = true;
-    const invalid = (['placa', 'marca', 'modelo', 'categoria', 'ano', 'valorDiaria', 'lugares'] as const)
+    const invalid = (['placa', 'marca', 'modelo', 'categoria', 'ano', 'valorDiaria', 'lugares', 'proximaVistoriaKm'] as const)
       .some((field) => this.fieldError(field) !== null);
     if (invalid) {
       this.changeDetector.markForCheck();
@@ -423,6 +436,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
       cambio: this.transmission || null,
       lugares: Number(this.lugares),
       descricao: this.descricao.trim() || null,
+      proximaVistoriaKm: this.proximaVistoriaKm === null ? null : Number(this.proximaVistoriaKm),
     };
   }
 

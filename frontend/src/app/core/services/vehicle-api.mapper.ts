@@ -15,6 +15,8 @@ export interface CarroApi {
   cambio?: 'Automático' | 'Manual' | null;
   lugares?: number | null;
   descricao?: string | null;
+  proximaVistoriaKm?: number | null;
+  vistoriaPendente?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -48,5 +50,10 @@ export function mapCarroApi(carro: CarroApi): Vehicle {
     year: carro.ano,
     lugares: carro.lugares,
     descricao: carro.descricao,
+    nextInspectionKm: carro.proximaVistoriaKm ?? null,
+    inspectionDue: carro.vistoriaPendente ?? (
+      carro.proximaVistoriaKm !== null && carro.proximaVistoriaKm !== undefined
+      && carro.quilometragem >= carro.proximaVistoriaKm
+    ),
   };
 }

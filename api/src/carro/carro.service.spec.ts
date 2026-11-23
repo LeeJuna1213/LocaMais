@@ -153,17 +153,20 @@ describe('CarroService', () => {
   describe('findOne com cache', () => {
     it('HIT combina dados do Redis com foto atual consultada no MySQL', async () => {
       redisService.get.mockResolvedValue({ ...mockCarro, foto: '/uploads/carros/legada.jpg' });
-      carrosRepository.findOne.mockResolvedValue({ id: 1, foto: '/uploads/carros/atual.jpg' });
+      carrosRepository.findOne.mockResolvedValue({ id: 1, foto: '/uploads/carros/atual.jpg', quilometragem: 50000, proximaVistoriaKm: 60000 });
 
       const resultado = await service.findOne(1);
 
       expect(redisService.get).toHaveBeenCalledWith('locamais:carro:1');
       expect(carrosRepository.findOne).toHaveBeenCalledWith({
         where: { id: 1 },
-        select: { id: true, foto: true, categoria: true, categoria_id: true },
+        select: { id: true, foto: true, categoria: true, categoria_id: true, quilometragem: true, proximaVistoriaKm: true },
       });
       expect(resultado.foto).toBe('/uploads/carros/atual.jpg');
       expect(resultado.modelo).toBe(mockCarro.modelo);
+      expect(resultado.quilometragem).toBe(50000);
+      expect(resultado.proximaVistoriaKm).toBe(60000);
+      expect(resultado.vistoriaPendente).toBe(false);
     });
 
     // Cache MISS: consulta o MySQL e grava no Redis com TTL de 60 segundos.
@@ -260,6 +263,10 @@ describe('CarroService', () => {
         { id: 1 },
         { lugares: 7, descricao: 'SUV com porta-malas amplo' },
       );
+    });
+    it('persiste o limite individual de vistoria sem substituir os demais campos', async () => {
+      await service.update(1, { proximaVistoriaKm: 61000 });
+      expect(carrosRepository.update).toHaveBeenCalledWith({ id: 1 }, { proximaVistoriaKm: 61000 });
     });
     it('persiste o câmbio informado sem alterar campos não enviados', async () => {
       await service.update(1, { cambio: 'Automático' });

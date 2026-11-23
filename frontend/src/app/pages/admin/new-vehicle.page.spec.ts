@@ -16,6 +16,7 @@ const vehicle: Vehicle = {
   status: 'Disponível', color: '#4a6fa5', category: 'Economico', categoryId: 1, transmission: 'Manual',
   revisions: [], favorite: false, plate: 'ABC1D23', photo: '/uploads/carros/current.jpg',
   make: 'Hyundai', model: 'HB20', year: 2024, lugares: 5, descricao: 'Descrição existente',
+  nextInspectionKm: 50000,
 };
 
 describe('NewVehiclePage create/edit form', () => {
@@ -141,7 +142,8 @@ describe('NewVehiclePage create/edit form', () => {
 
     expect(create).toHaveBeenCalledWith({
       placa: 'ABC1D23', marca: 'Hyundai', modelo: 'HB20', categoriaId: 1,
-      ano: 2024, valorDiaria: 125.5, status: 'disponivel', cambio: 'Manual', lugares: 5, descricao: null,
+       ano: 2024, valorDiaria: 125.5, status: 'disponivel', cambio: 'Manual', lugares: 5, descricao: null,
+       proximaVistoriaKm: null,
     });
     expect(router.navigateByUrl).toHaveBeenCalledWith('/admin/veiculos');
   });
@@ -154,6 +156,7 @@ describe('NewVehiclePage create/edit form', () => {
     expect(page.editing).toBe(true);
     expect(page.placa).toBe('ABC1D23');
     expect(page.categoriaId).toBe(1);
+    expect(page.proximaVistoriaKm).toBe(50000);
     expect(fixture.nativeElement.querySelector('form')).not.toBeNull();
     expect(fixture.nativeElement.textContent).not.toContain('Carregando veículo...');
 
@@ -165,6 +168,38 @@ describe('NewVehiclePage create/edit form', () => {
     expect(update).toHaveBeenCalledWith(17, { categoriaId: 2, valorDiaria: 520.5, cambio: 'Automático' });
     expect(create).not.toHaveBeenCalled();
     expect(router.navigateByUrl).toHaveBeenCalledWith('/admin/veiculos');
+  });
+
+  it('persists and edits an individual inspection limit without losing it on unrelated edits', async () => {
+    await render();
+    const page = fixture.componentInstance;
+    fillValidForm(page);
+    page.proximaVistoriaKm = 50000;
+    await page.save();
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ proximaVistoriaKm: 50000 }));
+
+    routeId = '17';
+    await render();
+    expect(fixture.componentInstance.proximaVistoriaKm).toBe(50000);
+    fixture.componentInstance.marca = 'Hyundai atualizado';
+    await fixture.componentInstance.save();
+    expect(update).toHaveBeenCalledWith(17, { marca: 'Hyundai atualizado' });
+
+    fixture.componentInstance.marca = 'Hyundai';
+    fixture.componentInstance.proximaVistoriaKm = 61000;
+    await fixture.componentInstance.save();
+    expect(update).toHaveBeenLastCalledWith(17, { proximaVistoriaKm: 61000 });
+  });
+
+  it('rejects negative or fractional inspection limits', async () => {
+    await render();
+    const page = fixture.componentInstance;
+    page.proximaVistoriaKm = -1;
+    expect(page.fieldError('proximaVistoriaKm')).toBeNull();
+    page.submitted = true;
+    expect(page.fieldError('proximaVistoriaKm')).toContain('inteiro não negativo');
+    page.proximaVistoriaKm = 1000.5;
+    expect(page.fieldError('proximaVistoriaKm')).toContain('inteiro não negativo');
   });
 
   it('uploads the selected photo with the ID returned by creation', async () => {

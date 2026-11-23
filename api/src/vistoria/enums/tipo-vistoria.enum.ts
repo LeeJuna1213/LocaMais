@@ -14,4 +14,5 @@
 export enum TipoVistoria {
   RETIRADA = 'retirada',
   DEVOLUCAO = 'devolucao',
+  PERIODICA = 'periodica',
 }

@@ -81,5 +81,11 @@ export class CreateCarroDto {
   @IsPositive({ message: 'O valor da diaria deve ser positivo' })
   valorDiaria: number;
 
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'proximaVistoriaKm deve ser um número inteiro' })
+  @Min(0, { message: 'proximaVistoriaKm não pode ser negativa' })
+  proximaVistoriaKm?: number | null;
+
   // `foto` é administrada exclusivamente pelos endpoints específicos.
 }

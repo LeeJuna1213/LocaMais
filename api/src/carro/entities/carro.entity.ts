@@ -91,6 +91,16 @@ export class Carro {
   @Column({ type: 'int', nullable: false, default: 0 })
   quilometragem: number;
 
+  /** Próximo limite específico deste veículo; nulo preserva veículos legados sem configuração. */
+  @Column({ type: 'int', nullable: true })
+  proximaVistoriaKm: number | null;
+
+  get vistoriaPendente(): boolean {
+    return this.proximaVistoriaKm !== null
+      && this.proximaVistoriaKm !== undefined
+      && this.quilometragem >= this.proximaVistoriaKm;
+  }
+
   /** Caminho público relativo da foto armazenada localmente, quando houver. */
   @Column({ type: 'varchar', length: 500, nullable: true })
   foto: string | null;
@@ -133,6 +143,7 @@ export class Carro {
       status,
       valorDiaria,
       quilometragem,
+      proximaVistoriaKm,
       foto,
       created_at,
       updated_at,
@@ -152,6 +163,8 @@ export class Carro {
       status,
       valorDiaria,
       quilometragem,
+      proximaVistoriaKm,
+      vistoriaPendente: proximaVistoriaKm !== null && proximaVistoriaKm !== undefined && quilometragem >= proximaVistoriaKm,
       foto,
       created_at,
       updated_at,
