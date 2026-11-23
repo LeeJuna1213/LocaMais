@@ -18,6 +18,9 @@ const CNPJ_WEIGHTS_1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
 /** Pesos do 2o digito verificador do CNPJ (base de 13 digitos). */
 const CNPJ_WEIGHTS_2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
 
+const CPF_FORMAT = /^(?:\d{11}|\d{3}\.\d{3}\.\d{3}-\d{2})$/;
+const CNPJ_FORMAT = /^(?:\d{14}|\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})$/;
+
 /** Remove qualquer caractere nao numerico: `529.982.247-25` -> `52998224725`. */
 function onlyDigits(value: string): string {
   return value.replace(/\D/g, '');
@@ -45,7 +48,7 @@ function calcCheckDigit(base: string, weights: number[]): number {
 }
 
 export function isValidCpf(value: unknown): boolean {
-  if (typeof value !== 'string') return false;
+  if (typeof value !== 'string' || !CPF_FORMAT.test(value)) return false;
 
   const cpf = onlyDigits(value);
   if (cpf.length !== 11) return false;
@@ -59,7 +62,7 @@ export function isValidCpf(value: unknown): boolean {
 }
 
 export function isValidCnpj(value: unknown): boolean {
-  if (typeof value !== 'string') return false;
+  if (typeof value !== 'string' || !CNPJ_FORMAT.test(value)) return false;
 
   const cnpj = onlyDigits(value);
   if (cnpj.length !== 14) return false;

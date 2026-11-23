@@ -7,8 +7,19 @@ export interface ClientInput {
   name: string;
   type: ClientType;
   document: string;
-  email?: string;
-  phone?: string;
+  email: string;
+  password: string;
+  birthDate?: string;
+  companyName?: string;
+  address: {
+    street: string;
+    number: string;
+    complement?: string;
+    district: string;
+    city: string;
+    state: string;
+    zipCode: string;
+  };
 }
 
 export interface OwnClientCompleteness { completo: boolean; pendencias: string[]; }
@@ -35,7 +46,7 @@ interface ClienteApiResponse {
     numero: string;
     bairro: string;
     cidade: string;
-    state: string;
+    uf: string;
     cep: string;
     pais: string;
   } | null;
@@ -129,21 +140,23 @@ export class ClientService {
     try {
       const item = await firstValueFrom<ClienteApiResponse>(
         this.http.post<ClienteApiResponse>(`${this.apiUrl}/clientes`, {
-          name: input.name,
-          email: input.email ?? '',
-          password: 'senha-temporaria-123',
+          name: input.name.trim(),
+          email: input.email.trim(),
+          password: input.password,
           cliente: {
             tipo_pessoa: input.type,
-            cpf: input.type === 'PF' ? input.document : undefined,
-            cnpj: input.type === 'PJ' ? input.document : undefined,
+            cpf: input.type === 'PF' ? input.document.replace(/\D/g, '') : undefined,
+            cnpj: input.type === 'PJ' ? input.document.replace(/\D/g, '') : undefined,
+            data_nascimento: input.type === 'PF' ? input.birthDate : undefined,
+            razao_social: input.type === 'PJ' ? input.companyName?.trim() : undefined,
             endereco: {
-              logradouro: '',
-              numero: '',
-              bairro: '',
-              cidade: '',
-              state: '',
-              cep: '',
-              pais: 'Brasil',
+              logradouro: input.address.street.trim(),
+              numero: input.address.number.trim(),
+              ...(input.address.complement?.trim() ? { complemento: input.address.complement.trim() } : {}),
+              bairro: input.address.district.trim(),
+              cidade: input.address.city.trim(),
+              uf: input.address.state.trim().toUpperCase(),
+              cep: input.address.zipCode.replace(/\D/g, ''),
             },
           },
         }),
@@ -183,9 +196,11 @@ export class ClientService {
   }
 
   async toggleStatus(id: number): Promise<Client | undefined> {
+    const current = this._clients().find((client) => client.id === id);
+    if (!current) throw new Error('Cliente não encontrado na lista atual.');
     try {
       const item = await firstValueFrom<ClienteApiResponse>(
-        this.http.patch<ClienteApiResponse>(`${this.apiUrl}/clientes/${id}`, {}),
+        this.http.patch<ClienteApiResponse>(`${this.apiUrl}/clientes/${id}/status`, { active: current.status !== 'Ativo' }),
       );
       const client = mapCliente(item);
       this._clients.update((clients) =>
@@ -202,7 +217,7 @@ export class ClientService {
       await firstValueFrom<void>(this.http.delete<void>(`${this.apiUrl}/clientes/${id}`));
       this._clients.update((clients) => clients.filter((c) => c.id !== id));
     } catch (error) {
-      throw new Error(this.apiErrors.message(error, 'Não foi possível desativar o cliente.'));
+      throw new Error(this.apiErrors.message(error, 'Não foi possível excluir o cliente.'));
     }
   }
 }

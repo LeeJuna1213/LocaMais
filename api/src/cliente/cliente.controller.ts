@@ -33,6 +33,7 @@ import { ClienteService } from './cliente.service.js';
 import { CreateClienteAccountDto } from './dto/create-cliente-account.dto.js';
 import { UpdateClienteDto } from './dto/update-cliente.dto.js';
 import { UpdateOwnClientDto } from './dto/update-own-client.dto.js';
+import { UpdateClienteStatusDto } from './dto/update-cliente-status.dto.js';
 
 /**
  * Rotas de CADASTRO DO CLIENTE.
@@ -143,6 +144,18 @@ export class ClienteController {
     return this.clienteService.update(id, dto);
   }
 
+  @Patch(':id/status')
+  @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
+  @ApiOperation({ summary: 'Ativa ou inativa um cliente sem apagar seu histórico' })
+  @ApiOkResponse({ description: 'Status do cliente atualizado.' })
+  @ApiBadRequestResponse({ description: 'O campo active deve ser booleano.' })
+  setStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateClienteStatusDto,
+  ) {
+    return this.clienteService.setStatus(id, dto.active);
+  }
+
   // -------------------------------------------------------
   // DELETE - desativa o cliente (sem apagar dados)
   // Rota: DELETE /api/clientes/:id
@@ -150,9 +163,9 @@ export class ClienteController {
   @Roles(TipoUsuario.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
-    summary: 'Desativa um cliente',
+    summary: 'Exclui logicamente um cliente',
     description:
-      'Nao apaga os dados: marca o usuario associado como inativo, preservando cliente, endereco e historico.',
+      'Marca o cadastro como excluído e desativa sua conta, preservando endereço e todo o histórico relacionado.',
   })
   @ApiNoContentResponse({ description: 'Cliente desativado com sucesso.' })
   @ApiNotFoundResponse({ description: 'Cliente com o ID informado nao existe.' })

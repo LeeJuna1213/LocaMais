@@ -182,7 +182,7 @@ describe('RegisterPage complete registration form', () => {
     expect(auth.register).not.toHaveBeenCalled();
   });
 
-  it('saneia CPF digitado, atualiza o valor do controle Angular e sinaliza dez dígitos como incompleto', async () => {
+  it('formata CPF digitado, atualiza o controle Angular e sinaliza dez dígitos como incompleto', async () => {
     await typeInto('document', '5299822472');
     expect(input('document').value).toBe('529.982.247-2');
     expect(page.document).toBe('529.982.247-2');
@@ -195,11 +195,11 @@ describe('RegisterPage complete registration form', () => {
     expect(page.document).toBe('529.982.247-2');
   });
 
-  it('remove letras e pontuação de CPF colado e valida os 11 dígitos resultantes', async () => {
+  it('rejeita letras em CPF colado em vez de transformá-las silenciosamente', async () => {
     await pasteInto('document', 'CPF: 529.982.247-25 abc');
-    expect(input('document').value).toBe('529.982.247-25');
-    expect(page.document).toBe('529.982.247-25');
-    expect(page.registrationForm?.controls['document'].valid).toBe(true);
+    expect(input('document').value).toBe('');
+    expect(page.document).toBe('');
+    expect(page.registrationForm?.controls['document'].errors?.['required']).toBeTruthy();
   });
 
   it('distingue CPF com 11 dígitos inválidos do CPF válido', async () => {
@@ -209,31 +209,29 @@ describe('RegisterPage complete registration form', () => {
     expect(page.registrationForm?.controls['document'].valid).toBe(true);
   });
 
-  it('limita CPF a 11 dígitos ao digitar ou colar e trata campo apagado como obrigatório', async () => {
+  it('rejeita mais de 11 dígitos em CPF digitado ou colado', async () => {
     await typeInto('document', '529982247251234');
-    expect(input('document').value).toBe('529.982.247-25');
-    expect(page.document).toBe('529.982.247-25');
-    expect(page.registrationForm?.controls['document'].valid).toBe(true);
+    expect(input('document').value).toBe('');
+    expect(page.registrationForm?.controls['document'].valid).toBe(false);
 
     await pasteInto('document', '529982247251234');
-    expect(input('document').value).toBe('529.982.247-25');
-    expect(page.document).toBe('529.982.247-25');
+    expect(input('document').value).toBe('');
 
     await fill('document', '');
     expect(page.registrationForm?.controls['document'].errors?.['required']).toBeTruthy();
   });
 
-  it('saneia CNPJ digitado e colado, distingue incompleto e inválido', async () => {
+  it('formata CNPJ, distingue incompleto e inválido e rejeita letras coladas', async () => {
     selectType('Pessoa Jurídica');
     await typeInto('document', '1122233300018a');
-    expect(input('document').value).toBe('11.222.333/0001-8');
-    expect(page.document).toBe('11.222.333/0001-8');
-    expect(page.registrationForm?.controls['document'].errors?.['documentIncomplete']).toBeTruthy();
+    expect(input('document').value).toBe('');
+    expect(page.document).toBe('');
+    expect(page.registrationForm?.controls['document'].errors?.['required']).toBeTruthy();
 
     await pasteInto('document', 'CNPJ 11.222.333/0001-80 letras');
-    expect(input('document').value).toBe('11.222.333/0001-80');
-    expect(page.document).toBe('11.222.333/0001-80');
-    expect(page.registrationForm?.controls['document'].errors?.['documentInvalid']).toBeTruthy();
+    expect(input('document').value).toBe('');
+    expect(page.document).toBe('');
+    expect(page.registrationForm?.controls['document'].errors?.['required']).toBeTruthy();
 
     await pasteInto('document', '11.222.333/0001-81');
     expect(input('document').value).toBe('11.222.333/0001-81');
@@ -241,15 +239,14 @@ describe('RegisterPage complete registration form', () => {
     expect(page.registrationForm?.controls['document'].valid).toBe(true);
   });
 
-  it('limita CNPJ a 14 dígitos e reconhece campo apagado como obrigatório', async () => {
+  it('rejeita mais de 14 dígitos em CNPJ digitado ou colado', async () => {
     selectType('Pessoa Jurídica');
     await typeInto('document', '112223330001811234');
-    expect(input('document').value).toBe('11.222.333/0001-81');
-    expect(page.document).toBe('11.222.333/0001-81');
-    expect(page.registrationForm?.controls['document'].valid).toBe(true);
+    expect(input('document').value).toBe('');
+    expect(page.registrationForm?.controls['document'].valid).toBe(false);
 
     await pasteInto('document', '112223330001811234');
-    expect(input('document').value).toBe('11.222.333/0001-81');
+    expect(input('document').value).toBe('');
     await fill('document', '');
     expect(page.registrationForm?.controls['document'].errors?.['required']).toBeTruthy();
   });

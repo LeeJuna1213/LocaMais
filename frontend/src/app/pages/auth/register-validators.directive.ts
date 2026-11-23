@@ -15,6 +15,7 @@ import { validateDocument } from '../../core/utils/document.validation';
 export class DocumentInputDirective implements ControlValueAccessor, Validator {
   private readonly element: HTMLInputElement;
   private personType: ClientType = 'PF';
+  private lastAcceptedValue = '';
   private onValidatorChange?: () => void;
   private onChange: (value: string) => void = () => undefined;
   private onTouched: () => void = () => undefined;
@@ -32,9 +33,23 @@ export class DocumentInputDirective implements ControlValueAccessor, Validator {
 
   @HostListener('input')
   handleInput(): void {
-    const formatted = this.format(this.digits(this.element.value));
+    const raw = this.element.value;
+    const caret = this.element.selectionStart ?? raw.length;
+    const digitsBeforeCaret = raw.slice(0, caret).replace(/\D/g, '').length;
+    const digits = raw.replace(/\D/g, '');
+    const maxDigits = this.personType === 'PF' ? 11 : 14;
+    const formattedDigits = this.format(digits);
+    const containsOnlyDocumentCharacters = /^[\d./-]*$/.test(raw);
+    if (!containsOnlyDocumentCharacters || digits.length > maxDigits) {
+      this.renderer.setProperty(this.element, 'value', this.lastAcceptedValue);
+      this.setCaret(this.lastAcceptedValue.length);
+      return;
+    }
+    const formatted = formattedDigits;
     if (this.element.value !== formatted) this.renderer.setProperty(this.element, 'value', formatted);
+    this.lastAcceptedValue = formatted;
     this.onChange(formatted);
+    this.setCaret(this.positionAfterDigits(formatted, digitsBeforeCaret));
   }
 
   @HostListener('blur')
@@ -43,7 +58,9 @@ export class DocumentInputDirective implements ControlValueAccessor, Validator {
   }
 
   writeValue(value: string | null): void {
-    this.renderer.setProperty(this.element, 'value', this.format(this.digits(String(value ?? ''))));
+    const formatted = this.format(this.digits(String(value ?? '')));
+    this.lastAcceptedValue = formatted;
+    this.renderer.setProperty(this.element, 'value', formatted);
   }
 
   registerOnChange(fn: (value: string) => void): void {
@@ -92,6 +109,22 @@ export class DocumentInputDirective implements ControlValueAccessor, Validator {
     const fourth = value.slice(8, 12);
     const last = value.slice(12, 14);
     return `${first}${second ? `.${second}` : ''}${third ? `.${third}` : ''}${fourth ? `/${fourth}` : ''}${last ? `-${last}` : ''}`;
+  }
+
+  private positionAfterDigits(formatted: string, digitCount: number): number {
+    if (digitCount <= 0) return 0;
+    let seen = 0;
+    for (let index = 0; index < formatted.length; index += 1) {
+      if (/\d/.test(formatted[index])) seen += 1;
+      if (seen === digitCount) return index + 1;
+    }
+    return formatted.length;
+  }
+
+  private setCaret(position: number): void {
+    if (document.activeElement === this.element) {
+      this.element.setSelectionRange(position, position);
+    }
   }
 
   registerOnValidatorChange(fn: () => void): void {

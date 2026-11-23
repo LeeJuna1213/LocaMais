@@ -7,14 +7,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
 
 import type { RegistroDto } from '../autenticacao/dto/registro.dto.js';
 import { EnderecoService } from '../endereco/endereco.service.js';
 import { CreateEnderecoDto } from '../endereco/dto/create-endereco.dto.js';
 import type { UsuarioAutenticado } from '../common/interfaces/usuario-autenticado.interface.js';
 import { isValidCnpj, isValidCpf, normalizeDocument } from '../common/utils/normalize.utility.js';
-import type { Usuario } from '../usuario/entities/usuario.entity.js';
+import { Usuario } from '../usuario/entities/usuario.entity.js';
 import { TipoPessoa, TipoUsuario } from '../usuario/enums/usuario.enum.js';
 import { UsuarioService } from '../usuario/usuario.service.js';
 import { RedisService } from '../redis/redis.service.js';
@@ -62,7 +62,7 @@ export class ClienteService {
   /** Busca o cliente pelo ID do usuário associado (chave única 1:1). */
   findByUserId(userId: number): Promise<Cliente | null> {
     return this.clientesRepository.findOne({
-      where: { user_id: userId },
+      where: { user_id: userId, deleted_at: IsNull() },
       relations: { user: true, address: true },
     });
   }
@@ -97,7 +97,6 @@ export class ClienteService {
     if (dto.telefone !== undefined) changes.telefone = dto.telefone.trim() || null;
     if (dto.cnh_numero !== undefined) changes.cnh_numero = dto.cnh_numero.replace(/\D/g, '');
     if (dto.cnh_validade !== undefined) changes.cnh_validade = dto.cnh_validade;
-    if (dto.metodo_pagamento_preferido !== undefined) changes.metodo_pagamento_preferido = dto.metodo_pagamento_preferido;
     if (Object.keys(changes).length) await this.clientesRepository.update({ id: client.id }, changes);
     if (dto.name !== undefined) {
       await this.usuarioService.update(actor, actor.id, { name: dto.name });
@@ -123,7 +122,7 @@ export class ClienteService {
   /** Busca um cliente pelo ID; lança 404 quando não existe. */
   async findOne(id: number): Promise<Cliente> {
     const client = await this.clientesRepository.findOne({
-      where: { id },
+      where: { id, deleted_at: IsNull() },
       relations: { user: true, address: true },
     });
 
@@ -137,6 +136,7 @@ export class ClienteService {
   /** Lista todos os clientes com a conta e o endereço associados. */
   findAll(): Promise<Cliente[]> {
     return this.clientesRepository.find({
+      where: { deleted_at: IsNull() },
       relations: { user: true, address: true },
       order: { id: 'ASC' },
     });
@@ -347,6 +347,19 @@ export class ClienteService {
     return this.findOne(id);
   }
 
+  /** Updates account activity, the existing source of client active status. */
+  async setStatus(id: number, active: boolean): Promise<Cliente> {
+    const client = await this.findOne(id);
+    await this.usuarioService.setAccountActive(client.user_id, active);
+    try {
+      await this.redis.del(`locamais:cliente:${id}`);
+    } catch (error) {
+      this.logger.error(`Falha ao invalidar cache do cliente ${id}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    await this.cacheInvalidation.invalidateClientDependents(id);
+    return this.findOne(id);
+  }
+
   /**
    * Desativação lógica do cliente.
    *
@@ -355,9 +368,20 @@ export class ClienteService {
    */
   async remove(id: number): Promise<void> {
     const client = await this.findOne(id);
-    await this.usuarioService.deactivateAccount(client.user_id);
+    await this.dataSource.transaction(async (manager) => {
+      const result = await manager.update(
+        Cliente,
+        { id, deleted_at: IsNull() },
+        { deleted_at: new Date() },
+      );
+      if (result.affected !== 1) {
+        throw new NotFoundException(`cliente de ID ${id} nao encontrado`);
+      }
+      await manager.update(Usuario, { id: client.user_id }, { active: false });
+    });
 
-    // Invalida o cache do cliente desativado somente apos a gravacao no MySQL
+    // Logical deletion preserves reservations, rentals, payments and inspections.
+    await this.usuarioService.passwordChanged(client.user_id);
     try {
       await this.redis.del(`locamais:cliente:${id}`);
     } catch (error) {
@@ -367,6 +391,7 @@ export class ClienteService {
         }`,
       );
     }
+    await this.cacheInvalidation.invalidateClientDependents(id);
   }
 
   /**
@@ -389,6 +414,17 @@ export class ClienteService {
       clientData.tipo_pessoa === TipoPessoa.PF
         ? clientData.cpf
         : clientData.cnpj;
+
+    const documentoValido = clientData.tipo_pessoa === TipoPessoa.PF
+      ? isValidCpf(documento)
+      : isValidCnpj(documento);
+    if (!documentoValido) {
+      throw new BadRequestException(
+        clientData.tipo_pessoa === TipoPessoa.PF
+          ? 'cpf invalido: informe um CPF com formato valido e digitos verificadores corretos'
+          : 'cnpj invalido: informe um CNPJ com formato valido e digitos verificadores corretos',
+      );
+    }
 
     if (documento) {
       await this.assertDocumentoAvailable(

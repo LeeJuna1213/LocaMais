@@ -90,9 +90,6 @@ export class Cliente {
   @Column({ type: 'date', nullable: true })
   cnh_validade: string | null;
 
-  @Column({ type: 'varchar', length: 30, nullable: true })
-  metodo_pagamento_preferido: string | null;
-
   // Lado inverso do relacionamento Cliente -> Endereco.
   // O lado proprietário (com client_id) está na entidade Endereco.
   @OneToOne('Endereco', 'client')
@@ -109,6 +106,10 @@ export class Cliente {
 
   @UpdateDateColumn()
   updated_at: Date;
+
+  /** Logical deletion marker; retains the client and all linked history. */
+  @Column({ type: 'datetime', nullable: true })
+  deleted_at: Date | null;
 
   /**
    * Controla a serialização JSON para evitar ciclo de referência com Endereco
@@ -128,9 +129,9 @@ export class Cliente {
       telefone: this.telefone,
       cnh_numero: this.cnh_numero,
       cnh_validade: this.cnh_validade,
-      metodo_pagamento_preferido: this.metodo_pagamento_preferido,
       created_at: this.created_at,
       updated_at: this.updated_at,
+      deleted_at: this.deleted_at,
       user: this.user ? this.user.toJSON() : null,
       address: this.address
         ? {

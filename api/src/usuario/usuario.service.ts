@@ -303,7 +303,18 @@ export class UsuarioService {
    * A situação `active` pertence à conta, por isso a atualização fica aqui.
    */
   async deactivateAccount(userId: number): Promise<void> {
-    await this.usuariosRepository.update({ id: userId }, { active: false });
+    const result = await this.usuariosRepository.update({ id: userId }, { active: false });
+    if (result.affected !== 1) throw new NotFoundException(`usuario ${userId} nao encontrado`);
+    await this.passwordChanged(userId);
+  }
+
+  async setAccountActive(userId: number, active: boolean): Promise<void> {
+    const user = await this.findOneOrFail(userId);
+    if (user.type !== TipoUsuario.CLIENTE) {
+      throw new BadRequestException('o status desta rota só pode ser alterado para clientes');
+    }
+    const result = await this.usuariosRepository.update({ id: userId }, { active });
+    if (result.affected !== 1) throw new NotFoundException(`usuario ${userId} nao encontrado`);
     await this.passwordChanged(userId);
   }
 

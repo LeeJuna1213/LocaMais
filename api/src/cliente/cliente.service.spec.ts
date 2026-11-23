@@ -48,6 +48,8 @@ const repoMocks = {
 const mockUsuarioService = {
   assertCanCreate: vi.fn(),
   deactivateAccount: vi.fn().mockResolvedValue(undefined),
+  setAccountActive: vi.fn().mockResolvedValue(undefined),
+  passwordChanged: vi.fn().mockResolvedValue(undefined),
 } as any;
 
 const mockEnderecoService = {
@@ -63,6 +65,11 @@ const mockRedisService = {
 };
 const cacheInvalidation = {
   invalidateClientDependents: vi.fn().mockResolvedValue(undefined),
+};
+const mockDataSource = {
+  transaction: vi.fn(async (callback: (manager: any) => unknown) =>
+    callback({ update: repoMocks.update }),
+  ),
 };
 
 /**
@@ -83,7 +90,7 @@ describe('ClienteService', () => {
     vi.clearAllMocks();
     service = new ClienteService(
       repoMocks as unknown as Repository<Cliente>,
-      {} as any,
+      mockDataSource as any,
       mockUsuarioService,
       mockEnderecoService,
       mockRedisService as unknown as RedisService,
@@ -172,7 +179,7 @@ describe('ClienteService', () => {
 
       expect(mockRedisService.get).toHaveBeenCalledWith('locamais:cliente:1');
       expect(repoMocks.findOne).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 1 } }),
+        expect.objectContaining({ where: { id: 1, deleted_at: expect.anything() } }),
       );
       expect(mockRedisService.set).toHaveBeenCalledWith(
         'locamais:cliente:1',
@@ -271,6 +278,12 @@ describe('ClienteService', () => {
       await service.remove(1);
 
       expect(mockRedisService.del).toHaveBeenCalledWith('locamais:cliente:1');
+      expect(repoMocks.update).toHaveBeenCalledWith(
+        Cliente,
+        { id: 1, deleted_at: expect.anything() },
+        expect.objectContaining({ deleted_at: expect.any(Date) }),
+      );
+      expect(mockUsuarioService.passwordChanged).toHaveBeenCalledWith(1);
     });
 
     // Falha na invalidação nao bloqueia a atualizacao concluida no MySQL.
