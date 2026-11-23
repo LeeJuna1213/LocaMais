@@ -19,10 +19,11 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
         <div class="card">
           <b>{{ vehicle.name }}</b>
           @if (booking.createdReservation(); as reservation) {
-            <div class="kv"><span>Reserva</span><b>{{ reservation.publicCode || reservation.id }}</b></div>
+            <div class="kv"><span>Reserva</span><b>{{ friendlyCode(reservation.publicCode) }}</b></div>
             <div class="kv"><span>Status</span><b>{{ reservation.status }}</b></div>
             <div class="kv"><span>Subtotal</span><b>{{ reservation.subtotal | currency: 'BRL' }}</b></div>
             <div class="kv"><span>Taxa de serviço</span><b>{{ reservation.serviceFee | currency: 'BRL' }}</b></div>
+            <div class="kv"><span>Valor total</span><b>{{ reservation.total | currency: 'BRL' }}</b></div>
           }
           <div style="font-size: 12px; color: #7a5a40">{{ vehicle.version }}</div>
           <div class="kv"><span>Cliente</span><b>{{ clientName }}</b></div>
@@ -30,7 +31,6 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
             <span>Período</span>
             <b>{{ booking.start() | date: 'dd/MM/yyyy' }} {{ booking.pickupTime() }} - {{ booking.end() | date: 'dd/MM/yyyy' }} {{ booking.returnTime() }}</b>
           </div>
-          <div class="kv"><span>Valor total</span><b>{{ booking.total() | currency: 'BRL' }}</b></div>
         </div>
 
         <button class="btn" type="button" (click)="goToReservations()">
@@ -52,6 +52,11 @@ export class ReservationSuccessPage implements OnInit {
 
   get clientName(): string {
     return this.isStaff ? this.booking.clientName() : this.auth.profile().name;
+  }
+
+  friendlyCode(code?: string | null): string {
+    const digits = code?.match(/(\d+)$/)?.[1];
+    return digits ? `Reserva ${digits.padStart(3, '0')}` : 'Reserva —';
   }
 
   ngOnInit(): void {

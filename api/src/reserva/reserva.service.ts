@@ -19,6 +19,7 @@ import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
 import { RedisService } from '../redis/redis.service.js';
 import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
 import { ConfiguracaoService } from '../configuracao/configuracao.service.js';
+import { Loja } from '../loja/entities/loja.entity.js';
 import { ReservationPublicCodeSequence } from './entities/reservation-public-code-sequence.entity.js';
 
 import { ConsultarDisponibilidadeDto } from './dto/consultar-disponibilidade.dto.js';
@@ -124,9 +125,17 @@ export class ReservaService {
     this.assertPeriod(dataRetirada, dataDevolucao, true);
 
     const taxaServico = (await this.configuracaoService.getTaxaServico()).valor;
+    if (dto.taxa_servico_cotada !== undefined && Math.round(dto.taxa_servico_cotada * 100) !== Math.round(taxaServico * 100)) {
+      throw new ConflictException('a taxa de serviço mudou desde a cotação; atualize os valores antes de confirmar');
+    }
     const saved = await this.dataSource.transaction(async (manager) => {
       const car = await this.findCarForUpdate(manager, dto.car_id);
       const repository = manager.getRepository(Reserva);
+      const shop = dto.loja_retirada_id
+        ? await manager.findOne(Loja, { where: { id: dto.loja_retirada_id } })
+        : null;
+      if (dto.loja_retirada_id && !shop) throw new NotFoundException(`loja ${dto.loja_retirada_id} não encontrada`);
+      if (shop && !shop.ativa) throw new ConflictException('a loja selecionada está inativa');
 
       await this.assertAvailable(repository, car, dataRetirada, dataDevolucao);
 
@@ -139,6 +148,15 @@ export class ReservaService {
         client,
         car_id: car.id,
         car,
+        loja_retirada_id: shop?.id ?? null,
+        lojaRetirada: shop,
+        lojaRetiradaSnapshot: shop ? {
+          nome: shop.nome,
+          logradouro: shop.logradouro,
+          numero: shop.numero,
+          cidade: shop.cidade,
+          uf: shop.uf,
+        } : null,
       });
 
       // O carro foi carregado acima, então calcularValor() usa o preço real
@@ -164,7 +182,7 @@ export class ReservaService {
   findAllForActor(actor: UsuarioAutenticado): Promise<Reserva[]> {
     if (this.isStaff(actor)) {
       return this.reservasRepository.find({
-        relations: { client: true, car: true },
+        relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true },
         order: { dataRetirada: 'ASC' },
       });
     }
@@ -172,7 +190,9 @@ export class ReservaService {
     return this.reservasRepository
       .createQueryBuilder('reservation')
       .leftJoinAndSelect('reservation.client', 'client')
+      .leftJoinAndSelect('client.user', 'user')
       .leftJoinAndSelect('reservation.car', 'car')
+      .leftJoinAndSelect('reservation.locacao', 'rental')
       .where('client.user_id = :userId', { userId: actor.id })
       .orderBy('reservation.dataRetirada', 'ASC')
       .getMany();
@@ -185,7 +205,7 @@ export class ReservaService {
   async findOne(id: string): Promise<Reserva> {
     const reservation = await this.reservasRepository.findOne({
       where: { id },
-      relations: { client: true, car: true },
+      relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true },
     });
 
     if (!reservation) {
@@ -285,12 +305,19 @@ export class ReservaService {
       dto.client_id !== undefined && dto.client_id !== current.client_id;
     const changesCar =
       dto.car_id !== undefined && dto.car_id !== current.car_id;
+    const changesPickupShop = dto.loja_retirada_id !== undefined && dto.loja_retirada_id !== current.loja_retirada_id;
     const hasCommercialChanges = changesDates || changesClient || changesCar;
 
     if (current.status === StatusReserva.CONFIRMADA && hasCommercialChanges) {
       throw new ConflictException(
         'reserva confirmada nao pode ter periodo, cliente ou carro alterados',
       );
+    }
+    if (changesPickupShop && current.locacao && current.locacao.status !== 'aguardando_retirada') {
+      throw new ConflictException('a loja de retirada não pode ser alterada depois da retirada do veículo');
+    }
+    if (current.status !== StatusReserva.PENDENTE && current.status !== StatusReserva.CONFIRMADA && changesPickupShop) {
+      throw new ConflictException('a loja de retirada não pode ser alterada nesta situação da reserva');
     }
 
     if (dto.status && dto.status !== current.status) {
@@ -311,6 +338,7 @@ export class ReservaService {
     // banco. Isso segue o comportamento tolerante do UpdateCarroDto.
     if (
       !hasCommercialChanges &&
+      !changesPickupShop &&
       (!dto.status || dto.status === current.status)
     ) {
       return current;
@@ -336,13 +364,13 @@ export class ReservaService {
     const client = changesClient
       ? await this.clienteService.findOne(clientId)
       : current.client;
-    this.assertClientActive(client);
+    if (changesClient) this.assertClientActive(client);
 
     const saved = await this.dataSource.transaction(async (manager) => {
       const car = await this.findCarForUpdate(manager, carId);
       const repository = manager.getRepository(Reserva);
 
-      if (hasCommercialChanges || dto.status === StatusReserva.CONFIRMADA) {
+      if (changesDates || changesCar || dto.status === StatusReserva.CONFIRMADA) {
         await this.assertAvailable(
           repository,
           car,
@@ -354,7 +382,7 @@ export class ReservaService {
 
       const reservation = await repository.findOne({
         where: { id },
-        relations: { client: true, car: true },
+        relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true },
       });
 
       if (!reservation) {
@@ -367,6 +395,20 @@ export class ReservaService {
       reservation.client = client;
       reservation.car_id = car.id;
       reservation.car = car;
+      if (changesPickupShop) {
+        const shop = await manager.findOne(Loja, { where: { id: dto.loja_retirada_id } });
+        if (!shop) throw new NotFoundException(`loja ${dto.loja_retirada_id} não encontrada`);
+        if (!shop.ativa) throw new ConflictException('a loja selecionada está inativa');
+        reservation.loja_retirada_id = shop.id;
+        reservation.lojaRetirada = shop;
+        reservation.lojaRetiradaSnapshot = {
+          nome: shop.nome,
+          logradouro: shop.logradouro,
+          numero: shop.numero,
+          cidade: shop.cidade,
+          uf: shop.uf,
+        };
+      }
 
       if (hasCommercialChanges) {
         reservation.valorSubtotal = reservation.calcularValor();
@@ -412,16 +454,28 @@ export class ReservaService {
     const reservation = await this.findOne(id);
     this.assertCanRead(actor, reservation);
 
-    if (reservation.status === StatusReserva.CANCELADA) {
-      throw new ConflictException('reserva ja esta cancelada');
+    if (reservation.status !== StatusReserva.PENDENTE) {
+      throw new ConflictException('somente reservas pendentes podem ser canceladas');
+    }
+    if (actor.type === TipoUsuario.CLIENTE) {
+      const pickup = this.asDate(reservation.dataRetirada, 'dataRetirada');
+      const localDay = (date: Date): string => new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(date);
+      if (localDay(pickup) <= localDay(new Date())) {
+        throw new ConflictException('a reserva só pode ser cancelada antes do dia da retirada');
+      }
     }
 
-    if (reservation.status === StatusReserva.CONCLUIDA) {
-      throw new ConflictException('reserva concluida nao pode ser cancelada');
-    }
-
-    reservation.status = StatusReserva.CANCELADA;
-    await this.reservasRepository.save(reservation);
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const repository = manager.getRepository(Reserva);
+      const current = await repository.findOne({ where: { id } });
+      if (!current || current.status !== StatusReserva.PENDENTE) {
+        throw new ConflictException('somente reservas pendentes podem ser canceladas');
+      }
+      current.status = StatusReserva.CANCELADA;
+      return repository.save(current);
+    });
 
     // Invalida o cache da reserva cancelada somente apos a gravacao no MySQL.
     try {
@@ -435,7 +489,7 @@ export class ReservaService {
     }
     await this.cacheInvalidation.invalidateReservationInspections(id);
 
-    return this.findOne(id);
+    return this.findOne(saved.id);
   }
 
   /**
@@ -477,6 +531,24 @@ export class ReservaService {
     };
   }
 
+  async quote(dto: ConsultarDisponibilidadeDto): Promise<{ valorDiaria: number; diarias: number; valorSubtotal: number; taxaServico: number; valorTotal: number }> {
+    const dataRetirada = this.parseDate(dto.dataRetirada, 'dataRetirada');
+    const dataDevolucao = this.parseDate(dto.dataDevolucao, 'dataDevolucao');
+    this.assertPeriod(dataRetirada, dataDevolucao, false);
+    const car = await this.carroService.findOne(dto.car_id);
+    const valorDiaria = Number(car.valorDiaria);
+    const diarias = Reserva.calcularDiarias(dataRetirada, dataDevolucao);
+    const valorSubtotal = Math.round(valorDiaria * 100) * diarias / 100;
+    const { valor: taxaServico } = await this.configuracaoService.getTaxaServico();
+    return {
+      valorDiaria,
+      diarias,
+      valorSubtotal,
+      taxaServico,
+      valorTotal: Math.round((valorSubtotal + taxaServico) * 100) / 100,
+    };
+  }
+
   /**
    * Resolve o cliente da reserva e aplica a regra de propriedade.
    *
@@ -511,7 +583,7 @@ export class ReservaService {
 
   /** Cliente desativado não pode criar novas reservas. */
   private assertClientActive(client: Cliente): void {
-    if (client.user && client.user.active === false) {
+    if (client.deleted_at || client.user?.active === false) {
       throw new ConflictException(`cliente ${client.id} esta inativo`);
     }
   }

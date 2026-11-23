@@ -8,10 +8,12 @@ import { ConfiguracaoService } from './configuracao.service.js';
 @ApiTags('configuracoes')
 @ApiBearerAuth()
 @Controller('configuracoes')
-@Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
+@Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO, TipoUsuario.CLIENTE)
 export class ConfiguracaoController {
   constructor(private readonly service: ConfiguracaoService) {}
 
   @Get('taxa-servico') getTaxaServico() { return this.service.getTaxaServico(); }
-  @Patch('taxa-servico') updateTaxaServico(@Body() dto: UpdateTaxaServicoDto) { return this.service.updateTaxaServico(dto); }
+  @Patch('taxa-servico')
+  @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
+  updateTaxaServico(@Body() dto: UpdateTaxaServicoDto) { return this.service.updateTaxaServico(dto); }
 }

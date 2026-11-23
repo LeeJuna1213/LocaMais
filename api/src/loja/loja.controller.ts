@@ -14,6 +14,9 @@ export class LojaController {
   constructor(private readonly service: LojaService) {}
 
   @Get() findAll() { return this.service.findAll(); }
+  @Get('ativas')
+  @Roles(TipoUsuario.CLIENTE, TipoUsuario.FUNCIONARIO, TipoUsuario.ADMIN)
+  findActive() { return this.service.findActive(); }
   @Get(':id') findOne(@Param('id', ParseIntPipe) id: number) { return this.service.findOne(id); }
   @Post() create(@Body() dto: CreateLojaDto) { return this.service.create(dto); }
   @Patch(':id') update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateLojaDto) { return this.service.update(id, dto); }

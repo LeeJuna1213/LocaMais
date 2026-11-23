@@ -14,6 +14,7 @@ import { environment } from '../../../environments/environment';
 import { ApiErrorService } from './api-error.service';
 import { VehicleService } from './vehicle.service';
 import { CarroApi, mapCarroApi } from './vehicle-api.mapper';
+import { daysBetween } from '../data';
 
 export interface CreateReservationInput {
   clientId: number;
@@ -22,10 +23,13 @@ export interface CreateReservationInput {
   end: string;
   pickupTime?: string;
   returnTime?: string;
+  pickupShopId: number;
+  quotedServiceFee?: number | null;
 }
+export interface ReservationQuote { valorDiaria: number; diarias: number; valorSubtotal: number; taxaServico: number; valorTotal: number }
 
 export type ClientReservationTab = 'Futuras' | 'Em andamento' | 'Histórico';
-export type AdminReservationTab = 'Todas' | 'Pendentes' | 'Confirmadas' | 'Em andamento' | 'Concluídas' | 'Canceladas';
+export type AdminReservationTab = 'Todas' | 'Pendentes' | 'Confirmadas' | 'Efetivadas' | 'Em andamento' | 'Concluídas' | 'Canceladas';
 
 const API_STATUS_MAP: Record<string, ReservationStatus> = {
   pendente: 'Pendente',
@@ -34,11 +38,12 @@ const API_STATUS_MAP: Record<string, ReservationStatus> = {
   concluida: 'Concluída',
 };
 
-interface ReservationApiResponse {
+export interface ReservationApiResponse {
   id: string;
   codigo?: string | null;
   dataRetirada: string;
   dataDevolucao: string;
+  diarias?: number;
   status: string;
   valorTotal: number;
   valorSubtotal?: number;
@@ -53,30 +58,70 @@ interface ReservationApiResponse {
     cnpj: string | null;
   } | null;
   car?: CarroApi | null;
+  locacao?: { id?: string; status: 'aguardando_retirada' | 'em_andamento' | 'concluida' | 'cancelada'; dataRetirada?: string | null; dataDevolucao?: string | null } | null;
+  loja_retirada_id?: number | null;
+  lojaRetiradaSnapshot?: { nome: string; logradouro: string; numero: string; cidade: string; uf: string } | null;
 }
 
-function mapReservation(api: ReservationApiResponse, sessionUserId: number | null): Reservation {
+export function mapReservation(api: ReservationApiResponse, sessionUserId: number | null, sessionIsClient: boolean): Reservation {
   const client = api.client ?? null;
   const car = api.car ?? null;
   const vehicle = car ? mapCarroApi(car) : undefined;
+  const status = api.locacao?.status === 'em_andamento'
+    ? 'Em andamento'
+    : API_STATUS_MAP[api.status];
+  if (!status) throw new Error(`Status de reserva não reconhecido pela interface: ${api.status}`);
+  const rentalStarted = api.status !== 'cancelada'
+    && !!api.locacao?.dataRetirada
+    && (api.locacao.status === 'em_andamento' || api.locacao.status === 'concluida');
 
   return {
     id: api.id,
     publicCode: api.codigo ?? null,
     clientName: client?.user?.name ?? client?.tipo_pessoa ?? '',
-    mine: client?.user?.id === sessionUserId,
+    // GET /reservas is already owner-scoped for clients; the backend need not
+    // load client.user merely so the client screen can identify its own rows.
+    mine: client?.user?.id === sessionUserId || sessionIsClient,
     clientId: api.client_id,
     vehicleId: api.car_id,
     vehicle,
     start: api.dataRetirada,
     end: api.dataDevolucao,
-    status: API_STATUS_MAP[api.status] ?? 'Pendente',
+    days: api.diarias ?? daysBetween(api.dataRetirada, api.dataDevolucao),
+    status,
     total: api.valorTotal ?? 0,
     subtotal: api.valorSubtotal ?? api.valorTotal ?? 0,
     serviceFee: api.taxaServico ?? 0,
     payment: 'Pendente',
     paymentMethod: 'PIX' as PaymentMethod,
+    pickupShopId: api.loja_retirada_id ?? null,
+    pickupShop: api.lojaRetiradaSnapshot ?? null,
+    rentalId: api.locacao?.id ?? null,
+    rentalStatus: api.locacao?.status ?? null,
+    rentalStarted,
+    actualReturnDate: api.locacao?.dataDevolucao ?? null,
   };
+}
+
+export function isEffectiveReservation(reservation: Reservation): boolean {
+  return reservation.status !== 'Cancelada' && reservation.rentalStarted === true;
+}
+
+export function filterAdminReservations(reservations: Reservation[], tab: AdminReservationTab): Reservation[] {
+  if (tab === 'Todas') return reservations;
+  if (tab === 'Efetivadas') return reservations.filter(isEffectiveReservation);
+  if (tab === 'Canceladas') {
+    return reservations.filter((reservation) => reservation.status === 'Cancelada' || reservation.rentalStatus === 'cancelada');
+  }
+  const statuses: Partial<Record<AdminReservationTab, ReservationStatus>> = {
+    Pendentes: 'Pendente', Confirmadas: 'Confirmada', 'Em andamento': 'Em andamento',
+    'Concluídas': 'Concluída',
+  };
+  const status = statuses[tab];
+  return status
+    ? reservations.filter((reservation) => reservation.status === status
+      && !(tab === 'Confirmadas' && reservation.rentalStatus === 'cancelada'))
+    : [];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -94,7 +139,7 @@ export class ReservationService {
   readonly error = this._error.asReadonly();
 
   readonly pendingPickups = computed(() =>
-    this._reservations().filter((r) => r.status === 'Confirmada').length,
+    this._reservations().filter((r) => r.status === 'Confirmada' && r.rentalStatus !== 'cancelada').length,
   );
   readonly inProgress = computed(() =>
     this._reservations().filter((r) => r.status === 'Em andamento').length,
@@ -102,6 +147,24 @@ export class ReservationService {
 
   private get apiUrl(): string {
     return environment.apiUrl.replace(/\/+$/, '');
+  }
+
+  async quote(input: Pick<CreateReservationInput, 'vehicleId' | 'start' | 'end' | 'pickupTime' | 'returnTime'>): Promise<ReservationQuote> {
+    const toLocalDateTimeIso = (date: string, time: string): string => {
+      const [year, month, day] = date.slice(0, 10).split('-').map(Number);
+      const [hours, minutes] = time.split(':').map(Number);
+      return new Date(year, month - 1, day, hours, minutes, 0, 0).toISOString();
+    };
+    const params = new URLSearchParams({
+      car_id: String(input.vehicleId),
+      dataRetirada: toLocalDateTimeIso(input.start, input.pickupTime ?? '10:00'),
+      dataDevolucao: toLocalDateTimeIso(input.end, input.returnTime ?? '10:00'),
+    });
+    try {
+      return await firstValueFrom(this.http.get<ReservationQuote>(`${this.apiUrl}/reservas/estimativa?${params}`));
+    } catch (error) {
+      throw new Error(this.apiErrors.message(error, 'Não foi possível calcular os valores da reserva.'));
+    }
   }
 
   private get sessionUserId(): number | null {
@@ -116,7 +179,8 @@ export class ReservationService {
         this.http.get<ReservationApiResponse[]>(`${this.apiUrl}/reservas`),
       );
       const userId = this.sessionUserId;
-      this._reservations.set(items.map((item) => mapReservation(item, userId)));
+      const isClient = this.session.user()?.type === 'cliente';
+      this._reservations.set(items.map((item) => mapReservation(item, userId, isClient)));
     } catch (error) {
       this._reservations.set([]);
       this._error.set(this.apiErrors.message(error, 'Não foi possível carregar as reservas.'));
@@ -130,7 +194,7 @@ export class ReservationService {
       const item = await firstValueFrom<ReservationApiResponse>(
         this.http.get<ReservationApiResponse>(`${this.apiUrl}/reservas/${id}`),
       );
-      const reservation = mapReservation(item, this.sessionUserId);
+      const reservation = mapReservation(item, this.sessionUserId, this.session.user()?.type === 'cliente');
       this._reservations.update((list) =>
         list.some((r) => r.id === id)
           ? list.map((r) => (r.id === id ? reservation : r))
@@ -149,22 +213,20 @@ export class ReservationService {
       Histórico: ['Concluída', 'Cancelada'],
     };
     return this._reservations().filter(
-      (reservation) => reservation.mine && statuses[tab].includes(reservation.status),
+      (reservation) => reservation.mine && (reservation.rentalStatus === 'cancelada'
+        ? tab === 'Histórico'
+        : statuses[tab].includes(reservation.status)),
     );
   }
 
   adminList(tab: AdminReservationTab): Reservation[] {
-    return this._reservations().filter((reservation) => {
-      if (tab === 'Todas') return true;
-      return reservation.status === ({
-        Pendentes: 'Pendente', Confirmadas: 'Confirmada', 'Em andamento': 'Em andamento',
-        Concluídas: 'Concluída', Canceladas: 'Cancelada',
-      } as const)[tab];
-    });
+    return filterAdminReservations(this._reservations(), tab);
   }
 
   byStatus(status: ReservationStatus): Reservation[] {
-    return this._reservations().filter((reservation) => reservation.status === status);
+    return this._reservations().filter((reservation) => reservation.status === status
+      && !(status === 'Confirmada' && reservation.rentalStatus === 'cancelada')
+      && !(status === 'Em andamento' && reservation.rentalStatus !== null && reservation.rentalStatus !== undefined && reservation.rentalStatus !== 'em_andamento'));
   }
 
   byClientName(name: string): Reservation[] {
@@ -186,10 +248,12 @@ export class ReservationService {
           dataDevolucao: toLocalDateTimeIso(input.end, input.returnTime ?? '10:00'),
           client_id: input.clientId,
           car_id: input.vehicleId,
+          loja_retirada_id: input.pickupShopId,
+          ...(input.quotedServiceFee !== null && input.quotedServiceFee !== undefined ? { taxa_servico_cotada: input.quotedServiceFee } : {}),
         }),
       );
-      const reservation = mapReservation(item, this.sessionUserId);
-      this._reservations.update((list) => [reservation, ...list]);
+      const reservation = mapReservation(item, this.sessionUserId, this.session.user()?.type === 'cliente');
+      this._reservations.update((list) => [reservation, ...list.filter((item) => item.id !== reservation.id)]);
       return reservation;
     } catch (error) {
       throw new Error(this.apiErrors.message(error, 'Não foi possível criar a reserva.'));
@@ -198,14 +262,31 @@ export class ReservationService {
 
   async cancel(id: string): Promise<void> {
     try {
-      await firstValueFrom<void>(
-        this.http.patch<void>(`${this.apiUrl}/reservas/${id}/cancelar`, {}),
-      );
+      const updated = await firstValueFrom<ReservationApiResponse>(this.http.patch<ReservationApiResponse>(`${this.apiUrl}/reservas/${id}/cancelar`, {}));
       this._reservations.update((list) =>
-        list.map((r) => (r.id === id ? { ...r, status: 'Cancelada' } : r)),
+        list.map((r) => (r.id === id ? mapReservation(updated, this.sessionUserId, this.session.user()?.type === 'cliente') : r)),
       );
     } catch (error) {
       throw new Error(this.apiErrors.message(error, 'Não foi possível cancelar a reserva.'));
+    }
+  }
+
+  async setStatus(id: string, status: 'confirmada'): Promise<void> {
+    try {
+      const updated = await firstValueFrom<ReservationApiResponse>(this.http.patch<ReservationApiResponse>(`${this.apiUrl}/reservas/${id}`, { status }));
+      const mapped = mapReservation(updated, this.sessionUserId, this.session.user()?.type === 'cliente');
+      this._reservations.update((items) => items.map((item) => item.id === id ? mapped : item));
+    } catch (error) { throw new Error(this.apiErrors.message(error, 'Não foi possível atualizar a reserva.')); }
+  }
+
+  async updatePickupShop(id: string, shopId: number): Promise<Reservation> {
+    try {
+      const item = await firstValueFrom(this.http.patch<ReservationApiResponse>(`${this.apiUrl}/reservas/${id}`, { loja_retirada_id: shopId }));
+      const updated = mapReservation(item, this.sessionUserId, this.session.user()?.type === 'cliente');
+      this._reservations.update((list) => list.map((reservation) => reservation.id === id ? updated : reservation));
+      return updated;
+    } catch (error) {
+      throw new Error(this.apiErrors.message(error, 'Não foi possível alterar a loja de retirada.'));
     }
   }
 
@@ -235,19 +316,21 @@ export class ReservationService {
     }
   }
 
-  async registerReturn(id: string, extraDays: number, fines: number): Promise<number> {
+  async registerReturn(id: string, extraDays: number, fines: number, damageDescription = ''): Promise<number> {
     try {
       const reservation = this._reservations().find((r) => r.id === id);
-      if (!reservation || reservation.status !== 'Em andamento') {
+      if (!reservation || reservation.status !== 'Em andamento' || reservation.rentalStatus !== 'em_andamento') {
         throw new Error('Reserva não está em andamento para devolução.');
       }
 
-      const locacao = await firstValueFrom<{ id: string }>(
-        this.http.post<{ id: string }>(`${this.apiUrl}/locacoes`, { reservation_id: id }),
-      );
+      if (!reservation.rentalId) {
+        throw new Error('Não foi possível localizar a locação desta reserva. Atualize a página e tente novamente.');
+      }
 
       await firstValueFrom<void>(
-        this.http.patch<void>(`${this.apiUrl}/locacoes/${locacao.id}/devolucao`, {}),
+        this.http.patch<void>(`${this.apiUrl}/locacoes/${reservation.rentalId}/devolucao`, {
+          ...(damageDescription.trim() ? { descricaoAvaria: damageDescription.trim() } : {}),
+        }),
       );
 
       const vehicle = this.vehicleService.getById(reservation.vehicleId);

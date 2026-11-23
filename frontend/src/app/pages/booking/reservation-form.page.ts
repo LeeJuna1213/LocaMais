@@ -13,12 +13,16 @@ import { ToastService } from '../../core/services/toast.service';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
 import { CarComponent } from '../../shared/components/car.component';
 import { ImageUrlService } from '../../core/services/image-url.service';
+import { ShopService } from '../../core/services/shop.service';
 
 @Component({
   selector: 'app-reservation-form',
   standalone: true,
   imports: [FormsModule, AppShellComponent, CarComponent, CurrencyPipe],
-  styles: [`.reservation-photo { display:block;width:104px;height:76px;object-fit:cover;border-radius:12px;flex:none }`],
+  styles: [`
+    .reservation-photo { display:block;width:104px;height:76px;object-fit:cover;border-radius:12px;flex:none }
+    .pickup-shop-select { display:block;width:100%;max-width:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+  `],
   template: `
     <app-shell title="Reserva do veículo" [back]="true" [defaultHref]="backHref">
       @if (isStaff && clientService.loading()) {
@@ -56,12 +60,15 @@ import { ImageUrlService } from '../../core/services/image-url.service';
           <label>Horário de devolução</label>
           <input type="time" [(ngModel)]="returnTime" />
 
-          <label>Local de retirada</label>
-          <select [ngModel]="location" (ngModelChange)="location = $event">
-            @for (place of locations; track place) {
-              <option [value]="place">{{ place }}</option>
-            }
-          </select>
+           @if (shops.loading()) { <div class="small muted" role="status">Carregando lojas...</div> }
+           @else if (shops.error(); as shopError) { <div class="small" role="alert">{{ shopError }}</div><button class="lnk dark" type="button" (click)="loadShops()">Tentar novamente</button> }
+           @else {
+             <label for="pickup-shop">Loja de retirada *</label>
+              <select id="pickup-shop" class="pickup-shop-select" [ngModel]="selectedShopId" (ngModelChange)="selectShop($event)" required>
+                <option [ngValue]="null" disabled>Selecione uma loja</option>
+                @for (shop of shops.shops(); track shop.id) { <option [ngValue]="shop.id">{{ shop.nome }} — {{ shop.cidade }}/{{ shop.uf }}</option> }
+             </select>
+           }
 
           <div class="kv"><span>Período</span><b>{{ days }} diárias</b></div>
           <div class="kv"><span>Valor total</span><b>{{ total | currency: 'BRL' }}</b></div>
@@ -84,10 +91,10 @@ export class ReservationFormPage {
   private readonly toast = inject(ToastService);
   private readonly alerts = inject(AlertController);
   private readonly imageUrls = inject(ImageUrlService);
+  readonly shops = inject(ShopService);
 
   readonly isStaff = this.auth.role() === 'admin' || this.auth.role() === 'funcionario';
   readonly today = todayISO();
-  readonly locations = ['Loja Centro - Belford Roxo', 'Loja Nova Iguaçu'];
   readonly activeClients = this.clientService.activeClients;
 
   start = '';
@@ -95,11 +102,13 @@ export class ReservationFormPage {
   location = '';
   clientName = '';
   selectedClientId: number | null = null;
+  selectedShopId: number | null = null;
   pickupTime = '10:00';
   returnTime = '10:00';
 
   constructor() {
     if (this.isStaff) void this.loadClients();
+    void this.loadShops();
 
     const id = Number(this.route.snapshot.paramMap.get('id') ?? 0);
     if (this.booking.vehicleId() !== id) {
@@ -115,12 +124,26 @@ export class ReservationFormPage {
     this.pickupTime = this.booking.pickupTime();
     this.returnTime = this.booking.returnTime();
     this.location = this.booking.location();
+    this.selectedShopId = this.booking.pickupShopId();
     this.clientName = this.booking.clientName() || this.activeClients()[0]?.name || '';
     this.selectedClientId = this.booking.clientId() ?? null;
   }
 
   async load(): Promise<void> {
     await this.loadClients();
+  }
+
+  async loadShops(): Promise<void> {
+    await this.shops.loadActive();
+    const current = this.shops.shops().find((shop) => shop.id === this.booking.pickupShopId());
+    if (current) this.selectShop(current.id);
+  }
+
+  selectShop(id: number | null): void {
+    this.selectedShopId = id;
+    const shop = this.shops.shops().find((item) => item.id === id);
+    this.location = shop ? `${shop.nome} — ${shop.logradouro}, ${shop.numero}, ${shop.cidade}/${shop.uf}` : '';
+    this.booking.setPickupShop(shop?.id ?? null, this.location);
   }
 
   private async loadClients(): Promise<void> {
@@ -177,6 +200,10 @@ export class ReservationFormPage {
       await this.toast.show('Selecione um cliente ativo para a reserva.');
       return;
     }
+    if (!this.shops.shops().some((shop) => shop.id === this.selectedShopId && shop.ativa)) {
+      await this.toast.show('Selecione uma loja ativa para retirada.');
+      return;
+    }
     if (this.end <= this.start) {
       await this.toast.show('A devolução deve ser depois da retirada');
       return;
@@ -196,6 +223,7 @@ export class ReservationFormPage {
     this.booking.setDates(this.start, this.end);
     this.booking.setTimes(this.pickupTime, this.returnTime);
     this.booking.setLocation(this.location);
+    this.booking.setPickupShop(this.selectedShopId, this.location);
     this.booking.setClientName(this.clientName);
     await this.router.navigateByUrl('/booking/confirmar');
   }

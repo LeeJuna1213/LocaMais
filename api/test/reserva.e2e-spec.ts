@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 
 import {
   createTestingApp,
@@ -33,6 +34,8 @@ interface ReservaBody {
   valorTotal: number;
   client_id: number;
   car_id: number;
+  loja_retirada_id?: number | null;
+  lojaRetiradaSnapshot?: { nome: string; logradouro: string; numero: string; cidade: string; uf: string } | null;
   client?: { id: number; user_id: number } | null;
   car?: { id: number; valorDiaria: number } | null;
 }
@@ -101,6 +104,8 @@ describe('Reservas (e2e)', () => {
   let clientId: number;
   let otherClientId: number;
   let carId: number;
+  let pickupShopId: number;
+  let inactiveShopId: number;
 
   let firstReservationId: string;
   let firstStart: string;
@@ -116,6 +121,19 @@ describe('Reservas (e2e)', () => {
 
     app = await createTestingApp();
     adminToken = await login(app, adminEmail, adminPassword);
+
+    const activeShop = await post<{ id: number }>(app, '/lojas', {
+      codigo: 'RESERVA-ATIVA', nome: 'Loja de Reserva', telefone: '+5521999990000', email: 'loja.ativa@exemplo.com',
+      logradouro: 'Rua Central', numero: '10', bairro: 'Centro', cidade: 'Belford Roxo', uf: 'RJ', cep: '26130000', ativa: true,
+    }, adminToken);
+    const inactiveShop = await post<{ id: number }>(app, '/lojas', {
+      codigo: 'RESERVA-INATIVA', nome: 'Loja Inativa', telefone: '+5521999990001', email: 'loja.inativa@exemplo.com',
+      logradouro: 'Rua Antiga', numero: '20', bairro: 'Centro', cidade: 'Belford Roxo', uf: 'RJ', cep: '26130001', ativa: false,
+    }, adminToken);
+    expect(activeShop.status).toBe(201);
+    expect(inactiveShop.status).toBe(201);
+    pickupShopId = activeShop.body.id;
+    inactiveShopId = inactiveShop.body.id;
 
     const client = await post<ClienteBody>(
       app,
@@ -358,9 +376,10 @@ describe('Reservas (e2e)', () => {
       '/reservas',
       {
         dataRetirada: firstStart,
-        dataDevolucao: firstEnd,
-        client_id: clientId,
-        car_id: carId,
+      dataDevolucao: firstEnd,
+      client_id: clientId,
+      car_id: carId,
+      loja_retirada_id: pickupShopId,
       },
       clientToken,
     );
@@ -370,11 +389,63 @@ describe('Reservas (e2e)', () => {
     expect(body.client_id).toBe(clientId);
     expect(body.car_id).toBe(carId);
     expect(body.valorTotal).toBeCloseTo(301.5, 2);
+    expect(body.loja_retirada_id).toBe(pickupShopId);
+    expect(body.lojaRetiradaSnapshot).toMatchObject({ nome: 'Loja de Reserva', logradouro: 'Rua Central' });
     expect(body.id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
 
     firstReservationId = body.id;
+  });
+
+  it('expõe somente lojas ativas para retirada e rejeita loja inativa na reserva', async () => {
+    const active = await get<Array<{ id: number }>>(app, '/lojas/ativas', clientToken);
+    expect(active.status).toBe(200);
+    expect(active.body.map((shop) => shop.id)).toContain(pickupShopId);
+    expect(active.body.map((shop) => shop.id)).not.toContain(inactiveShopId);
+
+    const start = futureIso(200);
+    const attempt = await post(app, '/reservas', {
+      dataRetirada: start,
+      dataDevolucao: addHours(start, 24),
+      client_id: clientId,
+      car_id: carId,
+      loja_retirada_id: inactiveShopId,
+    }, clientToken);
+    expect(attempt.status).toBe(409);
+  });
+
+  it('cota valores no backend com diária, subtotal e taxa de serviço vigentes', async () => {
+    const start = futureIso(240);
+    const quote = await get<{ valorDiaria: number; diarias: number; valorSubtotal: number; taxaServico: number; valorTotal: number }>(
+      app,
+      `/reservas/estimativa?car_id=${carId}&dataRetirada=${encodeURIComponent(start)}&dataDevolucao=${encodeURIComponent(addHours(start, 24))}`,
+      clientToken,
+    );
+    const car = await get<CarroBody>(app, `/carros/${carId}`, adminToken);
+    expect(quote.status).toBe(200);
+    expect(quote.body).toMatchObject({ valorDiaria: car.body.valorDiaria, diarias: 1, valorSubtotal: car.body.valorDiaria });
+    expect(quote.body.valorTotal).toBeCloseTo(quote.body.valorSubtotal + quote.body.taxaServico, 2);
+  });
+
+  it('persiste favoritos por cliente, sem duplicar ou expor favoritos de outro cliente', async () => {
+    const first = await post<{ id: number; client_id: number; car_id: number }>(app, `/favoritos/${carId}`, {}, clientToken);
+    expect(first.status).toBe(201);
+    expect(first.body.car_id).toBe(carId);
+    const repeated = await post<{ id: number }>(app, `/favoritos/${carId}`, {}, clientToken);
+    expect(repeated.status).toBe(201);
+    expect(repeated.body.id).toBe(first.body.id);
+
+    const own = await get<Array<{ car_id: number; car: { id: number; modelo: string; foto: string | null } }>>(app, '/favoritos', clientToken);
+    expect(own.body.filter((item) => item.car_id === carId)).toHaveLength(1);
+    expect(own.body.find((item) => item.car_id === carId)?.car).toMatchObject({ id: carId, modelo: 'Corolla' });
+    const other = await get<Array<{ car_id: number }>>(app, '/favoritos', otherClientToken);
+    expect(other.body.some((item) => item.car_id === carId)).toBe(false);
+
+    const removed = await del(app, `/favoritos/${carId}`, clientToken);
+    expect(removed.status).toBe(200);
+    const after = await get<Array<{ car_id: number }>>(app, '/favoritos', clientToken);
+    expect(after.body.some((item) => item.car_id === carId)).toBe(false);
   });
 
   it('impede cliente de reservar para outro cliente (403)', async () => {
@@ -549,9 +620,19 @@ describe('Reservas (e2e)', () => {
   });
 
   it('cliente cancela a própria reserva e ela deixa de bloquear o período', async () => {
+    const car = await post<CarroBody>(app, '/carros', {
+      placa: 'RSV2A23', modelo: 'Yaris', marca: 'Toyota', categoria: 'Hatch', ano: 2024, valorDiaria: 42,
+    }, adminToken);
+    expect(car.status).toBe(201);
+    const pickup = futureIso(45);
+    const reserved = await post<ReservaBody>(app, '/reservas', {
+      dataRetirada: pickup, dataDevolucao: addHours(pickup, 24), client_id: clientId, car_id: car.body.id,
+    }, clientToken);
+    expect(reserved.status).toBe(201);
+
     const cancelled = await patch<ReservaBody>(
       app,
-      `/reservas/${firstReservationId}/cancelar`,
+      `/reservas/${reserved.body.id}/cancelar`,
       {},
       clientToken,
     );
@@ -561,7 +642,7 @@ describe('Reservas (e2e)', () => {
 
     const again = await patch(
       app,
-      `/reservas/${firstReservationId}/cancelar`,
+      `/reservas/${reserved.body.id}/cancelar`,
       {},
       clientToken,
     );
@@ -569,15 +650,15 @@ describe('Reservas (e2e)', () => {
 
     const updateCancelled = await patch(
       app,
-      `/reservas/${firstReservationId}`,
-      { dataDevolucao: addHours(firstEnd, 1) },
+      `/reservas/${reserved.body.id}`,
+      { dataDevolucao: addHours(pickup, 25) },
       adminToken,
     );
     expect(updateCancelled.status).toBe(409);
 
     const availability = await get<DisponibilidadeBody>(
       app,
-      queryAvailability(carId, firstStart, firstEnd),
+      queryAvailability(car.body.id, pickup, addHours(pickup, 24)),
       clientToken,
     );
 
@@ -668,5 +749,70 @@ describe('Reservas (e2e)', () => {
       clientToken,
     );
     expect(forbiddenField.status).toBe(400);
+  });
+
+  it('inativa/reativa cliente, mantém gestão e bloqueia novas reservas pela API', async () => {
+    const inactive = await patch<{ user: { active: boolean } }>(
+      app,
+      `/clientes/${otherClientId}/status`,
+      { active: false },
+      adminToken,
+    );
+    expect(inactive.status).toBe(200);
+    expect(inactive.body.user.active).toBe(false);
+
+    const listed = await get<Array<{ id: number; user: { active: boolean } }>>(
+      app,
+      '/clientes',
+      adminToken,
+    );
+    expect(listed.body.find((client) => client.id === otherClientId)?.user.active).toBe(false);
+
+    const start = futureIso(120);
+    const rejected = await post(app, '/reservas', {
+      dataRetirada: start,
+      dataDevolucao: addHours(start, 24),
+      client_id: otherClientId,
+      car_id: carId,
+    }, funcionarioToken);
+    expect(rejected.status).toBe(409);
+
+    const reactivated = await patch<{ user: { active: boolean } }>(
+      app,
+      `/clientes/${otherClientId}/status`,
+      { active: true },
+      adminToken,
+    );
+    expect(reactivated.status).toBe(200);
+    expect(reactivated.body.user.active).toBe(true);
+    const refreshed = await get<Array<{ id: number; user: { active: boolean } }>>(
+      app,
+      '/clientes',
+      adminToken,
+    );
+    expect(refreshed.body.find((client) => client.id === otherClientId)?.user.active).toBe(true);
+  });
+
+  it('exclui logicamente sem apagar cliente vinculado a reservas e histórico', async () => {
+    const dataSource = app.get(DataSource);
+    const before = await dataSource.query(
+      'SELECT COUNT(*) AS total FROM reservas WHERE client_id = ?',
+      [clientId],
+    ) as Array<{ total: number }>;
+    expect(Number(before[0].total)).toBeGreaterThan(0);
+
+    const deleted = await del(app, `/clientes/${clientId}`, adminToken);
+    expect(deleted.status).toBe(204);
+
+    const after = await dataSource.query(
+      'SELECT COUNT(*) AS total FROM reservas WHERE client_id = ?',
+      [clientId],
+    ) as Array<{ total: number }>;
+    expect(Number(after[0].total)).toBe(Number(before[0].total));
+    const client = await dataSource.query(
+      'SELECT deleted_at FROM clientes WHERE id = ?',
+      [clientId],
+    ) as Array<{ deleted_at: string | null }>;
+    expect(client[0].deleted_at).not.toBeNull();
   });
 });

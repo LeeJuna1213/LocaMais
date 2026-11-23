@@ -6,12 +6,15 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
+  OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 
 import type { Carro } from '../../carro/entities/carro.entity.js';
 import type { Cliente } from '../../cliente/entities/cliente.entity.js';
+import type { Loja } from '../../loja/entities/loja.entity.js';
+import type { Locacao } from '../../locacao/entities/locacao.entity.js';
 import { StatusReserva } from '../enums/status-reserva.enum.js';
 
 /**
@@ -116,6 +119,21 @@ export class Reserva {
   @JoinColumn({ name: 'car_id' })
   car: Carro;
 
+  @Index('idx_reservas_pickup_shop')
+  @Column({ type: 'int', nullable: true })
+  loja_retirada_id: number | null;
+
+  @ManyToOne('Loja', { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'loja_retirada_id' })
+  lojaRetirada?: Loja | null;
+
+  /** Immutable-at-creation address/name details for historical display. */
+  @Column({ type: 'simple-json', nullable: true })
+  lojaRetiradaSnapshot: { nome: string; logradouro: string; numero: string; cidade: string; uf: string } | null;
+
+  @OneToOne('Locacao', 'reservation')
+  locacao?: Locacao | null;
+
   @CreateDateColumn()
   created_at: Date;
 
@@ -174,7 +192,9 @@ export class Reserva {
   }
 
   /** Controla o que é serializado na resposta HTTP. */
-  toJSON(): Omit<Reserva, 'toJSON' | 'calcularValor'> {
+  toJSON(): Omit<Reserva, 'toJSON' | 'calcularValor' | 'locacao'> & {
+    locacao: Pick<Locacao, 'id' | 'status' | 'dataRetirada' | 'dataDevolucao'> | null | undefined;
+  } {
     const {
       id,
       codigo,
@@ -188,6 +208,10 @@ export class Reserva {
       client,
       car_id,
       car,
+      loja_retirada_id,
+      lojaRetiradaSnapshot,
+      lojaRetirada,
+      locacao,
       created_at,
       updated_at,
     } = this;
@@ -205,6 +229,12 @@ export class Reserva {
       client,
       car_id,
       car,
+      loja_retirada_id,
+      lojaRetiradaSnapshot,
+      lojaRetirada,
+      locacao: locacao
+        ? { id: locacao.id, status: locacao.status, dataRetirada: locacao.dataRetirada, dataDevolucao: locacao.dataDevolucao }
+        : null,
       created_at,
       updated_at,
     };

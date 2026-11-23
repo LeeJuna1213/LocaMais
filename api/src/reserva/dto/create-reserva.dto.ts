@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsISO8601, IsInt, Min } from 'class-validator';
+import { IsISO8601, IsInt, IsNumber, IsOptional, Min } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 /**
@@ -54,4 +54,18 @@ export class CreateReservaDto {
   @IsInt({ message: 'car_id deve ser um numero inteiro' })
   @Min(1, { message: 'car_id deve ser maior que zero' })
   car_id: number;
+
+  @ApiProperty({ example: 1, required: false, description: 'ID da loja ativa de retirada.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'loja_retirada_id deve ser um número inteiro' })
+  @Min(1, { message: 'loja_retirada_id deve ser maior que zero' })
+  loja_retirada_id: number;
+
+  @ApiProperty({ required: false, minimum: 0, description: 'Taxa apresentada na cotação; usada apenas para detectar alteração entre cotação e criação.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  taxa_servico_cotada?: number;
 }

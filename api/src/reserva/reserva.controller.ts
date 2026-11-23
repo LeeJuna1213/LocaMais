@@ -126,6 +126,10 @@ export class ReservaController {
     return this.reservaService.checkAvailability(dto);
   }
 
+  @Get('estimativa')
+  @Roles(TipoUsuario.CLIENTE, TipoUsuario.FUNCIONARIO, TipoUsuario.ADMIN)
+  quote(@Query() dto: ConsultarDisponibilidadeDto) { return this.reservaService.quote(dto); }
+
   /** Consulta uma reserva por UUID, com controle de acesso. */
   @Get(':id')
   @ApiOperation({ summary: 'Consulta uma reserva pelo UUID' })

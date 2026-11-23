@@ -11,6 +11,8 @@ export class LojaService {
 
   findAll(): Promise<Loja[]> { return this.lojas.find({ order: { nome: 'ASC' } }); }
 
+  findActive(): Promise<Loja[]> { return this.lojas.find({ where: { ativa: true }, order: { nome: 'ASC' } }); }
+
   async findOne(id: number): Promise<Loja> {
     const loja = await this.lojas.findOne({ where: { id } });
     if (!loja) throw new NotFoundException(`loja ${id} não encontrada`);

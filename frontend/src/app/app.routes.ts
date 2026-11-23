@@ -36,6 +36,7 @@ export const routes: Routes = [
         path: 'pagamentos',
         loadComponent: () => import('./pages/client/customer-payments.page').then((m) => m.CustomerPaymentsPage),
       },
+      { path: 'favoritos', loadComponent: () => import('./pages/client/favorites.page').then((m) => m.FavoritesPage) },
       {
         path: 'reservas/:id',
         loadComponent: () => import('./pages/client/reservation-details.page').then((m) => m.ReservationDetailsPage),
@@ -133,6 +134,8 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/admin/shops.page').then((m) => m.ShopsPage),
         canActivate: [roleGuard('admin')],
       },
+      { path: 'lojas/novo', loadComponent: () => import('./pages/admin/shop-edit.page').then((m) => m.ShopEditPage), canActivate: [roleGuard('admin')] },
+      { path: 'lojas/:id', loadComponent: () => import('./pages/admin/shop-edit.page').then((m) => m.ShopEditPage), canActivate: [roleGuard('admin')] },
       {
         path: 'taxa-servico',
         loadComponent: () => import('./pages/admin/service-fee.page').then((m) => m.ServiceFeePage),

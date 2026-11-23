@@ -142,6 +142,79 @@ describe('ReservaService', () => {
     expect(service).toBeDefined();
   });
 
+  describe('quote', () => {
+    it('returns the server-calculated daily rate, rounded days, subtotal, configured fee and total', async () => {
+      carroService.findOne.mockResolvedValue({ id: 9, valorDiaria: 123.45 });
+      configuracaoService.getTaxaServico.mockResolvedValue({ valor: 30 });
+
+      const result = await service.quote({
+        car_id: 9,
+        dataRetirada: '2026-11-10T10:00:00.000Z',
+        dataDevolucao: '2026-11-12T12:00:00.000Z',
+      } as any);
+
+      expect(carroService.findOne).toHaveBeenCalledWith(9);
+      expect(result).toEqual({ valorDiaria: 123.45, diarias: 3, valorSubtotal: 370.35, taxaServico: 30, valorTotal: 400.35 });
+    });
+
+    it('uses one daily rate for periods below 24 hours', async () => {
+      carroService.findOne.mockResolvedValue({ id: 9, valorDiaria: 87.5 });
+      configuracaoService.getTaxaServico.mockResolvedValue({ valor: 12.5 });
+
+      const result = await service.quote({
+        car_id: 9,
+        dataRetirada: '2026-11-10T10:00:00.000Z',
+        dataDevolucao: '2026-11-10T18:00:00.000Z',
+      } as any);
+
+      expect(result).toEqual({ valorDiaria: 87.5, diarias: 1, valorSubtotal: 87.5, taxaServico: 12.5, valorTotal: 100 });
+    });
+  });
+
+  describe('findAllForActor status and ownership scope', () => {
+    it('returns persisted pending and confirmed reservations to staff without status filtering', async () => {
+      const pending = { ...mockReserva, id: 'pending-1', status: StatusReserva.PENDENTE };
+      const confirmed = { ...mockReserva, id: 'confirmed-1', status: StatusReserva.CONFIRMADA };
+      reservasRepository.find.mockResolvedValue([pending, confirmed]);
+
+      const result = await service.findAllForActor(adminActor);
+
+      expect(reservasRepository.find).toHaveBeenCalledWith({
+        relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true },
+        order: { dataRetirada: 'ASC' },
+      });
+      expect(result.map((item: Reserva) => item.status)).toEqual([
+        StatusReserva.PENDENTE,
+        StatusReserva.CONFIRMADA,
+      ]);
+      expect(new Set(result.map((item: Reserva) => item.id)).size).toBe(result.length);
+    });
+
+    it('scopes client listing by authenticated users.id through clients.user_id', async () => {
+      const getMany = vi.fn().mockResolvedValue([mockReserva]);
+      const query = {
+        leftJoinAndSelect: vi.fn().mockReturnThis(),
+        where: vi.fn().mockReturnThis(),
+        orderBy: vi.fn().mockReturnThis(),
+        getMany,
+      };
+      reservasRepository.createQueryBuilder = vi.fn().mockReturnValue(query);
+
+      const result = await service.findAllForActor(clienteActor);
+
+      expect(query.where).toHaveBeenCalledWith('client.user_id = :userId', { userId: clienteActor.id });
+      expect(result).toEqual([mockReserva]);
+    });
+  });
+
+  it('does not allow a client to cancel a pending reservation on the pickup date', async () => {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+    const sameDay = { ...mockReserva, status: StatusReserva.PENDENTE, dataRetirada: new Date(`${today}T15:00:00.000Z`), client: { id: 1, user_id: clienteActor.id } };
+    reservasRepository.findOne.mockResolvedValue(sameDay);
+    await expect(service.cancel(clienteActor, 'res-123')).rejects.toThrow('antes do dia da retirada');
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
   /**
    * Cache HIT / MISS no metodo `findOneForActor` (GET /reservas/:id, TTL 120s).
    * Reserva contém cliente/carro relacionados; validar autorização em ambos
@@ -192,7 +265,7 @@ describe('ReservaService', () => {
       expect(redisService.get).toHaveBeenCalledWith('locamais:reserva:res-123');
       expect(reservasRepository.findOne).toHaveBeenCalledWith({
         where: { id: 'res-123' },
-        relations: { client: true, car: true },
+        relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true },
       });
       expect(redisService.set).toHaveBeenCalledWith(
         'locamais:reserva:res-123',
@@ -267,7 +340,7 @@ describe('ReservaService', () => {
       );
       expect(reservasRepository.findOne).toHaveBeenCalledWith({
         where: { id: 'inexistente' },
-        relations: { client: true, car: true },
+        relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true },
       });
     });
   });

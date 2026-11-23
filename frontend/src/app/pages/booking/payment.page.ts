@@ -90,17 +90,24 @@ export class PaymentPage implements OnInit {
       await this.toast.show('Este veículo não está mais disponível');
       return;
     }
+    const pickupShopId = this.booking.pickupShopId();
+    if (!pickupShopId) {
+      await this.toast.show('Selecione uma loja ativa para retirada.');
+      return;
+    }
 
     try {
       const clientId = await this.resolveClientId();
       this.saving = true;
-      const reservation = await this.reservationService.create({
+          const reservation = await this.reservationService.create({
         clientId,
         vehicleId: vehicle.id,
         start: this.booking.start(),
         end: this.booking.end(),
         pickupTime: this.booking.pickupTime(),
         returnTime: this.booking.returnTime(),
+        pickupShopId,
+        quotedServiceFee: this.booking.quotedServiceFee(),
       });
       this.booking.setCreatedReservation(reservation);
       await this.router.navigateByUrl('/booking/sucesso');

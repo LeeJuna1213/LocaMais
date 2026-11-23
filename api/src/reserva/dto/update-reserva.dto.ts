@@ -18,6 +18,13 @@ import { StatusReserva } from '../enums/status-reserva.enum.js';
  * deve ser usado neste endpoint; existe uma rota própria `/cancel`.
  */
 export class UpdateReservaDto {
+  @ApiPropertyOptional({ example: 2, description: 'Nova loja ativa para retirada; não pode ser alterada após a retirada efetiva.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'loja_retirada_id deve ser um número inteiro' })
+  @Min(1, { message: 'loja_retirada_id deve ser maior que zero' })
+  loja_retirada_id?: number;
+
   @ApiPropertyOptional({
     example: '2026-11-15T09:00:00.000Z',
     description: 'Nova data/hora de retirada.',

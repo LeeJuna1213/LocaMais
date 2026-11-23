@@ -1,5 +1,5 @@
 export type VehicleStatus = 'Disponível' | 'Alugado' | 'Em manutenção';
-export type VehicleCategory = 'SUV' | 'Hatch' | 'Picape';
+export type VehicleCategory = string;
 export type Transmission = 'Automático' | 'Manual';
 
 export interface Revision {
@@ -16,6 +16,7 @@ export interface Vehicle {
   status: VehicleStatus;
   color: string;
   category: string;
+  categoryId?: number;
   transmission: Transmission | null;
   revisions: Revision[];
   favorite: boolean;
@@ -56,12 +57,20 @@ export interface Reservation {
   vehicle?: Vehicle;
   start: string;
   end: string;
+  days?: number;
   status: ReservationStatus;
   total: number;
   subtotal?: number;
   serviceFee?: number;
   payment: PaymentStatus;
   paymentMethod: PaymentMethod;
+  pickupShopId?: number | null;
+  pickupShop?: { nome: string; logradouro: string; numero: string; cidade: string; uf: string } | null;
+  rentalId?: string | null;
+  rentalStatus?: 'aguardando_retirada' | 'em_andamento' | 'concluida' | 'cancelada' | null;
+  /** True only after an actual vehicle pickup has started a related rental. */
+  rentalStarted?: boolean;
+  actualReturnDate?: string | null;
 }
 
 export interface Account {
@@ -88,7 +97,6 @@ export interface UserProfile {
   addressComplement: string;
   addressState: string;
   addressZipCode: string;
-  paymentPreference: string;
 }
 
 export type UserRole = 'client' | 'funcionario' | 'admin';
@@ -111,7 +119,6 @@ export interface UsuarioApi {
     telefone: string | null;
     cnh_numero: string | null;
     cnh_validade: string | null;
-    metodo_pagamento_preferido: string | null;
     address: {
       logradouro: string;
       numero: string;
@@ -131,11 +138,19 @@ export interface CustomerPaymentApi {
   metodo: string;
   status: 'pendente' | 'aprovado' | 'recusado' | 'cancelado';
   data: string;
+  comprovante_snapshot?: { dataConfirmacao?: string } | null;
   locacao_id: string;
   locacao?: {
     id: string;
     created_at: string;
-    reservation?: { id: string; car?: { marca: string; modelo: string; placa: string; foto?: string | null } | null } | null;
+    reservation?: {
+      id: string;
+      codigo?: string | null;
+      dataRetirada?: string;
+      dataDevolucao?: string;
+      client?: { user?: { name?: string; email?: string } | null } | null;
+      car?: { marca: string; modelo: string; placa: string; foto?: string | null } | null;
+    } | null;
   } | null;
 }
 

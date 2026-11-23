@@ -1,4 +1,6 @@
 import { Carro } from '../carro/entities/carro.entity.js';
+import { Locacao } from '../locacao/entities/locacao.entity.js';
+import { StatusLocacao } from '../locacao/enums/status-locacao.enum.js';
 import { Reserva } from './entities/reserva.entity.js';
 
 /**
@@ -85,5 +87,25 @@ describe('Reserva.calcularValor', () => {
     expect(() => reserva.calcularValor()).toThrow(
       'carro nao carregado: calcularValor exige a relacao car preenchida',
     );
+  });
+});
+
+describe('Reserva.toJSON rental summary', () => {
+  it('serializes the actual pickup and return dates of a related rental', () => {
+    const reservation = new Reserva();
+    const pickup = new Date('2026-12-01T10:00:00.000Z');
+    const returned = new Date('2026-12-03T09:45:00.000Z');
+    reservation.locacao = Object.assign(new Locacao(), {
+      status: StatusLocacao.CONCLUIDA,
+      dataRetirada: pickup,
+      dataDevolucao: returned,
+    });
+
+    expect(reservation.toJSON().locacao).toEqual({
+      status: StatusLocacao.CONCLUIDA,
+      dataRetirada: pickup,
+      dataDevolucao: returned,
+    });
+    expect(reservation.toJSON().diarias).toBe(2);
   });
 });
