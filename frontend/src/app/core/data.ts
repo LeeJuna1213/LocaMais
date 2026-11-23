@@ -24,5 +24,4 @@ export const defaultProfile = (): UserProfile => ({
   addressComplement: '',
   addressState: '',
   addressZipCode: '',
-  paymentPreference: '',
 });

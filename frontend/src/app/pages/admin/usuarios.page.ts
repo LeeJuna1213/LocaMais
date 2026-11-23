@@ -33,8 +33,7 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
               <b>{{ usuario.name }}</b>
               <div class="small muted">
                 {{ usuario.email }}
-                <span class="badge" [class.on]="usuario.type === 'admin'">Admin</span>
-                <span class="badge" [class.off]="usuario.type !== 'admin'">Funcionário</span>
+                <span class="badge" [class.on]="usuario.type === 'admin'" [class.off]="usuario.type !== 'admin'">{{ usuario.type === 'admin' ? 'Administrador' : 'Funcionário' }}</span>
                 <span class="badge" [class.active]="usuario.active" [class.inactive]="!usuario.active">
                   {{ usuario.active ? 'Ativo' : 'Inativo' }}
                 </span>

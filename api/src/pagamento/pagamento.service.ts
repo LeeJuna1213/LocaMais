@@ -13,6 +13,7 @@ import { GatewayPagamento } from './entities/gateway-pagamento.entity.js';
 import { Pagamento } from './entities/pagamento.entity.js';
 import { StatusPagamento } from './enums/status-pagamento.enum.js';
 import { CreatePagamentoDto } from './dto/create-pagamento.dto.js';
+import { CreatePagamentoClienteDto } from './dto/create-pagamento-cliente.dto.js';
 import { ConfirmacaoPagamentoDto } from './dto/confirmacao-pagamento.dto.js';
 import { UpdatePagamentoDto } from './dto/update-pagamento.dto.js';
 import { GatewayPagamentoService } from './gateway-pagamento.service.js';
@@ -120,6 +121,57 @@ export class PagamentoService {
     });
   }
 
+  /** Registra uma cobrança pendente para a reserva confirmada do cliente. */
+  async createMine(
+    actor: UsuarioAutenticado,
+    dto: CreatePagamentoClienteDto,
+  ): Promise<Pagamento> {
+    const locacoes = await this.locacaoService.findAll(actor);
+    let locacao = locacoes.find(
+      (item) => item.reservation_id === dto.reservation_id,
+    );
+
+    if (!locacao) {
+      try {
+        locacao = await this.locacaoService.create(actor, {
+          reservation_id: dto.reservation_id,
+        });
+      } catch (error) {
+        // An earlier concurrent request may have created the one allowed
+        // locação for this reservation. Re-read rather than duplicating it.
+        const refreshed = await this.locacaoService.findAll(actor);
+        locacao = refreshed.find(
+          (item) => item.reservation_id === dto.reservation_id,
+        );
+        if (!locacao) throw error;
+      }
+    }
+
+    if (locacao.status === StatusLocacao.CANCELADA) {
+      throw new ConflictException('não é possível pagar uma locação cancelada');
+    }
+
+    const pendingPayment = await this.pagamentosRepository.exists({
+      where: {
+        locacao_id: locacao.id,
+        status: StatusPagamento.PENDENTE,
+      },
+    });
+    if (pendingPayment) {
+      throw new ConflictException('já existe um pagamento pendente para esta locação');
+    }
+
+    const saldoRestante = await this.calcularSaldoRestante(locacao.id);
+    const valor = dto.valor ?? saldoRestante;
+    if (valor <= 0 || valor > saldoRestante) {
+      throw new ConflictException(
+        `valor do pagamento deve ser maior que zero e não exceder o saldo restante (${saldoRestante})`,
+      );
+    }
+
+    return this.create({ locacaoId: locacao.id, metodo: dto.metodo, valor });
+  }
+
   /**
    * Consulta todos os pagamentos registrados no sistema.
    *
@@ -128,7 +180,7 @@ export class PagamentoService {
   async findAll(): Promise<Pagamento[]> {
     return this.pagamentosRepository.find({
       order: { data: 'DESC' },
-      relations: { locacao: true },
+      relations: { locacao: { reservation: { client: { user: true }, car: true } } },
     });
   }
 

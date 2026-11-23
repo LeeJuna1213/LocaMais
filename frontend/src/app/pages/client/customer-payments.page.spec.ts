@@ -51,6 +51,16 @@ describe('CustomerPaymentsPage', () => {
     expect(page.totalPending).toBe(50);
   });
 
+  it('shows the payment lists without top total summary cards', () => {
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).not.toContain('Total pago');
+    expect(text).not.toContain('Total pendente');
+    expect(text).toContain('Pagamentos realizados');
+    expect(text).toContain('Pagamentos pendentes');
+    expect(text).toContain('125,50');
+    expect(text).toContain('50,00');
+  });
+
   it('requests a receipt only for an approved payment', async () => {
     const page = fixture.componentInstance;
     await page.openReceipt(items[1]);

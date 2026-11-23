@@ -65,6 +65,7 @@ describe('PagamentoService', () => {
     });
 
     pagamentosRepository = {
+      exists: vi.fn().mockResolvedValue(false),
       find: vi.fn().mockResolvedValue([]),
       findOne: vi.fn(),
       create: vi.fn().mockImplementation((dto: any) => dto),
@@ -89,6 +90,8 @@ describe('PagamentoService', () => {
 
     locacaoService = {
       findOnePublic: vi.fn().mockResolvedValue(mockLocacao),
+      findAll: vi.fn().mockResolvedValue([mockLocacao]),
+      create: vi.fn().mockResolvedValue(mockLocacao),
     } as any;
 
     gatewayService = {
@@ -155,6 +158,36 @@ describe('PagamentoService', () => {
 
       expect(resultado.valor).toBe(100);
       expect(resultado.status).toBe(StatusPagamento.PENDENTE);
+    });
+  });
+
+  describe('createMine', () => {
+    const actor = { id: 1, type: 'cliente' } as any;
+    const dto = { reservation_id: 'res-456', metodo: MetodoPagamento.PIX };
+
+    it('cria uma cobrança pendente para locação existente, pelo saldo calculado no backend', async () => {
+      const result = await service.createMine(actor, dto);
+
+      expect(result.status).toBe(StatusPagamento.PENDENTE);
+      expect(result.locacao_id).toBe('loc-123');
+      expect(result.valor).toBe(300);
+      expect(locacaoService.create).not.toHaveBeenCalled();
+    });
+
+    it('cria locação somente quando ainda não existe para reserva confirmada', async () => {
+      locacaoService.findAll = vi.fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+      const result = await service.createMine(actor, dto);
+
+      expect(locacaoService.create).toHaveBeenCalledWith(actor, { reservation_id: 'res-456' });
+      expect(result.locacao_id).toBe('loc-123');
+    });
+
+    it('impede cobranças pendentes duplicadas', async () => {
+      pagamentosRepository.exists = vi.fn().mockResolvedValue(true);
+
+      await expect(service.createMine(actor, dto)).rejects.toThrow(/já existe um pagamento pendente/);
     });
   });
 

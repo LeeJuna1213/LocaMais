@@ -17,12 +17,17 @@ import { ToastService } from '../../core/services/toast.service';
         <p>Valor aplicado a novas reservas. Reservas já criadas mantêm a taxa registrada no momento da criação.</p>
         <div class="current">Atual: <b>{{ settings.serviceFee() | currency:'BRL' }}</b></div>
         <label for="service-fee">Taxa de serviço (R$)</label>
-        <input id="service-fee" name="valor" type="number" min="0" step="0.01" inputmode="decimal" required [(ngModel)]="value" />
+        <input id="service-fee" class="service-fee-input" name="valor" type="number" min="0" step="0.01" inputmode="decimal" required [(ngModel)]="value" />
         <button class="btn" type="submit" [disabled]="form.invalid || saving">{{ saving ? 'Salvando...' : 'Salvar taxa' }}</button>
       </form>
     </app-shell>
   `,
-  styles: [`.current{margin:12px 0 18px;color:#7a5a40}`],
+  styles: [`
+    .current { margin:12px 0 18px; color:#7a5a40; }
+    .service-fee-input { color-scheme:light; }
+    .service-fee-input::-webkit-inner-spin-button,
+    .service-fee-input::-webkit-outer-spin-button { opacity:1; background:transparent; filter:grayscale(1); }
+  `],
 })
 export class ServiceFeePage {
   readonly settings = inject(SystemSettingsService);

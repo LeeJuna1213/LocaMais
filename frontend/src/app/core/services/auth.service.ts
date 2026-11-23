@@ -183,7 +183,6 @@ export class AuthService {
     if (partial.phone !== undefined) payload['telefone'] = partial.phone;
     if (partial.cnh !== undefined) payload['cnh_numero'] = partial.cnh.replace(/\D/g, '');
     if (partial.cnhValidity !== undefined) payload['cnh_validade'] = partial.cnhValidity;
-    if (partial.paymentPreference !== undefined) payload['metodo_pagamento_preferido'] = partial.paymentPreference || null;
     const addressKeys: Array<keyof UserProfile> = ['street', 'addressNumber', 'addressDistrict', 'addressComplement', 'city', 'addressState', 'addressZipCode'];
     if (addressKeys.some((key) => partial[key] !== undefined)) {
       const existing = user.client.address;
@@ -234,7 +233,6 @@ export class AuthService {
       city: address?.cidade ?? '',
       addressState: address?.uf ?? '',
       addressZipCode: address?.cep ?? '',
-      paymentPreference: user.client?.metodo_pagamento_preferido ?? '',
     };
   }
 }

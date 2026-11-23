@@ -4,6 +4,7 @@ import { ReservationService } from '../../core/services/reservation.service';
 import { VehicleService } from '../../core/services/vehicle.service';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
 import { CurrencyPipe } from '@angular/common';
+import { CustomerPaymentService, countPendingPayments } from '../../core/services/customer-payment.service';
 
 @Component({
   selector: 'app-dashboard',
@@ -51,10 +52,12 @@ export class DashboardPage {
   private readonly router = inject(Router);
   readonly vehicleService = inject(VehicleService);
   readonly reservationService = inject(ReservationService);
+  readonly paymentService = inject(CustomerPaymentService);
 
   constructor() {
     void this.vehicleService.load();
     void this.reservationService.load();
+    void this.paymentService.loadOperational();
   }
 
   get reservations(): import('../../core/models').Reservation[] {
@@ -70,7 +73,7 @@ export class DashboardPage {
   }
 
   get pendingPayments(): number {
-    return this.reservations.filter((reservation) => reservation.payment === 'Pendente').length;
+    return countPendingPayments(this.paymentService.items());
   }
 
   get occupancy(): number {

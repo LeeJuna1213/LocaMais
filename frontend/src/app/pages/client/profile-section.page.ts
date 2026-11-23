@@ -1,5 +1,8 @@
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { IonIcon } from '@ionic/angular';
+import { addIcons } from 'ionicons';
+import { eyeOffOutline, eyeOutline } from 'ionicons/icons';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -8,19 +11,17 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
 @Component({
   selector: 'app-profile-section',
   standalone: true,
-  imports: [FormsModule, AppShellComponent],
+  imports: [FormsModule, AppShellComponent, IonIcon],
   styles: [`
-    .preference-toggle {
-      display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px;
-      padding: 10px 12px; margin: 6px 0; border: 1px solid #eadfd5; border-radius: 12px;
-      background: #fffaf5; color: #2b1a0d; text-align: left; font: inherit; cursor: pointer;
+    .password-field { position: relative; margin-bottom: 8px; }
+    .password-field input { padding-right: 52px; margin-bottom: 0; }
+    .pw-toggle {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      display: grid; place-items: center; width: 36px; height: 36px;
+      background: transparent; border: none; cursor: pointer; padding: 4px; line-height: 1; color: #e86f12;
     }
-    .preference-toggle .indicator {
-      display: grid; place-items: center; width: 20px; height: 20px; flex: none;
-      border: 2px solid #c9a98c; border-radius: 6px; color: #fff;
-    }
-    .preference-toggle[aria-checked="true"] .indicator { border-color: #e86f12; background: #e86f12; }
-    .preference-toggle:focus-visible { outline: 2px solid #e86f12; outline-offset: 2px; }
+    .pw-toggle ion-icon { font-size: 20px; color: #e86f12; }
+    .pw-toggle:focus-visible { outline: 2px solid #e86f12; outline-offset: 1px; border-radius: 6px; }
   `],
   template: `
     <app-shell
@@ -63,32 +64,22 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
             <label>CEP</label>
             <input [(ngModel)]="addressZipCode" inputmode="numeric" maxlength="8" autocomplete="postal-code" />
           }
-          @case ('Preferências') {
-            <button class="preference-toggle" type="button" role="switch" [attr.aria-checked]="notifyReservations" (click)="notifyReservations = !notifyReservations">
-              <span class="indicator" aria-hidden="true">{{ notifyReservations ? '✓' : '' }}</span>Notificações de reserva
-            </button>
-            <button class="preference-toggle" type="button" role="switch" [attr.aria-checked]="notifyPromos" (click)="notifyPromos = !notifyPromos">
-              <span class="indicator" aria-hidden="true">{{ notifyPromos ? '✓' : '' }}</span>Promoções por e-mail
-            </button>
-          }
-          @case ('Pagamentos') {
-            <p class="small muted">Métodos suportados atualmente: PIX, cartão de crédito, cartão de débito e dinheiro. O sistema usa processamento demonstrativo e não possui integração de tokenização para cadastrar cartões.</p>
-            <label for="payment-preference">Forma de pagamento preferencial</label>
-            <select id="payment-preference" [(ngModel)]="paymentPreference">
-              <option value="">Sem preferência</option>
-              <option value="pix">PIX</option>
-              <option value="cartao_credito">Cartão de crédito</option>
-              <option value="cartao_debito">Cartão de débito</option>
-              <option value="dinheiro">Dinheiro</option>
-            </select>
-          }
           @case ('Alterar senha') {
-            <label>Senha atual</label>
-            <input type="text" class="pw" [(ngModel)]="currentPassword" autocomplete="off" />
-            <label>Nova senha</label>
-            <input type="text" class="pw" [(ngModel)]="newPassword" autocomplete="off" />
-            <label>Confirmar nova senha</label>
-            <input type="text" class="pw" [(ngModel)]="newPasswordConfirmation" autocomplete="off" />
+            <label for="current-password">Senha atual</label>
+            <div class="password-field">
+              <input id="current-password" name="currentPassword" [type]="showCurrentPassword ? 'text' : 'password'" [(ngModel)]="currentPassword" autocomplete="current-password" />
+              <button class="pw-toggle" type="button" [attr.aria-label]="showCurrentPassword ? 'Ocultar senha atual' : 'Exibir senha atual'" (click)="showCurrentPassword = !showCurrentPassword"><ion-icon [name]="showCurrentPassword ? 'eye-outline' : 'eye-off-outline'" aria-hidden="true"></ion-icon></button>
+            </div>
+            <label for="new-password">Nova senha</label>
+            <div class="password-field">
+              <input id="new-password" name="newPassword" [type]="showNewPassword ? 'text' : 'password'" [(ngModel)]="newPassword" autocomplete="new-password" />
+              <button class="pw-toggle" type="button" [attr.aria-label]="showNewPassword ? 'Ocultar nova senha' : 'Exibir nova senha'" (click)="showNewPassword = !showNewPassword"><ion-icon [name]="showNewPassword ? 'eye-outline' : 'eye-off-outline'" aria-hidden="true"></ion-icon></button>
+            </div>
+            <label for="confirm-new-password">Confirmar nova senha</label>
+            <div class="password-field">
+              <input id="confirm-new-password" name="newPasswordConfirmation" [type]="showNewPasswordConfirmation ? 'text' : 'password'" [(ngModel)]="newPasswordConfirmation" autocomplete="new-password" />
+              <button class="pw-toggle" type="button" [attr.aria-label]="showNewPasswordConfirmation ? 'Ocultar confirmação da senha' : 'Exibir confirmação da senha'" (click)="showNewPasswordConfirmation = !showNewPasswordConfirmation"><ion-icon [name]="showNewPasswordConfirmation ? 'eye-outline' : 'eye-off-outline'" aria-hidden="true"></ion-icon></button>
+            </div>
           }
         }
 
@@ -117,14 +108,15 @@ export class ProfileSectionPage {
   addressDistrict = '';
   addressState = '';
   addressZipCode = '';
-  notifyReservations = false;
-  notifyPromos = false;
-  paymentPreference = '';
   currentPassword = '';
   newPassword = '';
   newPasswordConfirmation = '';
+  showCurrentPassword = false;
+  showNewPassword = false;
+  showNewPasswordConfirmation = false;
 
   constructor() {
+    addIcons({ eyeOutline, eyeOffOutline });
     const profile = this.auth.profile();
     this.name = profile.name;
     this.email = profile.email;
@@ -138,9 +130,9 @@ export class ProfileSectionPage {
     this.addressDistrict = profile.addressDistrict;
     this.addressState = profile.addressState;
     this.addressZipCode = profile.addressZipCode;
-    this.notifyReservations = profile.notifyReservations;
-    this.notifyPromos = profile.notifyPromos;
-    this.paymentPreference = profile.paymentPreference;
+    if (this.section === 'Preferências' || this.section === 'Pagamentos') {
+      void this.router.navigateByUrl('/client/perfil');
+    }
   }
 
   async save(): Promise<void> {
@@ -165,10 +157,6 @@ export class ProfileSectionPage {
             addressState: this.addressState,
             addressZipCode: this.addressZipCode,
           });
-        } else if (this.section === 'Preferências') {
-          await this.auth.updateProfile({ notifyReservations: this.notifyReservations, notifyPromos: this.notifyPromos });
-        } else if (this.section === 'Pagamentos') {
-          await this.auth.updateProfile({ paymentPreference: this.paymentPreference });
         }
       } catch (error) {
         await this.toast.show(error instanceof Error ? error.message : 'Não foi possível salvar as alterações.');

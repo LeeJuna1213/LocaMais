@@ -16,10 +16,6 @@ registerLocaleData(localePtBr);
   standalone: true,
   imports: [CurrencyPipe, DatePipe, IonIcon, AppShellComponent],
   styles: [`
-    .summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .summary .card { margin: 0; }
-    .amount { display: block; margin-top: 5px; font-size: 20px; color: #2e9d5b; }
-    .amount.pending { color: #d68a14; }
     .payment-card { margin: 10px 0; }
     .payment-car-photo { width: 74px; height: 56px; object-fit: cover; border-radius: 9px; flex: none; }
     .payment-vehicle { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
@@ -36,16 +32,11 @@ registerLocaleData(localePtBr);
     .receipt .notice { margin-top: 18px; padding: 12px; background: #fff7ee; border-radius: 10px; font-size: 12px; }
     .receipt-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
     .receipt-actions button { display: flex; align-items: center; justify-content: center; gap: 6px; }
-    @media (max-width: 420px) { .receipt { padding: 20px 16px; } .summary .amount { font-size: 17px; } }
+    @media (max-width: 420px) { .receipt { padding: 20px 16px; } }
     @media print { body * { visibility: hidden !important; } .receipt, .receipt * { visibility: visible !important; } .receipt-overlay { position: static; padding: 0; background: white; display: block; } .receipt { width: 100%; margin: 0; box-shadow: none; } .receipt-actions, .close-receipt { display: none !important; } }
   `],
   template: `
     <app-shell title="Pagamentos" [showNav]="true" role="client" activeTab="pagamentos">
-      <div class="summary">
-        <div class="card"><span class="small muted">Total pago</span><b class="amount">{{ totalPaid | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}</b></div>
-        <div class="card"><span class="small muted">Total pendente</span><b class="amount pending">{{ totalPending | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}</b></div>
-      </div>
-
       @if (payments.loading()) {
         <div class="card empty" role="status">Carregando pagamentos...</div>
       } @else if (payments.error(); as error) {

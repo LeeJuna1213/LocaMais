@@ -44,7 +44,7 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
 
           <div class="password-field">
             <label for="usuario-password">Senha *</label>
-            <input
+            <div class="password-input-wrap"><input
               id="usuario-password"
               name="password"
               [type]="showPassword ? 'text' : 'password'"
@@ -53,10 +53,9 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
               minlength="8"
               maxlength="72"
               autocomplete="new-password"
-            />
-            <button type="button" class="pw-toggle" (click)="togglePassword()" [attr.aria-label]="showPassword ? 'Ocultar senha' : 'Exibir senha'">
+            /><button type="button" class="pw-toggle" (click)="togglePassword()" [attr.aria-label]="showPassword ? 'Ocultar senha' : 'Exibir senha'">
               <ion-icon [name]="showPassword ? 'eye-off-outline' : 'eye-outline'"></ion-icon>
-            </button>
+            </button></div>
           </div>
 
           <label for="usuario-active">Ativo</label>
@@ -83,8 +82,8 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
     </app-shell>
   `,
   styles: [`
-    .password-field { position: relative; }
-    .password-field input {
+    .password-input-wrap { position: relative; }
+    .password-input-wrap input {
       padding-right: 36px;
     }
     .pw-toggle {

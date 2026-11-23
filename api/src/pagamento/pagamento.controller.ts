@@ -29,6 +29,7 @@ import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
 
 import { PagamentoService } from './pagamento.service.js';
 import { CreatePagamentoDto } from './dto/create-pagamento.dto.js';
+import { CreatePagamentoClienteDto } from './dto/create-pagamento-cliente.dto.js';
 import type { Pagamento } from './entities/pagamento.entity.js';
 import { ConfirmacaoPagamentoDto } from './dto/confirmacao-pagamento.dto.js';
 import { UpdatePagamentoDto } from './dto/update-pagamento.dto.js';
@@ -78,6 +79,22 @@ export class PagamentoController {
   @ApiForbiddenResponse({ description: 'Acesso restrito a admin/funcionário.' })
   create(@Body() dto: CreatePagamentoDto): Promise<Pagamento> {
     return this.pagamentoService.create(dto);
+  }
+
+  @Post('meus')
+  @Roles(TipoUsuario.CLIENTE)
+  @ApiOperation({
+    summary: 'Inicia um pagamento para uma reserva confirmada do cliente',
+    description:
+      'Cria uma cobrança pendente vinculada à locação da própria reserva. O processamento simulado e a confirmação continuam sujeitos ao fluxo autorizado do sistema.',
+  })
+  @ApiCreatedResponse({ description: 'Cobrança pendente criada.' })
+  @ApiConflictResponse({ description: 'Reserva não confirmada, saldo inválido ou cobrança pendente já existente.' })
+  createMine(
+    @CurrentUser() actor: UsuarioAutenticado,
+    @Body() dto: CreatePagamentoClienteDto,
+  ): Promise<Pagamento> {
+    return this.pagamentoService.createMine(actor, dto);
   }
 
   /**
