@@ -6,6 +6,7 @@ export interface CarroApi {
   modelo: string;
   marca: string;
   categoria: string;
+  categoria_id?: number;
   ano: number;
   status: string;
   valorDiaria: number | string;
@@ -35,6 +36,7 @@ export function mapCarroApi(carro: CarroApi): Vehicle {
     status,
     color: '#4a6fa5',
     category: carro.categoria,
+    categoryId: carro.categoria_id,
     transmission: carro.cambio ?? null,
     revisions: [],
     favorite: false,

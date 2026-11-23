@@ -7,12 +7,13 @@ import { Vehicle } from '../../core/models';
 import { ToastService } from '../../core/services/toast.service';
 import { VehicleService } from '../../core/services/vehicle.service';
 import { ImageUrlService } from '../../core/services/image-url.service';
+import { CategoryService } from '../../core/services/category.service';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
 import { NewVehiclePage } from './new-vehicle.page';
 
 const vehicle: Vehicle = {
   id: 17, name: 'Hyundai HB20 2024', version: '', pricePerDay: 125,
-  status: 'Disponível', color: '#4a6fa5', category: 'Economico', transmission: 'Manual',
+  status: 'Disponível', color: '#4a6fa5', category: 'Economico', categoryId: 1, transmission: 'Manual',
   revisions: [], favorite: false, plate: 'ABC1D23', photo: '/uploads/carros/current.jpg',
   make: 'Hyundai', model: 'HB20', year: 2024, lugares: 5, descricao: 'Descrição existente',
 };
@@ -27,6 +28,8 @@ describe('NewVehiclePage create/edit form', () => {
   const load = vi.fn(async () => undefined);
   const removePhoto = vi.fn(async () => vehicle);
   const vehicleService = { load, loadOne, create, update, uploadPhoto, removePhoto, vehicles: () => [vehicle] };
+  const categories = [{ id: 1, nome: 'Economico' }];
+  const categoryService = { categories: () => categories, load: vi.fn(async () => undefined), create: vi.fn(async (nome: string) => ({ id: 2, nome })) };
   const toast = { show: vi.fn(async () => undefined) };
   const router = { navigateByUrl: vi.fn(async () => true) };
   let fixture: ComponentFixture<NewVehiclePage>;
@@ -52,6 +55,7 @@ describe('NewVehiclePage create/edit form', () => {
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => routeId } } } },
         { provide: Router, useValue: router },
         { provide: VehicleService, useValue: vehicleService },
+        { provide: CategoryService, useValue: categoryService },
         { provide: ImageUrlService, useValue: { resolve: (path: string | null) => path ? `https://api.test${path}` : null } },
         { provide: ToastService, useValue: toast },
       ],
@@ -92,7 +96,7 @@ describe('NewVehiclePage create/edit form', () => {
     page.placa = 'ABC1D23';
     page.marca = 'Hyundai';
     page.modelo = 'HB20';
-    page.categoria = 'Economico';
+    page.categoriaId = 1;
     page.ano = 2024;
     page.valorDiaria = 125.5;
     page.transmission = 'Manual';
@@ -112,6 +116,23 @@ describe('NewVehiclePage create/edit form', () => {
     expect(fixture.componentInstance.fieldError('ano')).toContain('entre 1900');
   });
 
+  it('uses a free-text model input and persisted categories with an inline add-category action', async () => {
+    await render();
+    const model = fixture.nativeElement.querySelector('#vehicle-model') as HTMLInputElement;
+    const category = fixture.nativeElement.querySelector('#vehicle-category') as HTMLSelectElement;
+    expect(model.tagName).toBe('INPUT');
+    expect(model.hasAttribute('list')).toBe(false);
+    expect(fixture.nativeElement.querySelector('datalist')).toBeNull();
+    expect(Array.from(category.options).map((option) => option.textContent?.trim())).toContain('Economico');
+    expect(Array.from(category.options).map((option) => option.textContent?.trim())).toContain('Adicionar nova categoria');
+
+    fixture.componentInstance.onCategoryChange('new');
+    fixture.componentInstance.newCategoryName = 'SUV Esportiva';
+    await fixture.componentInstance.addCategory();
+    expect(categoryService.create).toHaveBeenCalledWith('SUV Esportiva');
+    expect(fixture.componentInstance.categoriaId).toBe(2);
+  });
+
   it('sends only DTO fields to POST and navigates back after successful creation', async () => {
     await render();
     const page = fixture.componentInstance;
@@ -119,7 +140,7 @@ describe('NewVehiclePage create/edit form', () => {
     await page.save();
 
     expect(create).toHaveBeenCalledWith({
-      placa: 'ABC1D23', marca: 'Hyundai', modelo: 'HB20', categoria: 'Economico',
+      placa: 'ABC1D23', marca: 'Hyundai', modelo: 'HB20', categoriaId: 1,
       ano: 2024, valorDiaria: 125.5, status: 'disponivel', cambio: 'Manual', lugares: 5, descricao: null,
     });
     expect(router.navigateByUrl).toHaveBeenCalledWith('/admin/veiculos');
@@ -132,16 +153,16 @@ describe('NewVehiclePage create/edit form', () => {
 
     expect(page.editing).toBe(true);
     expect(page.placa).toBe('ABC1D23');
-    expect(page.categoria).toBe('Economico');
+    expect(page.categoriaId).toBe(1);
     expect(fixture.nativeElement.querySelector('form')).not.toBeNull();
     expect(fixture.nativeElement.textContent).not.toContain('Carregando veículo...');
 
-    page.categoria = 'SUV Esportiva';
+    page.categoriaId = 2;
     page.valorDiaria = 520.5;
     page.transmission = 'Automático';
     await page.save();
 
-    expect(update).toHaveBeenCalledWith(17, { categoria: 'SUV Esportiva', valorDiaria: 520.5, cambio: 'Automático' });
+    expect(update).toHaveBeenCalledWith(17, { categoriaId: 2, valorDiaria: 520.5, cambio: 'Automático' });
     expect(create).not.toHaveBeenCalled();
     expect(router.navigateByUrl).toHaveBeenCalledWith('/admin/veiculos');
   });

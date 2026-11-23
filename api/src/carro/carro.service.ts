@@ -15,6 +15,7 @@ import { Reserva } from '../reserva/entities/reserva.entity.js';
 import { RedisService } from '../redis/redis.service.js';
 import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
 import { CarroFotoStorage } from './carro-foto.storage.js';
+import { CategoriaVeiculoService } from './categoria.service.js';
 
 /**
  * Regras de negócio do veículo.
@@ -36,6 +37,7 @@ export class CarroService {
     private readonly redis: RedisService,
     private readonly cacheInvalidation: CacheInvalidationService,
     private readonly fotoStorage: CarroFotoStorage,
+    private readonly categorias: CategoriaVeiculoService,
   ) {}
 
   async create(dto: CreateCarroDto): Promise<Carro> {
@@ -47,12 +49,16 @@ export class CarroService {
       throw new ConflictException('ja existe um veiculo com esta placa');
     }
 
+    const categoria = await this.categorias.resolveForVehicle(dto.categoria_id, dto.categoria);
+
     const saved = await this.carrosRepository.save(
       this.carrosRepository.create({
         placa: dto.placa,
         modelo: dto.modelo,
         marca: dto.marca,
-        categoria: dto.categoria,
+        categoria: categoria.nome,
+        categoria_id: categoria.id,
+        categoriaEntity: categoria,
         lugares: dto.lugares ?? null,
         descricao: dto.descricao ?? null,
         cambio: dto.cambio ?? null,
@@ -67,6 +73,7 @@ export class CarroService {
 
   findAll(): Promise<Carro[]> {
     return this.carrosRepository.find({
+      relations: { categoriaEntity: true },
       order: { id: 'DESC' },
     });
   }
@@ -92,12 +99,13 @@ export class CarroService {
         throw new NotFoundException(`veiculo com ID ${id} nao encontrado`);
       }
       // Nunca confiar em `foto` presente em uma chave antiga do Redis.
-      return { ...cached, foto: fotoCarro.foto } as Carro;
+      return { ...cached, categoria: fotoCarro.categoria, categoria_id: fotoCarro.categoria_id, foto: fotoCarro.foto } as Carro;
     }
 
     // Cache MISS (ou Redis indisponível): consulta o MySQL.
     const carro = await this.carrosRepository.findOne({
       where: { id },
+      relations: { categoriaEntity: true },
     });
 
     if (!carro) {
@@ -122,10 +130,10 @@ export class CarroService {
   /** Consulta somente ID e foto; usada para completar dados gerais cacheados. */
   private buscarFoto(
     id: number,
-  ): Promise<Pick<Carro, 'id' | 'foto'> | null> {
+  ): Promise<Pick<Carro, 'id' | 'foto' | 'categoria' | 'categoria_id'> | null> {
     return this.carrosRepository.findOne({
       where: { id },
-      select: { id: true, foto: true },
+      select: { id: true, foto: true, categoria: true, categoria_id: true },
     });
   }
 
@@ -157,12 +165,19 @@ export class CarroService {
     const placaMudou =
       dto.placa !== undefined && dto.placa !== carroExistente.placa;
 
+    const categoria = dto.categoria_id !== undefined || dto.categoria !== undefined
+      ? await this.categorias.resolveForVehicle(dto.categoria_id, dto.categoria)
+      : undefined;
+
     const changes: Partial<Carro> = {};
 
     if (dto.placa !== undefined) changes.placa = dto.placa;
     if (dto.modelo !== undefined) changes.modelo = dto.modelo;
     if (dto.marca !== undefined) changes.marca = dto.marca;
-    if (dto.categoria !== undefined) changes.categoria = dto.categoria;
+    if (categoria) {
+      changes.categoria = categoria.nome;
+      changes.categoria_id = categoria.id;
+    }
     if (dto.lugares !== undefined) changes.lugares = dto.lugares;
     if (dto.descricao !== undefined) changes.descricao = dto.descricao;
     if (dto.cambio !== undefined) changes.cambio = dto.cambio;
@@ -185,7 +200,7 @@ export class CarroService {
       await this.cacheInvalidation.invalidateCarDependents(id);
     }
 
-    const updated = await this.carrosRepository.findOne({ where: { id } });
+    const updated = await this.carrosRepository.findOne({ where: { id }, relations: { categoriaEntity: true } });
     if (!updated) throw new NotFoundException(`veiculo com ID ${id} nao encontrado`);
     return updated;
   }

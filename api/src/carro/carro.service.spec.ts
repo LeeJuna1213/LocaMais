@@ -160,7 +160,7 @@ describe('CarroService', () => {
       expect(redisService.get).toHaveBeenCalledWith('locamais:carro:1');
       expect(carrosRepository.findOne).toHaveBeenCalledWith({
         where: { id: 1 },
-        select: { id: true, foto: true },
+        select: { id: true, foto: true, categoria: true, categoria_id: true },
       });
       expect(resultado.foto).toBe('/uploads/carros/atual.jpg');
       expect(resultado.modelo).toBe(mockCarro.modelo);
@@ -176,6 +176,7 @@ describe('CarroService', () => {
       expect(redisService.get).toHaveBeenCalledWith('locamais:carro:1');
       expect(carrosRepository.findOne).toHaveBeenCalledWith({
         where: { id: 1 },
+        relations: { categoriaEntity: true },
       });
       expect(redisService.set).toHaveBeenCalledWith(
         'locamais:carro:1',
@@ -247,6 +248,7 @@ describe('CarroService', () => {
       expect(redisService.get).toHaveBeenCalledWith('locamais:carro:999');
       expect(carrosRepository.findOne).toHaveBeenCalledWith({
         where: { id: 999 },
+        relations: { categoriaEntity: true },
       });
     });
   });

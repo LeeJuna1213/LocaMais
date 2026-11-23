@@ -9,6 +9,7 @@ import { Transmission, Vehicle } from '../../core/models';
 import { ToastService } from '../../core/services/toast.service';
 import { ImageUrlService } from '../../core/services/image-url.service';
 import { VehicleService, VehicleWriteInput } from '../../core/services/vehicle.service';
+import { CategoryService } from '../../core/services/category.service';
 import { vehiclePhotoError } from '../../core/utils/photo.validation';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
 
@@ -116,14 +117,19 @@ type VehicleField = 'placa' | 'marca' | 'modelo' | 'categoria' | 'ano' | 'valorD
           @if (fieldError('marca'); as error) { <div class="field-error" role="alert">{{ error }}</div> }
 
           <label for="vehicle-model">Modelo *</label>
-          <input id="vehicle-model" name="modelo" list="vehicle-model-options" [(ngModel)]="modelo" required maxlength="100" autocomplete="off" [attr.aria-invalid]="fieldError('modelo') ? 'true' : null" />
-          <datalist id="vehicle-model-options">
-            @for (option of modelOptions; track option) { <option [value]="option"></option> }
-          </datalist>
+          <input id="vehicle-model" name="modelo" [(ngModel)]="modelo" required maxlength="100" autocomplete="off" [attr.aria-invalid]="fieldError('modelo') ? 'true' : null" />
           @if (fieldError('modelo'); as error) { <div class="field-error" role="alert">{{ error }}</div> }
 
           <label for="vehicle-category">Categoria *</label>
-          <input id="vehicle-category" name="categoria" [(ngModel)]="categoria" required maxlength="50" autocomplete="off" [attr.aria-invalid]="fieldError('categoria') ? 'true' : null" />
+          <select id="vehicle-category" name="categoriaId" [(ngModel)]="categoriaId" required [attr.aria-invalid]="fieldError('categoria') ? 'true' : null" (ngModelChange)="onCategoryChange($event)">
+            <option [ngValue]="null" disabled>Selecione uma categoria</option>
+            @for (category of categoryService.categories(); track category.id) { <option [ngValue]="category.id">{{ category.nome }}</option> }
+            <option [ngValue]="'new'">Adicionar nova categoria</option>
+          </select>
+          @if (addingCategory) {
+            <label for="new-category">Nova categoria</label>
+            <div class="form-actions"><input id="new-category" name="newCategory" [(ngModel)]="newCategoryName" maxlength="50" autocomplete="off" /><button type="button" class="btn sec" [disabled]="saving" (click)="addCategory()">Adicionar</button></div>
+          }
           @if (fieldError('categoria'); as error) { <div class="field-error" role="alert">{{ error }}</div> }
 
           <label for="vehicle-year">Ano *</label>
@@ -153,7 +159,7 @@ type VehicleField = 'placa' | 'marca' | 'modelo' | 'categoria' | 'ano' | 'valorD
           @if (fieldError('lugares'); as error) { <div class="field-error" role="alert">{{ error }}</div> }
 
           <label for="vehicle-description">Descrição</label>
-          <textarea id="vehicle-description" name="descricao" [(ngModel)]="descricao" maxlength="1000" rows="4" placeholder="Descrição opcional do veículo"></textarea>
+          <textarea id="vehicle-description" class="vehicle-description" name="descricao" [(ngModel)]="descricao" maxlength="1000" rows="4" placeholder="Descrição opcional do veículo"></textarea>
 
           <div class="form-actions">
             <button class="btn" type="submit" [disabled]="saving">
@@ -170,6 +176,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly vehicleService = inject(VehicleService);
+  readonly categoryService = inject(CategoryService);
   private readonly toast = inject(ToastService);
   private readonly imageUrls = inject(ImageUrlService);
   // O app roda sem zone.js: estados alterados depois de um `await` precisam
@@ -183,7 +190,9 @@ export class NewVehiclePage implements OnInit, OnDestroy {
   placa = '';
   marca = '';
   modelo = '';
-  categoria = '';
+  categoriaId: number | null = null;
+  addingCategory = false;
+  newCategoryName = '';
   ano = new Date().getFullYear();
   valorDiaria = 100;
   status: NonNullable<VehicleWriteInput['status']> = 'disponivel';
@@ -208,6 +217,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     void this.vehicleService.load();
+    void this.loadCategories();
     if (this.editing) void this.loadVehicle();
   }
 
@@ -227,7 +237,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
       this.placa = vehicle.plate;
       this.marca = vehicle.make;
       this.modelo = vehicle.model;
-      this.categoria = vehicle.category;
+      this.categoriaId = vehicle.categoryId ?? this.categoryService.categories().find((item) => item.nome === vehicle.category)?.id ?? null;
       this.ano = vehicle.year;
       this.valorDiaria = vehicle.pricePerDay;
       this.status = vehicle.status === 'Disponível' ? 'disponivel'
@@ -250,16 +260,27 @@ export class NewVehiclePage implements OnInit, OnDestroy {
     return this.imageUrls.resolve(this.currentPhoto);
   }
 
-  get modelOptions(): string[] {
-    const seen = new Set<string>();
-    return this.vehicleService.vehicles().map((vehicle) => vehicle.model?.trim().replace(/\s+/g, ' '))
-      .filter((model): model is string => !!model)
-      .filter((model) => {
-        const normalized = model.toLocaleLowerCase();
-        if (seen.has(normalized)) return false;
-        seen.add(normalized);
-        return true;
-      });
+  private async loadCategories(): Promise<void> {
+    try { await this.categoryService.load(); }
+    catch (error) { this.loadError = error instanceof Error ? error.message : 'Não foi possível carregar categorias.'; }
+    this.changeDetector.markForCheck();
+  }
+
+  onCategoryChange(value: number | 'new' | null): void {
+    this.addingCategory = value === 'new';
+    if (value === 'new') this.categoriaId = null;
+  }
+
+  async addCategory(): Promise<void> {
+    try {
+      const category = await this.categoryService.create(this.newCategoryName);
+      this.categoriaId = category.id;
+      this.newCategoryName = '';
+      this.addingCategory = false;
+      this.changeDetector.markForCheck();
+    } catch (error) {
+      await this.toast.show(error instanceof Error ? error.message : 'Não foi possível cadastrar a categoria.');
+    }
   }
 
   fieldError(field: VehicleField): string | null {
@@ -268,7 +289,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
       placa: this.placa,
       marca: this.marca,
       modelo: this.modelo,
-      categoria: this.categoria,
+      categoria: this.categoriaId,
       ano: this.ano,
       valorDiaria: this.valorDiaria,
       lugares: this.lugares,
@@ -278,7 +299,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
     if (field === 'placa' && this.placa.trim().length > 20) return 'A placa deve ter no máximo 20 caracteres.';
     if (field === 'marca' && this.marca.trim().length > 100) return 'A marca deve ter no máximo 100 caracteres.';
     if (field === 'modelo' && this.modelo.trim().length > 100) return 'O modelo deve ter no máximo 100 caracteres.';
-    if (field === 'categoria' && this.categoria.trim().length > 50) return 'A categoria deve ter no máximo 50 caracteres.';
+    if (field === 'categoria' && this.categoriaId === null) return 'Selecione uma categoria.';
     if (field === 'ano' && (!Number.isInteger(this.ano) || this.ano < 1900 || this.ano > this.maximumYear)) {
       return `Informe um ano inteiro entre 1900 e ${this.maximumYear}.`;
     }
@@ -391,13 +412,11 @@ export class NewVehiclePage implements OnInit, OnDestroy {
   }
 
   private payload(): VehicleWriteInput {
-    const normalizedModel = this.modelo.trim().replace(/\s+/g, ' ');
-    const existingModel = this.modelOptions.find((model) => model.toLocaleLowerCase() === normalizedModel.toLocaleLowerCase());
     return {
       placa: this.placa.trim(),
       marca: this.marca.trim(),
-      modelo: existingModel ?? normalizedModel,
-      categoria: this.categoria.trim(),
+      modelo: this.modelo.trim().replace(/\s+/g, ' '),
+      categoriaId: this.categoriaId ?? 0,
       ano: Number(this.ano),
       valorDiaria: Number(this.valorDiaria),
       status: this.status,

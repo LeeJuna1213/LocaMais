@@ -7,6 +7,7 @@ import { Router } from '@angular/router';
 import { Transmission, Vehicle, VehicleFilters, VehicleStatus } from '../../core/models';
 import { AuthService } from '../../core/services/auth.service';
 import { VehicleService } from '../../core/services/vehicle.service';
+import { CategoryService } from '../../core/services/category.service';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
 import { VehicleCardComponent } from '../../shared/components/vehicle-card.component';
 
@@ -111,6 +112,7 @@ export class VehicleListPage {
   private readonly router = inject(Router);
   private readonly auth = inject(AuthService);
   readonly vehicleService = inject(VehicleService);
+  readonly categoryService = inject(CategoryService);
 
   readonly isStaff = this.auth.role() === 'admin' || this.auth.role() === 'funcionario';
   readonly statusOptions: Array<'Todos' | VehicleStatus> = ['Todos', 'Disponível', 'Alugado', 'Em manutenção'];
@@ -118,6 +120,7 @@ export class VehicleListPage {
   constructor() {
     addIcons({ chevronDownOutline });
     void this.vehicleService.load();
+    void this.categoryService.load().catch(() => undefined);
   }
 
   query = '';
@@ -130,8 +133,7 @@ export class VehicleListPage {
   showMoreFilters = false;
 
   get categories(): string[] {
-    return [...new Set(this.vehicleService.vehicles().map((vehicle) => vehicle.category).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b));
+    return this.categoryService.categories().map((category) => category.nome);
   }
 
   get categoryOptions(): string[] { return ['Todas', ...this.categories]; }

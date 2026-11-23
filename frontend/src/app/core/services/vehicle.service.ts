@@ -10,7 +10,7 @@ export interface VehicleWriteInput {
   placa: string;
   modelo: string;
   marca: string;
-  categoria: string;
+  categoriaId: number;
   ano: number;
   valorDiaria: number;
   status?: 'disponivel' | 'alugado' | 'em manutenção';
@@ -39,7 +39,8 @@ export class VehicleService {
     this._error.set(null);
     try {
       const cars = await firstValueFrom(this.http.get<CarroApi[]>(`${environment.apiUrl.replace(/\/+$/, '')}/carros`));
-      this._vehicles.set(cars.map(mapCarroApi));
+       const favorites = new Set(this.favoriteIds());
+       this._vehicles.set(cars.map((car) => ({ ...mapCarroApi(car), favorite: favorites.has(car.id) })));
     } catch (error) {
       this._vehicles.set([]);
       this._error.set(this.apiErrors.message(error, 'Não foi possível carregar os veículos.'));
@@ -49,7 +50,7 @@ export class VehicleService {
   async loadOne(id: number): Promise<Vehicle | undefined> {
     try {
       const car = await firstValueFrom(this.http.get<CarroApi>(`${this.apiUrl}/carros/${id}`));
-      const vehicle = mapCarroApi(car);
+      const vehicle = { ...mapCarroApi(car), favorite: this.favoriteIds().includes(car.id) };
       this.upsert(vehicle);
       return vehicle;
     } catch (error) {
@@ -85,17 +86,34 @@ export class VehicleService {
   }
 
   async toggleFavorite(id: number): Promise<boolean> {
-    let favorite = false;
-    this._vehicles.update((vehicles) =>
-      vehicles.map((vehicle) => {
-        if (vehicle.id !== id) {
-          return vehicle;
-        }
-        favorite = !vehicle.favorite;
-        return { ...vehicle, favorite };
-      }),
-    );
-    return favorite;
+    const current = this.getById(id)?.favorite ?? false;
+    const url = `${this.apiUrl}/favoritos/${id}`;
+    try {
+      if (current) await firstValueFrom(this.http.delete<void>(url));
+      else await firstValueFrom(this.http.post(url, {}));
+      this.setFavoriteIds(current ? this.favoriteIds().filter((carId) => carId !== id) : [...this.favoriteIds(), id]);
+      return !current;
+    } catch (error) { throw new Error(this.apiErrors.message(error, 'Não foi possível atualizar os favoritos.')); }
+  }
+
+  private readonly favoriteIds = signal<number[]>([]);
+
+  async loadFavorites(): Promise<void> {
+    try {
+      const entries = await firstValueFrom<Array<{ car_id: number; car?: CarroApi }>>(this.http.get<Array<{ car_id: number; car?: CarroApi }>>(`${this.apiUrl}/favoritos`));
+      const ids = entries.map((entry) => entry.car_id);
+      this.setFavoriteIds(ids);
+      const missing = entries.map((entry) => entry.car).filter((car): car is CarroApi => !!car);
+      for (const car of missing) this.upsert({ ...mapCarroApi(car), favorite: true });
+    } catch (error) { throw new Error(this.apiErrors.message(error, 'Não foi possível carregar os favoritos.')); }
+  }
+
+  favoriteVehicles(): Vehicle[] { return this._vehicles().filter((vehicle) => vehicle.favorite); }
+
+  private setFavoriteIds(ids: number[]): void {
+    this.favoriteIds.set([...new Set(ids)]);
+    const favorites = new Set(ids);
+    this._vehicles.update((vehicles) => vehicles.map((vehicle) => ({ ...vehicle, favorite: favorites.has(vehicle.id) })));
   }
 
   async setStatus(id: number, status: VehicleStatus): Promise<void> {
@@ -106,8 +124,8 @@ export class VehicleService {
 
   async create(input: VehicleWriteInput): Promise<Vehicle> {
     try {
-      const carro = await firstValueFrom(this.http.post<CarroApi>(`${this.apiUrl}/carros`, input));
-      const vehicle = mapCarroApi(carro);
+      const carro = await firstValueFrom(this.http.post<CarroApi>(`${this.apiUrl}/carros`, this.toApiInput(input)));
+      const vehicle = { ...mapCarroApi(carro), favorite: this.favoriteIds().includes(carro.id) };
       this.upsert(vehicle);
       return vehicle;
     } catch (error) {
@@ -117,8 +135,8 @@ export class VehicleService {
 
   async update(id: number, changes: Partial<VehicleWriteInput>): Promise<Vehicle> {
     try {
-      const carro = await firstValueFrom(this.http.patch<CarroApi>(`${this.apiUrl}/carros/${id}`, changes));
-      const vehicle = mapCarroApi(carro);
+      const carro = await firstValueFrom(this.http.patch<CarroApi>(`${this.apiUrl}/carros/${id}`, this.toApiInput(changes)));
+      const vehicle = { ...mapCarroApi(carro), favorite: this.favoriteIds().includes(carro.id) };
       this.upsert(vehicle);
       return vehicle;
     } catch (error) {
@@ -140,7 +158,7 @@ export class VehicleService {
     body.append('foto', file, file.name);
     try {
       const carro = await firstValueFrom(this.http.post<CarroApi>(`${this.apiUrl}/carros/${id}/foto`, body));
-      const vehicle = mapCarroApi(carro);
+      const vehicle = { ...mapCarroApi(carro), favorite: this.favoriteIds().includes(carro.id) };
       this.upsert(vehicle);
       return vehicle;
     } catch (error) {
@@ -151,7 +169,7 @@ export class VehicleService {
   async removePhoto(id: number): Promise<Vehicle> {
     try {
       const carro = await firstValueFrom(this.http.delete<CarroApi>(`${this.apiUrl}/carros/${id}/foto`));
-      const vehicle = mapCarroApi(carro);
+      const vehicle = { ...mapCarroApi(carro), favorite: this.favoriteIds().includes(carro.id) };
       this.upsert(vehicle);
       return vehicle;
     } catch (error) {
@@ -169,9 +187,14 @@ export class VehicleService {
     return environment.apiUrl.replace(/\/+$/, '');
   }
 
+  private toApiInput(input: Partial<VehicleWriteInput>): Record<string, unknown> {
+    const { categoriaId, ...fields } = input;
+    return categoriaId === undefined ? fields : { ...fields, categoria_id: categoriaId };
+  }
+
   private upsert(vehicle: Vehicle): void {
     this._vehicles.update((items) => items.some((item) => item.id === vehicle.id)
-      ? items.map((item) => item.id === vehicle.id ? { ...item, ...vehicle } : item)
-      : [...items, vehicle]);
+      ? items.map((item) => item.id === vehicle.id ? { ...item, ...vehicle, favorite: this.favoriteIds().includes(vehicle.id) } : item)
+      : [...items, { ...vehicle, favorite: this.favoriteIds().includes(vehicle.id) }]);
   }
 }

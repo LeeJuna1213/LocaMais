@@ -74,6 +74,38 @@ describe('VehicleService API reads', () => {
     expect(service.getById(17)?.id).toBe(17);
   });
 
+  it('mapeia o veículo relacionado como favorito ao carregar a resposta persistida da API', async () => {
+    const loadFavorites = service.loadFavorites();
+    httpTesting.expectOne(`${environment.apiUrl}/favoritos`).flush([{
+      id: 4,
+      client_id: 8,
+      car_id: 17,
+      car: {
+        id: 17,
+        placa: 'ABC1D23',
+        modelo: 'HB20',
+        marca: 'Hyundai',
+        categoria: 'Hatch',
+        ano: 2024,
+        status: 'disponivel',
+        valorDiaria: '125.50',
+        quilometragem: 12000,
+        foto: '/uploads/carros/hb20.jpg',
+        created_at: '',
+        updated_at: '',
+      },
+    }]);
+
+    await loadFavorites;
+    expect(service.favoriteVehicles()).toHaveLength(1);
+    expect(service.favoriteVehicles()[0]).toMatchObject({
+      id: 17,
+      name: 'Hyundai HB20 2024',
+      photo: '/uploads/carros/hb20.jpg',
+      favorite: true,
+    });
+  });
+
   it('registra falha de comunicação sem transformar falha em lista vazia válida', async () => {
     const load = service.load();
     httpTesting.expectOne(`${environment.apiUrl}/carros`).flush(
@@ -87,15 +119,15 @@ describe('VehicleService API reads', () => {
 
   it('cria veículo com o contrato exato aceito por CreateCarroDto e incorpora resposta à listagem', async () => {
     const payload = {
-      placa: 'ABC1D23', marca: 'Hyundai', modelo: 'HB20', categoria: 'Economico',
+      placa: 'ABC1D23', marca: 'Hyundai', modelo: 'HB20', categoriaId: 4,
       ano: 2024, valorDiaria: 125.5, status: 'disponivel' as const,
     };
     const create = service.create(payload);
     const request = httpTesting.expectOne(`${environment.apiUrl}/carros`);
     expect(request.request.method).toBe('POST');
-    expect(request.request.body).toEqual(payload);
+    expect(request.request.body).toEqual({ placa: payload.placa, marca: payload.marca, modelo: payload.modelo, ano: payload.ano, valorDiaria: payload.valorDiaria, status: payload.status, categoria_id: 4 });
     request.flush({
-      id: 21, ...payload, status: 'disponivel', valorDiaria: '125.50', quilometragem: 0,
+      id: 21, placa: payload.placa, marca: payload.marca, modelo: payload.modelo, categoria: 'Economico', categoria_id: 4, ano: payload.ano, status: 'disponivel', valorDiaria: '125.50', quilometragem: 0,
       foto: null, created_at: '', updated_at: '',
     });
 

@@ -6,6 +6,7 @@ import { CarroController } from './carro.controller.js';
 import { CarroService } from './carro.service.js';
 import { Reserva } from '../reserva/entities/reserva.entity.js';
 import { CarroFotoStorage } from './carro-foto.storage.js';
+import { CategoriaVeiculoModule } from './categoria.module.js';
 
 /**
  * Módulo de veículos.
@@ -19,7 +20,7 @@ import { CarroFotoStorage } from './carro-foto.storage.js';
  * cria dependência de módulo: o CarroModule não importa o ReservaModule.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([Carro, Reserva])],
+  imports: [TypeOrmModule.forFeature([Carro, Reserva]), CategoriaVeiculoModule],
   controllers: [CarroController],
   providers: [CarroService, CarroFotoStorage],
   exports: [CarroService],

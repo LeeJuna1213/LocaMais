@@ -10,6 +10,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 import { StatusVeiculo } from '../enums/status-veiculo.enum.js';
 
@@ -34,7 +35,14 @@ export class UpdateCarroDto {
   marca?: string;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'categoria_id deve ser um número inteiro' })
+  @Min(1)
+  categoria_id?: number;
+
+  @IsOptional()
   @IsString()
+  @MaxLength(50)
   categoria?: string;
 
   @IsOptional()

@@ -11,6 +11,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 import { StatusVeiculo } from '../enums/status-veiculo.enum.js';
 
@@ -35,9 +36,19 @@ export class CreateCarroDto {
   @IsNotEmpty({ message: 'A marca e obrigatoria' })
   marca: string;
 
+  /** ID da categoria persistida; campo oficial usado pela nova interface. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'categoria_id deve ser um número inteiro' })
+  @Min(1)
+  categoria_id?: number;
+
+  /** Compatibilidade retroativa; veículos novos resolvem/normalizam o nome no banco. */
+  @IsOptional()
   @IsString()
-  @IsNotEmpty({ message: 'A categoria e obrigatoria' })
-  categoria: string;
+  @IsNotEmpty({ message: 'A categoria é obrigatória' })
+  @MaxLength(50)
+  categoria?: string;
 
   @IsOptional()
   @IsIn(['Automático', 'Manual'], { message: 'Câmbio inválido' })

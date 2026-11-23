@@ -2,6 +2,8 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -11,6 +13,7 @@ import {
 // Carro -> Reserva -> Carro. Reserva já importa Carro apenas como tipo.
 import type { Reserva } from '../../reserva/entities/reserva.entity.js';
 import type { Revisao } from '../../revisao/entities/revisao.entity.js';
+import type { CategoriaVeiculo } from './categoria-veiculo.entity.js';
 import { StatusVeiculo } from '../enums/status-veiculo.enum.js';
 
 /**
@@ -40,6 +43,13 @@ export class Carro {
 
   @Column({ type: 'varchar', length: 50, nullable: false })
   categoria: string;
+
+  @Column({ type: 'int', nullable: false })
+  categoria_id: number;
+
+  @ManyToOne('CategoriaVeiculo', 'carros', { nullable: false, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'categoria_id' })
+  categoriaEntity?: CategoriaVeiculo;
 
   @Column({ type: 'int', nullable: true })
   lugares: number | null;
@@ -115,6 +125,7 @@ export class Carro {
       modelo,
       marca,
       categoria,
+      categoria_id,
       lugares,
       descricao,
       cambio,
@@ -132,7 +143,8 @@ export class Carro {
       placa,
       modelo,
       marca,
-      categoria,
+      categoria: this.categoriaEntity?.nome ?? categoria,
+      categoria_id,
       lugares,
       descricao,
       cambio,
