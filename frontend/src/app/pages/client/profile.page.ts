@@ -1,7 +1,17 @@
 import { Component, inject } from '@angular/core';
 import { ActionSheetController, AlertController, IonIcon } from '@ionic/angular';
 import { addIcons } from 'ionicons';
-import { closeOutline, createOutline } from 'ionicons/icons';
+import {
+  closeOutline,
+  createOutline,
+  heartOutline,
+  idCardOutline,
+  locationOutline,
+  lockClosedOutline,
+  logOutOutline,
+  personOutline,
+  trashOutline,
+} from 'ionicons/icons';
 import { Router } from '@angular/router';
 
 import { AuthService } from '../../core/services/auth.service';
@@ -36,6 +46,8 @@ const VALID_PHOTO_TYPES: Record<string, string[]> = {
     .photo-actions button { min-height: 38px; }
     .photo-error { color: #b42318; font-size: 12px; margin-top: 8px; }
     .file-input { display: none; }
+    .profile-logout { display: flex; align-items: center; justify-content: center; gap: 9px; }
+    .profile-logout ion-icon { width: 20px; height: 20px; font-size: 20px; }
   `],
   template: `
     <app-shell title="Meu perfil" [showNav]="true" role="client" activeTab="perfil">
@@ -72,12 +84,12 @@ const VALID_PHOTO_TYPES: Record<string, string[]> = {
       <div class="card">
         @for (section of sections; track section) {
           <button class="mn" type="button" (click)="openSection(section)">
-            {{ section }}<span>›</span>
+            <span class="mn-main"><ion-icon [name]="sectionIcon(section)" aria-hidden="true"></ion-icon>{{ section }}</span><span>›</span>
           </button>
         }
       </div>
 
-      <button class="btn red" type="button" (click)="logout()">Sair da conta</button>
+      <button class="btn red profile-logout" type="button" (click)="logout()"><ion-icon name="log-out-outline" aria-hidden="true"></ion-icon>Sair da conta</button>
     </app-shell>
   `,
 })
@@ -89,14 +101,24 @@ export class ProfilePage {
   private readonly actionSheets = inject(ActionSheetController);
   private readonly imageUrls = inject(ImageUrlService);
 
-  readonly sections = ['Dados pessoais', 'CNH', 'Alterar senha', 'Endereço', 'Preferências', 'Pagamentos'];
+  readonly sections = ['Dados pessoais', 'CNH', 'Alterar senha', 'Endereço', 'Favoritos'];
   selectedPhoto: File | null = null;
   previewUrl: string | null = null;
   imageFailed = false;
   savingPhoto = false;
 
   constructor() {
-    addIcons({ closeOutline, createOutline });
+    addIcons({
+      closeOutline,
+      createOutline,
+      personOutline,
+      idCardOutline,
+      lockClosedOutline,
+      locationOutline,
+      heartOutline,
+      logOutOutline,
+      trashOutline,
+    });
   }
 
   get profile() {
@@ -206,7 +228,22 @@ export class ProfilePage {
   }
 
   async openSection(section: string): Promise<void> {
+    if (section === 'Favoritos') {
+      await this.router.navigateByUrl('/client/favoritos');
+      return;
+    }
     await this.router.navigate(['/client/perfil', section]);
+  }
+
+  sectionIcon(section: string): string {
+    const icons: Record<string, string> = {
+      'Dados pessoais': 'person-outline',
+      CNH: 'id-card-outline',
+      'Alterar senha': 'lock-closed-outline',
+      Endereço: 'location-outline',
+      Favoritos: 'heart-outline',
+    };
+    return icons[section] ?? 'person-outline';
   }
 
   async logout(): Promise<void> {

@@ -24,9 +24,9 @@ describe('ProfilePage photo controls', () => {
   const alert = { present: vi.fn(async () => undefined), onDidDismiss: vi.fn(async () => ({ role: 'cancel' })) };
   const alerts = { create: vi.fn(async () => alert) };
   const actionSheet = { present: vi.fn(async () => undefined) };
-  let actionButtons: Array<{ text?: string; role?: string; handler?: () => unknown }> = [];
+  let actionButtons: Array<{ text?: string; role?: string; icon?: string; handler?: () => unknown }> = [];
   const actionSheets = {
-    create: vi.fn(async (options: { buttons: Array<{ text?: string; role?: string; handler?: () => unknown }> }) => {
+    create: vi.fn(async (options: { buttons: Array<{ text?: string; role?: string; icon?: string; handler?: () => unknown }> }) => {
       actionButtons = options.buttons;
       return actionSheet;
     }),
@@ -82,6 +82,26 @@ describe('ProfilePage photo controls', () => {
     expect(fixture.nativeElement.querySelector('.photo-edit-button')?.getAttribute('aria-label')).toBe('Ações da foto de perfil');
   });
 
+  it('shows a matching Ionicon beside every existing profile option without changing section navigation', async () => {
+    await render();
+    const rows = Array.from(fixture.nativeElement.querySelectorAll('.mn')) as HTMLButtonElement[];
+    expect(rows.map((row) => row.textContent?.trim().replace(/›$/, '').trim())).toEqual([
+      'Dados pessoais', 'CNH', 'Alterar senha', 'Endereço', 'Favoritos',
+    ]);
+    expect(rows.map((row) => row.querySelector('ion-icon')?.getAttribute('name'))).toEqual([
+      'person-outline', 'id-card-outline', 'lock-closed-outline', 'location-outline', 'heart-outline',
+    ]);
+    expect(rows.every((row) => !!row.querySelector('.mn-main ion-icon'))).toBe(true);
+    expect(fixture.nativeElement.querySelector('.profile-logout ion-icon')?.getAttribute('name')).toBe('log-out-outline');
+
+    rows[0].click();
+    await fixture.whenStable();
+    expect(router.navigate).toHaveBeenCalledWith(['/client/perfil', 'Dados pessoais']);
+    rows[4].click();
+    await fixture.whenStable();
+    expect(router.navigateByUrl).toHaveBeenCalledWith('/client/favoritos');
+  });
+
   it('offers only adding a photo when the account has no photo', async () => {
     await render();
     fixture.nativeElement.querySelector('.photo-edit-button').click();
@@ -100,6 +120,7 @@ describe('ProfilePage photo controls', () => {
     await fixture.whenStable();
 
     expect(actionButtons.map((button) => button.text)).toEqual(['Alterar foto', 'Excluir foto', 'Cancelar']);
+    expect(actionButtons[1]).toMatchObject({ icon: 'trash-outline', role: 'destructive' });
     actionButtons[0].handler?.();
     expect(click).toHaveBeenCalledOnce();
   });

@@ -23,6 +23,7 @@ import { LojaModule } from './loja/loja.module.js';
 import { ConfiguracaoModule } from './configuracao/configuracao.module.js';
 import { RedisModule } from './redis/redis.module.js';
 import { CacheInvalidationModule } from './redis/cache-invalidation.module.js';
+import { FavoritoModule } from './favorito/favorito.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -67,6 +68,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     VistoriaModule,
     LojaModule,
     ConfiguracaoModule,
+    FavoritoModule,
   ],
   controllers: [AppController],
   providers: [
