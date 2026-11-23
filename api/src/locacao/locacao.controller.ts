@@ -30,6 +30,7 @@ import { CreateLocacaoDto } from './dto/create-locacao.dto.js';
 import { LocacaoAdicionaisDto } from './dto/locacao-adicionais.dto.js';
 import type { Locacao } from './entities/locacao.entity.js';
 import { UpdateLocacaoDto } from './dto/update-locacao.dto.js';
+import { RegistrarDevolucaoDto } from './dto/registrar-devolucao.dto.js';
 import { LocacaoService } from './locacao.service.js';
 
 /**
@@ -176,8 +177,9 @@ export class LocacaoController {
   registrarDevolucao(
     @CurrentUser() actor: UsuarioAutenticado,
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RegistrarDevolucaoDto,
   ): Promise<Locacao> {
-    return this.locacaoService.registrarDevolucao(actor, id);
+    return this.locacaoService.registrarDevolucao(actor, id, dto);
   }
 
   /**

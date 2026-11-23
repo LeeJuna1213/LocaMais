@@ -83,6 +83,7 @@ describe('Locações (e2e)', () => {
   let clientId: number;
   let carId: number;
   let reservationId: string;
+  let pendingReservationId: string;
   let locacaoId: string;
 
   beforeAll(async () => {
@@ -198,6 +199,7 @@ describe('Locações (e2e)', () => {
       clientToken,
     );
     expect(pendente.status).toBe(201);
+    pendingReservationId = pendente.body.id;
 
     const { status } = await post(
       app,
@@ -256,6 +258,12 @@ describe('Locações (e2e)', () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
     locacaoId = body.id;
+    const reservations = await get<Array<{ id: string; locacao?: { id: string } | null }>>(
+      app,
+      '/reservas',
+      adminToken,
+    );
+    expect(reservations.body.find((reservation) => reservation.id === reservationId)?.locacao?.id).toBe(locacaoId);
   });
 
   it('lista pagamentos apenas do cliente e conserva o snapshot do comprovante aprovado', async () => {
@@ -416,7 +424,7 @@ describe('Locações (e2e)', () => {
     const { status, body } = await patch<LocacaoBody>(
       app,
       `/locacoes/${locacaoId}/devolucao`,
-      {},
+      { descricaoAvaria: 'Risco profundo na porta traseira direita e pequeno amassado próximo à maçaneta.' },
       adminToken,
     );
 
@@ -426,6 +434,26 @@ describe('Locações (e2e)', () => {
     expect(body.dataDevolucao).not.toBeNull();
     // Devolvido dentro do prazo: o adicional é zero, então o total continua o da reserva.
     expect(body.valorTotal).toBeCloseTo(300, 2);
+  });
+
+  it('consulta e edita a descrição da avaria persistida como vistoria de devolução', async () => {
+    const inspections = await get<Array<{ id: string; tipo: string; observacoes: string }>>(
+      app,
+      `/vistorias/locacao/${locacaoId}`,
+      adminToken,
+    );
+    expect(inspections.status).toBe(200);
+    expect(inspections.body).toHaveLength(1);
+    expect(inspections.body[0]).toMatchObject({
+      tipo: 'devolucao',
+      observacoes: 'Risco profundo na porta traseira direita e pequeno amassado próximo à maçaneta.',
+    });
+
+    const edited = await patch<{ observacoes: string }>(app, `/vistorias/${inspections.body[0].id}`, {
+      observacoes: 'Descrição revisada: risco na porta traseira direita.',
+    }, adminToken);
+    expect(edited.status).toBe(200);
+    expect(edited.body.observacoes).toBe('Descrição revisada: risco na porta traseira direita.');
   });
 
   it('não permite devolução de locação que não está em andamento (409)', async () => {
@@ -459,5 +487,76 @@ describe('Locações (e2e)', () => {
     const one = await get<LocacaoBody>(app, `/locacoes/${locacaoId}`, clientToken);
     expect(one.status).toBe(200);
     expect(one.body.id).toBe(locacaoId);
+  });
+
+  it('permite finalizar devolução sem descrição de avaria', async () => {
+    const confirmed = await patch<ReservaBody>(app, `/reservas/${pendingReservationId}`, { status: 'confirmada' }, adminToken);
+    expect(confirmed.status).toBe(200);
+    const created = await post<LocacaoBody>(app, '/locacoes', { reservation_id: pendingReservationId }, adminToken);
+    expect(created.status).toBe(201);
+    const pickup = await patch<LocacaoBody>(app, `/locacoes/${created.body.id}/retirada`, {}, adminToken);
+    expect(pickup.status).toBe(200);
+    const returned = await patch<LocacaoBody>(app, `/locacoes/${created.body.id}/devolucao`, {}, adminToken);
+    expect(returned.status).toBe(200);
+
+    const inspections = await get<Array<{ observacoes: string | null }>>(
+      app,
+      `/vistorias/locacao/${created.body.id}`,
+      adminToken,
+    );
+    expect(inspections.status).toBe(200);
+    expect(inspections.body).toEqual([]);
+  });
+
+  it('persiste cancelamento, invalida cache da reserva, preserva histórico e bloqueia devolução', async () => {
+    const start = futureIso(40);
+    const createdReservation = await post<ReservaBody>(app, '/reservas', {
+      dataRetirada: start,
+      dataDevolucao: addHours(start, 24),
+      client_id: clientId,
+      car_id: carId,
+    }, clientToken);
+    expect(createdReservation.status).toBe(201);
+    const confirmed = await patch<ReservaBody>(app, `/reservas/${createdReservation.body.id}`, {
+      status: 'confirmada',
+    }, adminToken);
+    expect(confirmed.status).toBe(200);
+
+    const rental = await post<LocacaoBody>(app, '/locacoes', {
+      reservation_id: createdReservation.body.id,
+    }, adminToken);
+    expect(rental.status).toBe(201);
+    expect(rental.body.status).toBe('aguardando_retirada');
+
+    // Popula a leitura de reserva antes da transição; o GET posterior deve
+    // reconstruir os dados após a invalidação feita depois do save no banco.
+    const cachedReservation = await get<{ id: string; status: string; locacao: { status: string } }>(
+      app, `/reservas/${createdReservation.body.id}`, adminToken,
+    );
+    expect(cachedReservation.status).toBe(200);
+
+    const cancelled = await patch<LocacaoBody>(app, `/locacoes/${rental.body.id}`, {
+      status: 'cancelada',
+    }, adminToken);
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body.status).toBe('cancelada');
+
+    const reread = await get<LocacaoBody>(app, `/locacoes/${rental.body.id}`, adminToken);
+    expect(reread.status).toBe(200);
+    expect(reread.body.status).toBe('cancelada');
+
+    const reservationAfter = await get<{ id: string; status: string; locacao: { status: string } }>(
+      app, `/reservas/${createdReservation.body.id}`, adminToken,
+    );
+    expect(reservationAfter.status).toBe(200);
+    // Os ciclos são independentes: cancelar a locação não cancela a reserva.
+    expect(reservationAfter.body.status).toBe('confirmada');
+    expect(reservationAfter.body.locacao.status).toBe('cancelada');
+
+    const history = await get<LocacaoBody[]>(app, '/locacoes', adminToken);
+    expect(history.body).toContainEqual(expect.objectContaining({ id: rental.body.id, status: 'cancelada' }));
+
+    const returnAttempt = await patch(app, `/locacoes/${rental.body.id}/devolucao`, {}, adminToken);
+    expect(returnAttempt.status).toBe(409);
   });
 });

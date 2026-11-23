@@ -11,21 +11,36 @@ import { ReservationCardComponent } from '../../shared/components/reservation-ca
   imports: [AppShellComponent, ReservationCardComponent],
   template: `
     <app-shell title="Devoluções" [back]="true" defaultHref="/admin/menu" [showNav]="true" role="admin" activeTab="reservas">
-      @for (reservation of reservations; track reservation.id) {
-        <app-reservation-card
-          [reservation]="reservation"
-          [vehicle]="vehicleOf(reservation)"
-          (selected)="open($event)"
-        />
-      } @empty {
-        <div class="card empty">Nenhuma locação em andamento</div>
+      @if (reservationService.loading()) {
+        <div class="card empty" role="status">Carregando devoluções...</div>
+      } @else if (reservationService.error(); as error) {
+        <div class="card empty" role="alert">{{ error }}</div>
+        <button class="btn" type="button" (click)="load()">Tentar novamente</button>
+      } @else {
+        @for (reservation of reservations; track reservation.id) {
+          <app-reservation-card
+            [reservation]="reservation"
+            [vehicle]="vehicleOf(reservation)"
+            (selected)="open($event)"
+          />
+        } @empty {
+          <div class="card empty">Nenhuma locação em andamento</div>
+        }
       }
     </app-shell>
   `,
 })
 export class ReturnListPage {
   private readonly router = inject(Router);
-  private readonly reservationService = inject(ReservationService);
+  readonly reservationService = inject(ReservationService);
+
+  constructor() {
+    void this.load();
+  }
+
+  async load(): Promise<void> {
+    await this.reservationService.load();
+  }
 
   get reservations(): Reservation[] {
     return this.reservationService.byStatus('Em andamento');

@@ -7,6 +7,7 @@ import { ReservaModule } from '../reserva/reserva.module.js';
 import { Locacao } from './entities/locacao.entity.js';
 import { Carro } from '../carro/entities/carro.entity.js';
 import { Reserva } from '../reserva/entities/reserva.entity.js';
+import { Vistoria } from '../vistoria/entities/vistoria.entity.js';
 import { LocacaoController } from './locacao.controller.js';
 import { LocacaoService } from './locacao.service.js';
 
@@ -34,7 +35,7 @@ import { LocacaoService } from './locacao.service.js';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Locacao, Reserva, Carro]),
+    TypeOrmModule.forFeature([Locacao, Reserva, Carro, Vistoria]),
     ReservaModule,
     CarroModule,
   ],

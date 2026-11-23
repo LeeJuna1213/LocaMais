@@ -127,6 +127,11 @@ describe('Vistorias (e2e)', () => {
     }
     clientId = client.body.id;
     clientToken = await login(app, 'cliente.vistoria@exemplo.com', 'senha-secreta');
+    await patch(app, '/clientes/me', {
+      telefone: '+5521999992000',
+      cnh_numero: '12345678001',
+      cnh_validade: '2030-12-31',
+    }, clientToken);
 
     const otherClient = await post<ClienteBody>(
       app,
@@ -149,6 +154,11 @@ describe('Vistorias (e2e)', () => {
     }
     otherClientId = otherClient.body.id;
     otherClientToken = await login(app, 'outro.cliente.vistoria@exemplo.com', 'senha-secreta');
+    await patch(app, '/clientes/me', {
+      telefone: '+5521999992001',
+      cnh_numero: '12345678002',
+      cnh_validade: '2030-12-31',
+    }, otherClientToken);
 
     const car = await post<CarroBody>(
       app,

@@ -6,6 +6,7 @@ const STATUS_CLASS: Record<string, string> = {
   'Em andamento': 'az',
   Concluída: 'cz',
   Cancelada: 'vm',
+  'Locação cancelada': 'vm',
   Pendente: 'am',
 };
 

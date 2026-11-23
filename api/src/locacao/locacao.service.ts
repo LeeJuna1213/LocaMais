@@ -14,10 +14,13 @@ import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
 import { Reserva } from '../reserva/entities/reserva.entity.js';
 import { ReservaService } from '../reserva/reserva.service.js';
 import { StatusReserva } from '../reserva/enums/status-reserva.enum.js';
+import { Vistoria } from '../vistoria/entities/vistoria.entity.js';
+import { TipoVistoria } from '../vistoria/enums/tipo-vistoria.enum.js';
 
 import { CreateLocacaoDto } from './dto/create-locacao.dto.js';
 import { LocacaoAdicionaisDto } from './dto/locacao-adicionais.dto.js';
 import { UpdateLocacaoDto } from './dto/update-locacao.dto.js';
+import { RegistrarDevolucaoDto } from './dto/registrar-devolucao.dto.js';
 import { Locacao } from './entities/locacao.entity.js';
 import { StatusLocacao } from './enums/status-locacao.enum.js';
 import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
@@ -194,7 +197,9 @@ export class LocacaoService {
     ) {
       current.status = StatusLocacao.CANCELADA;
       const saved = await this.locacoesRepository.save(current);
-      await this.cacheInvalidation.invalidateLocacaoInspections(id);
+      await this.cacheInvalidation.invalidateKeys([
+        `locamais:reserva:${saved.reservation_id}`,
+      ]);
       return this.findOne(actor, saved.id);
     }
 
@@ -281,6 +286,7 @@ export class LocacaoService {
   async registrarDevolucao(
     actor: UsuarioAutenticado,
     id: string,
+    dto: RegistrarDevolucaoDto = {},
   ): Promise<Locacao> {
     const current = await this.findOne(actor, id); // 404 + controle de acesso
 
@@ -304,6 +310,19 @@ export class LocacaoService {
         );
       }
 
+      const descricaoAvaria = dto.descricaoAvaria?.trim();
+      if (descricaoAvaria) {
+        const vistoria = manager.create(Vistoria, {
+          tipo: TipoVistoria.DEVOLUCAO,
+          observacoes: descricaoAvaria,
+          fotos: '[]',
+          locacao_id: locacao.id,
+          locacao,
+        });
+        vistoria.registrarVistoria();
+        await manager.save(Vistoria, vistoria);
+      }
+
       locacao.registrarDevolucao();
 
       const reservation = locacao.reservation;
@@ -323,7 +342,15 @@ export class LocacaoService {
       );
       locacao.valorTotal = Number(reservation.valorTotal) + valorAdicional;
 
-      car.status = StatusVeiculo.DISPONIVEL;
+      const anotherActiveRental = await locacaoRepository.createQueryBuilder('activeRental')
+        .innerJoin('activeRental.reservation', 'activeReservation')
+        .where('activeReservation.car_id = :carId', { carId: car.id })
+        .andWhere('activeRental.id <> :id', { id })
+        .andWhere('activeRental.status = :status', { status: StatusLocacao.EM_ANDAMENTO })
+        .getExists();
+      if (car.status === StatusVeiculo.ALUGADO && !anotherActiveRental) {
+        car.status = StatusVeiculo.DISPONIVEL;
+      }
       reservation.status = StatusReserva.CONCLUIDA;
 
       await locacaoRepository.save(locacao);

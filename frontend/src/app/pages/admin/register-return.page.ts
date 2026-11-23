@@ -11,6 +11,11 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
   selector: 'app-register-return',
   standalone: true,
   imports: [FormsModule, AppShellComponent, CurrencyPipe],
+  styles: [`
+    .return-fines { display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box;color-scheme:light; }
+    .return-fines::-webkit-inner-spin-button,
+    .return-fines::-webkit-outer-spin-button { opacity:1;background:transparent;filter:grayscale(1); }
+  `],
   template: `
     <app-shell
       title="Registrar devolução"
@@ -25,6 +30,9 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
       } @else if (reservationService.error(); as error) {
         <div class="card empty" role="alert">{{ error }}</div>
       } @else if (reservation; as r) {
+        @if (!canReturn(r)) {
+          <div class="card empty" role="alert">Esta locação não está ativa e não pode ser devolvida.</div>
+        } @else {
         <div class="card">
           <h2>Locação #{{ r.id }}</h2>
           <div class="kv"><span>Cliente</span><b>{{ r.clientName }}</b></div>
@@ -43,8 +51,11 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
             <option value="Graves">Graves</option>
           </select>
 
+          <label for="damage-description">Descrição da avaria (opcional)</label>
+          <textarea id="damage-description" name="damageDescription" rows="4" maxlength="2000" [(ngModel)]="damageDescription" placeholder="Descreva o dano identificado, sua localização e outros detalhes relevantes..."></textarea>
+
           <label>Multas (R$)</label>
-          <input type="number" [(ngModel)]="fines" (ngModelChange)="fines = +$event || 0" />
+          <input class="return-fines" type="number" inputmode="decimal" step="0.01" [(ngModel)]="fines" (ngModelChange)="fines = +$event || 0" />
 
           <label>Diárias adicionais</label>
           <select [ngModel]="extraDays" (ngModelChange)="extraDays = +$event">
@@ -58,6 +69,7 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
 
           <button class="btn" type="button" (click)="confirm()">Finalizar devolução</button>
         </div>
+        }
       } @else {
         <div class="card empty">Reserva não encontrada</div>
       }
@@ -74,6 +86,7 @@ export class RegisterReturnPage {
 
   fuel = 'Cheio';
   damages = 'Nenhuma';
+  damageDescription = '';
   fines = 0;
   extraDays = 0;
 
@@ -94,6 +107,12 @@ export class RegisterReturnPage {
     return reservation ? this.reservationService.vehicleOf(reservation) : undefined;
   }
 
+  canReturn(reservation: Reservation): boolean {
+    return reservation.status === 'Em andamento'
+      && reservation.rentalStatus === 'em_andamento'
+      && !!reservation.rentalId;
+  }
+
   get totalFinal(): number {
     const reservation = this.reservation;
     if (!reservation) {
@@ -105,7 +124,7 @@ export class RegisterReturnPage {
 
   async confirm(): Promise<void> {
     try {
-      await this.reservationService.registerReturn(this.id, this.extraDays, this.fines);
+      await this.reservationService.registerReturn(this.id, this.extraDays, this.fines, this.damageDescription);
       await this.toast.show('Devolução finalizada');
       await this.router.navigate(['/admin/reservas'], { queryParams: { tab: 'Todas' } });
     } catch (error) {

@@ -31,15 +31,26 @@ import { ImageUrlService } from '../../core/services/image-url.service';
         }
         <div class="info">
           <div class="row">
-            <b>#{{ reservation.id }} · {{ reservation.clientName }}</b>
+            <b>Reserva {{ friendlyCode }}</b>
             <app-badge [status]="reservation.status" />
+            @if (reservation.rentalStatus === 'cancelada') { <app-badge status="Locação cancelada" /> }
           </div>
+          <div class="small muted">Cliente: {{ reservation.clientName || '—' }}</div>
           <div style="font-size: 12px; color: #7a5a40">
             {{ vehicle?.name }} · {{ reservation.start | date: 'dd/MM/yyyy' }} - {{ reservation.end | date: 'dd/MM/yyyy' }}
           </div>
+          @if (reservation.actualReturnDate) {
+            <div class="small muted">Devolução efetiva: {{ reservation.actualReturnDate | date: 'dd/MM/yyyy HH:mm' }}</div>
+          }
         </div>
       </div>
       <div class="pr" style="font-size: 13px">{{ reservation.total | currency: 'BRL' }}</div>
+      @if (adminActions && reservation.status === 'Pendente') {
+        <div class="form-actions" (click)="$event.stopPropagation()">
+          <button class="btn" type="button" (click)="confirmRequested.emit(reservation)">Confirmar reserva</button>
+          <button class="lnk dark" type="button" (click)="cancelRequested.emit(reservation)">Cancelar reserva</button>
+        </div>
+      }
     </div>
   `,
 })
@@ -48,11 +59,19 @@ export class ReservationCardComponent {
 
   @Input({ required: true }) reservation!: Reservation;
   @Input() vehicle: Vehicle | undefined;
+  @Input() adminActions = false;
   @Output() selected = new EventEmitter<Reservation>();
+  @Output() confirmRequested = new EventEmitter<Reservation>();
+  @Output() cancelRequested = new EventEmitter<Reservation>();
 
   photoFailed = false;
 
   get photoUrl(): string | null {
     return this.imageUrls.resolve(this.vehicle?.photo);
+  }
+
+  get friendlyCode(): string {
+    const digits = this.reservation.publicCode?.match(/(\d+)$/)?.[1];
+    return digits ? digits.padStart(3, '0') : '—';
   }
 }
