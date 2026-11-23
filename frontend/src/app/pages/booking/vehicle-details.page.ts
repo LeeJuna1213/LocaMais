@@ -1,4 +1,7 @@
 import { CurrencyPipe } from '@angular/common';
+import { IonIcon } from '@ionic/angular';
+import { addIcons } from 'ionicons';
+import { heart, heartOutline } from 'ionicons/icons';
 import { Component, inject } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Vehicle } from '../../core/models';
@@ -14,7 +17,7 @@ import { CarComponent } from '../../shared/components/car.component';
 @Component({
   selector: 'app-vehicle-details',
   standalone: true,
-  imports: [AppShellComponent, BadgeComponent, CarComponent, CurrencyPipe],
+  imports: [AppShellComponent, BadgeComponent, CarComponent, CurrencyPipe, IonIcon],
   styles: [`
     .detail-photo { display: block; width: 100%; height: 100%; min-height: 180px; object-fit: cover; border-radius: 14px; }
   `],
@@ -27,9 +30,7 @@ import { CarComponent } from '../../shared/components/car.component';
       [role]="isStaff ? null : 'client'"
       activeTab="inicio"
     >
-      <button slot="right" type="button" (click)="toggleFavorite()" [attr.aria-label]="'Favoritar'">
-        {{ vehicle?.favorite ? '♥' : '♡' }}
-      </button>
+      @if (!isStaff) { <button slot="right" type="button" (click)="toggleFavorite()" [attr.aria-label]="vehicle?.favorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'"><ion-icon [name]="vehicle?.favorite ? 'heart' : 'heart-outline'" aria-hidden="true"></ion-icon></button> }
 
       @if (vehicle; as v) {
         <div class="card">
@@ -74,6 +75,8 @@ export class VehicleDetailsPage {
   failedPhotoUrl: string | null = null;
 
   constructor() {
+    addIcons({ heart, heartOutline });
+    if (!this.isStaff) void this.vehicleService.loadFavorites().catch(async (error: unknown) => this.toast.show(error instanceof Error ? error.message : 'Não foi possível carregar favoritos.'));
     if (this.id > 0 && !this.vehicleService.getById(this.id)) {
       void this.vehicleService.loadOne(this.id).catch(async (error: unknown) => {
         await this.toast.show(error instanceof Error ? error.message : 'Não foi possível carregar o veículo');
@@ -90,7 +93,8 @@ export class VehicleDetailsPage {
   }
 
   async toggleFavorite(): Promise<void> {
-    await this.vehicleService.toggleFavorite(this.id);
+    try { const favorite = await this.vehicleService.toggleFavorite(this.id); await this.toast.show(favorite ? 'Adicionado aos favoritos.' : 'Removido dos favoritos.'); }
+    catch (error) { await this.toast.show(error instanceof Error ? error.message : 'Não foi possível atualizar favoritos.'); }
   }
 
   async unavailable(): Promise<void> {
