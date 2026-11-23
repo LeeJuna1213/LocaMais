@@ -563,6 +563,44 @@ label {
   color: inherit;
 }
 
+.mn .mn-main {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.mn .mn-main ion-icon {
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  font-size: 20px;
+  color: #55483e;
+}
+
+.mn.active {
+  color: #b84c09;
+  font-weight: 700;
+  background: #fff4e9;
+}
+
+.mn.active .mn-main ion-icon { color: #f57c1f; }
+
+.vehicle-description {
+  width: 100%;
+  min-height: 110px;
+  resize: vertical;
+  overflow-y: auto;
+  background: transparent;
+  scrollbar-color: #f57c1f transparent;
+  scrollbar-width: thin;
+}
+
+.vehicle-description::-webkit-scrollbar { width: 8px; }
+.vehicle-description::-webkit-scrollbar-track { background: transparent; }
+.vehicle-description::-webkit-scrollbar-thumb { background: #f57c1f; border-radius: 8px; }
+
 .mn:last-child {
   border-bottom: 0;
 }

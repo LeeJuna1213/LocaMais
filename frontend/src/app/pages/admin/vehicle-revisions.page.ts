@@ -37,13 +37,19 @@ import { CarComponent } from '../../shared/components/car.component';
         padding: 0 10px;
         font-size: 12px;
       }
-      .revision-item { display: flex; align-items: center; gap: 12px; }
-      .revision-info { min-width: 0; flex: 1; }
-      .revision-tools { display: flex; gap: 4px; flex: none; }
+      .revision-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+      .revision-info { min-width: 0; display:flex; flex-direction:column; gap:6px; overflow-wrap: anywhere; }
+      .revision-tools { display: flex; align-items: center; justify-content: flex-end; justify-self: end; gap: 4px; white-space: nowrap; }
       .revision-tools button { display: grid; place-items: center; width: 38px; height: 38px; border: 0; border-radius: 10px; background: transparent; color: #111; cursor: pointer; }
       .revision-tools button:hover { background: #fff0e2; }
       .revision-tools .delete { color: #b42318; }
       .revision-tools ion-icon { font-size: 19px; }
+      .revision-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 14px; }
+      .revision-description { grid-column:1 / -1; }
+      input[type="number"] { color-scheme: light; }
+      input[type="number"]::-webkit-inner-spin-button,
+      input[type="number"]::-webkit-outer-spin-button { opacity:1; background:transparent; filter:grayscale(1); }
+       @media(max-width:520px) { .revision-form-grid { grid-template-columns:minmax(0,1fr); } .revision-description { grid-column:auto; } .revision-item { gap:6px; } .revision-tools { gap:2px; } .revision-tools button { width:34px; height:34px; } }
     `,
   ],
   template: `
@@ -94,9 +100,8 @@ import { CarComponent } from '../../shared/components/car.component';
                     {{ revisao.data | date: 'dd/MM/yyyy' }}
                   </span>
                   <b>{{ revisao.descricao }}</b>
-                </div>
-                <div class="pr">
-                  {{ revisao.km }} km · {{ revisao.valor | currency: 'BRL' }}
+                  <span>{{ revisao.km }} km</span>
+                  <span class="pr">{{ revisao.valor | currency: 'BRL' }}</span>
                 </div>
                 <div class="revision-tools">
                   <button type="button" aria-label="Editar revisão" title="Editar revisão" (click)="editRevisao(revisao)"><ion-icon name="create-outline"></ion-icon></button>
@@ -110,14 +115,16 @@ import { CarComponent } from '../../shared/components/car.component';
         </div>
 
         <div class="card">
-          <label>Quilometragem (km)</label>
-          <input [(ngModel)]="km" type="number" placeholder="ex.: 15000" autocomplete="off" min="0" step="1" [readonly]="!!editingRevisaoId" />
-          <label>Descrição</label>
-          <textarea [(ngModel)]="descricao" placeholder="ex.: Troca de óleo e filtros" rows="3" maxlength="1000"></textarea>
+          <div class="revision-form-grid">
+          <div class="revision-description"><label>Descrição</label>
+          <textarea [(ngModel)]="descricao" placeholder="ex.: Troca de óleo e filtros" rows="3" maxlength="1000"></textarea></div>
+          <div><label>Quilometragem (km)</label>
+          <input [(ngModel)]="km" type="number" inputmode="numeric" placeholder="ex.: 15000" autocomplete="off" min="0" step="1" [readonly]="!!editingRevisaoId" /></div>
+          <div><label>Valor (R$)</label>
+          <input [(ngModel)]="valor" type="number" inputmode="decimal" placeholder="ex.: 250,00" autocomplete="off" min="0" step="0.01" /></div>
+          </div>
           <label>Data da revisão</label>
           <input [(ngModel)]="data" type="date" />
-          <label>Valor (R$)</label>
-          <input [(ngModel)]="valor" type="number" placeholder="ex.: 250,00" autocomplete="off" min="0" step="0.01" />
           <div class="revision-actions">
             <button class="btn" type="button" [disabled]="savingRevisao" (click)="addRevisao(v.id)">
               {{ savingRevisao ? 'Salvando...' : 'Adicionar revisão' }}
