@@ -1,10 +1,11 @@
 import { CurrencyPipe, DatePipe, registerLocaleData } from '@angular/common';
 import localePtBr from '@angular/common/locales/pt';
 import { ChangeDetectorRef, Component, inject } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { IonIcon } from '@ionic/angular';
 import { addIcons } from 'ionicons';
-import { closeOutline, downloadOutline, printOutline, receiptOutline } from 'ionicons/icons';
+import { chevronDownOutline, closeOutline, downloadOutline, printOutline, receiptOutline } from 'ionicons/icons';
 import { CustomerPaymentApi, PaymentReceipt } from '../../core/models';
 import { CustomerPaymentService } from '../../core/services/customer-payment.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -16,7 +17,7 @@ registerLocaleData(localePtBr);
 @Component({
   selector: 'app-customer-payments',
   standalone: true,
-  imports: [CurrencyPipe, DatePipe, IonIcon, AppShellComponent],
+  imports: [CurrencyPipe, DatePipe, IonIcon, AppShellComponent, FormsModule],
   styles: [`
     .payment-card { margin: 10px 0; }
     .payment-car-photo { width: 74px; height: 56px; object-fit: cover; border-radius: 9px; flex: none; }
@@ -24,6 +25,8 @@ registerLocaleData(localePtBr);
     .payment-card header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
     .status { border-radius: 99px; padding: 4px 9px; font-size: 11px; font-weight: 700; background: #fff1d6; color: #875500; }
     .status.aprovado { background: #e5f5eb; color: #176b39; }
+    .status.cancelado,.status.recusado { background: #fce9e7; color: #8b2118; }
+    .status.estornado { background: #ece8f7; color: #493b79; }
     .receipt-action { display: inline-flex; align-items: center; justify-content: center; gap: 7px; width: 100%; min-height: 42px; margin-top: 8px; }
     .receipt-overlay { position: fixed; z-index: 1000; inset: 0; overflow: auto; padding: 18px; background: #24180f99; display: grid; place-items: start center; }
     .receipt { width: min(100%, 620px); margin: 16px 0; padding: 28px; background: #fff; border-radius: 18px; box-shadow: 0 12px 48px #0003; color: #2b1a0d; }
@@ -39,6 +42,26 @@ registerLocaleData(localePtBr);
   `],
   template: `
     <app-shell title="Pagamentos" [showNav]="true" role="client" activeTab="pagamentos">
+      <section class="card payment-filters" aria-label="Filtros de pagamentos">
+        <div class="payment-filter-grid payment-primary-filter">
+          <div><label for="customer-payment-status">Status</label>
+            <select id="customer-payment-status" [ngModel]="statusFilter" (ngModelChange)="statusFilter=$event; applyFilters()">
+              <option value="">Todos</option><option value="pendente">Pendente</option><option value="aprovado">Pago</option>
+              <option value="cancelado">Cancelado</option><option value="estornado">Estornado</option><option value="recusado">Recusado</option>
+            </select>
+          </div>
+        </div>
+        <button class="lnk dark payment-filter-toggle" type="button" [attr.aria-expanded]="showMoreFilters" aria-controls="customer-payment-extra-filters" (click)="showMoreFilters=!showMoreFilters">
+          <ion-icon name="chevron-down-outline" aria-hidden="true"></ion-icon>{{showMoreFilters?'Ver menos filtros':'Ver mais filtros'}}
+        </button>
+        <div id="customer-payment-extra-filters" class="payment-filter-panel" [class.expanded]="showMoreFilters" [attr.aria-hidden]="!showMoreFilters" [attr.inert]="showMoreFilters?null:''">
+          <div class="payment-filter-panel-inner"><div class="payment-filter-grid">
+            <div><label for="customer-payment-from">Data inicial</label><input id="customer-payment-from" type="date" [ngModel]="dateFrom" (ngModelChange)="dateFrom=$event; applyFilters()" /></div>
+            <div><label for="customer-payment-to">Data final</label><input id="customer-payment-to" type="date" [ngModel]="dateTo" (ngModelChange)="dateTo=$event; applyFilters()" /></div>
+          </div></div>
+        </div>
+        <button class="lnk dark payment-clear-filters" type="button" (click)="clearFilters()">Limpar filtros</button>
+      </section>
       @if (payments.loading()) {
         <div class="card empty" role="status">Carregando pagamentos...</div>
       } @else if (payments.error(); as error) {
@@ -48,7 +71,7 @@ registerLocaleData(localePtBr);
         <h3>Pagamentos realizados</h3>
         @for (item of approved; track item.id) {
           <article class="card payment-card">
-            <header><span class="status aprovado">Aprovado</span></header>
+            <header><span class="status aprovado">Pago</span></header>
             <div class="payment-vehicle">@if (photo(item); as src) { <img class="payment-car-photo" [src]="src" alt="Foto do veículo da reserva" /> }<b>{{ carName(item) }}</b></div>
             <div class="kv"><span>Valor pago</span><b>{{ +item.valor | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}</b></div>
             <div class="kv"><span>Data do pagamento</span><b>{{ item.data | date:'dd/MM/yyyy HH:mm' }}</b></div>
@@ -114,10 +137,25 @@ export class CustomerPaymentsPage {
   private readonly changeDetector = inject(ChangeDetectorRef);
   private readonly toast = inject(ToastService);
   receipt: PaymentReceipt | null = null;
+  statusFilter: CustomerPaymentApi['status'] | '' = '';
+  dateFrom = '';
+  dateTo = '';
+  showMoreFilters = false;
 
   constructor() {
-    addIcons({ closeOutline, downloadOutline, printOutline, receiptOutline });
+    addIcons({ chevronDownOutline, closeOutline, downloadOutline, printOutline, receiptOutline });
     void this.payments.load();
+  }
+
+  async applyFilters(): Promise<void> {
+    await this.payments.load({ status: this.statusFilter, de: this.dateFrom, ate: this.dateTo });
+  }
+
+  async clearFilters(): Promise<void> {
+    this.statusFilter = '';
+    this.dateFrom = '';
+    this.dateTo = '';
+    await this.payments.load();
   }
 
   get approved(): CustomerPaymentApi[] { return this.payments.items().filter((item) => item.status === 'aprovado'); }
@@ -132,7 +170,7 @@ export class CustomerPaymentsPage {
   }
 
   statusLabel(value: string): string {
-    const labels: Record<string, string> = { aprovado: 'Aprovado', pendente: 'Pendente', recusado: 'Recusado', cancelado: 'Cancelado', estornado: 'Estornado' };
+    const labels: Record<string, string> = { aprovado: 'Pago', pendente: 'Pendente', recusado: 'Recusado', cancelado: 'Cancelado', estornado: 'Estornado' };
     return labels[value] ?? value;
   }
 

@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Query,
   Patch,
   Post,
 } from '@nestjs/common';
@@ -34,6 +35,7 @@ import type { Pagamento } from './entities/pagamento.entity.js';
 import { ConfirmacaoPagamentoDto } from './dto/confirmacao-pagamento.dto.js';
 import { UpdatePagamentoDto } from './dto/update-pagamento.dto.js';
 import { StatusPagamento } from './enums/status-pagamento.enum.js';
+import { FilterPagamentoDto } from './dto/filter-pagamento.dto.js';
 
 /**
  * Rotas de pagamentos.
@@ -104,15 +106,15 @@ export class PagamentoController {
   @Roles(TipoUsuario.ADMIN, TipoUsuario.FUNCIONARIO)
   @ApiOperation({ summary: 'Lista todos os pagamentos' })
   @ApiOkResponse({ description: 'Lista de pagamentos retornada com sucesso.' })
-  findAll(@CurrentUser() _actor: UsuarioAutenticado): Promise<Pagamento[]> {
-    return this.pagamentoService.findAll();
+  findAll(@CurrentUser() _actor: UsuarioAutenticado, @Query() filters: FilterPagamentoDto): Promise<Pagamento[]> {
+    return this.pagamentoService.findAll(filters);
   }
 
   @Get('meus')
   @Roles(TipoUsuario.CLIENTE)
   @ApiOperation({ summary: 'Lista somente os pagamentos do cliente autenticado' })
-  findMine(@CurrentUser() actor: UsuarioAutenticado): Promise<Pagamento[]> {
-    return this.pagamentoService.findMine(actor);
+  findMine(@CurrentUser() actor: UsuarioAutenticado, @Query() filters: FilterPagamentoDto): Promise<Pagamento[]> {
+    return this.pagamentoService.findMine(actor, filters);
   }
 
   /**

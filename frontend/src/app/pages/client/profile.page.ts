@@ -124,7 +124,7 @@ export class ProfilePage {
       trashOutline,
       notificationsOutline,
     });
-    void this.notifications.load().catch(() => undefined);
+    void this.notifications.load(true).catch(() => undefined);
   }
 
   get profile() {

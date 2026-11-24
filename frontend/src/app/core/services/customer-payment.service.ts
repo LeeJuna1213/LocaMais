@@ -1,11 +1,25 @@
 import { Injectable, inject, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { CustomerPaymentApi, PaymentReceipt } from '../models';
 import { ApiErrorService } from './api-error.service';
 import { environment } from '../../../environments/environment';
 
 export type OperationalPaymentTab = 'Todos' | 'Pendentes' | 'Realizados';
+export type PaymentStatusFilter = CustomerPaymentApi['status'] | '';
+export interface PaymentFilters { status?: PaymentStatusFilter; de?: string; ate?: string }
+
+export function filterPayments(payments: CustomerPaymentApi[], filters: PaymentFilters = {}): CustomerPaymentApi[] {
+  return payments.filter((payment) => {
+    if (filters.status && payment.status !== filters.status) return false;
+    const paymentDay = new Date(payment.data);
+    if (Number.isNaN(paymentDay.getTime())) return false;
+    const day = paymentDay.toISOString().slice(0, 10);
+    if (filters.de && day < filters.de) return false;
+    if (filters.ate && day > filters.ate) return false;
+    return true;
+  });
+}
 
 export function isPendingPayment(payment: CustomerPaymentApi): boolean {
   return payment.status === 'pendente';
@@ -18,7 +32,7 @@ export function filterOperationalPayments(
   return payments.filter((payment) => {
     if (tab === 'Pendentes') return isPendingPayment(payment);
     if (tab === 'Realizados') return payment.status === 'aprovado';
-    return payment.status === 'pendente' || payment.status === 'aprovado' || payment.status === 'estornado';
+    return true;
   });
 }
 
@@ -49,11 +63,11 @@ export class CustomerPaymentService {
     }
   }
 
-  async load(): Promise<void> {
+  async load(filters: PaymentFilters = {}): Promise<void> {
     this._loading.set(true);
     this._error.set(null);
     try {
-      this._items.set(await firstValueFrom(this.http.get<CustomerPaymentApi[]>(`${this.apiUrl}/pagamentos/meus`)));
+      this._items.set(await firstValueFrom(this.http.get<CustomerPaymentApi[]>(`${this.apiUrl}/pagamentos/meus`, { params: this.toParams(filters) })));
     } catch (error) {
       this._items.set([]);
       this._error.set(this.errors.message(error, 'Não foi possível carregar seus pagamentos.'));
@@ -62,11 +76,11 @@ export class CustomerPaymentService {
     }
   }
 
-  async loadOperational(): Promise<void> {
+  async loadOperational(filters: PaymentFilters = {}): Promise<void> {
     this._loading.set(true);
     this._error.set(null);
     try {
-      this._items.set(await firstValueFrom(this.http.get<CustomerPaymentApi[]>(`${this.apiUrl}/pagamentos`)));
+      this._items.set(await firstValueFrom(this.http.get<CustomerPaymentApi[]>(`${this.apiUrl}/pagamentos`, { params: this.toParams(filters) })));
     } catch (error) {
       this._items.set([]);
       this._error.set(this.errors.message(error, 'Não foi possível carregar os pagamentos.'));
@@ -89,5 +103,10 @@ export class CustomerPaymentService {
     } catch (error) {
       throw new Error(this.errors.message(error, 'Não foi possível consultar o comprovante.'));
     }
+  }
+
+  private toParams(filters: PaymentFilters) {
+    const entries = Object.entries(filters).filter(([, value]) => typeof value === 'string' && value.length > 0);
+    return entries.reduce((query, [key, value]) => query.set(key, value as string), new HttpParams());
   }
 }

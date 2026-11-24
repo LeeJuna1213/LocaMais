@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach } from 'vitest';
+import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { CustomerPaymentApi } from '../models';
+import { CustomerPaymentService } from './customer-payment.service';
+import { environment } from '../../../environments/environment';
 import {
   countPendingPayments,
   filterPayments,
@@ -13,6 +19,47 @@ const payment = (id: string, status: CustomerPaymentApi['status']): CustomerPaym
   status,
   data: '2026-11-22T12:00:00.000Z',
   locacao_id: `rental-${id}`,
+});
+
+describe('CustomerPaymentService filters', () => {
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+    TestBed.resetTestingModule();
+  });
+
+  it('sends applied status and date filters to the authenticated customer endpoint', async () => {
+    const service = TestBed.inject(CustomerPaymentService);
+    const loaded = service.load({ status: 'cancelado', de: '2026-11-20', ate: '2026-11-24' });
+    const request = http.expectOne((item) => item.url === `${environment.apiUrl}/pagamentos/meus`);
+    expect(request.request.params.get('status')).toBe('cancelado');
+    expect(request.request.params.get('de')).toBe('2026-11-20');
+    expect(request.request.params.get('ate')).toBe('2026-11-24');
+    request.flush([]);
+    await loaded;
+    expect(service.error()).toBeNull();
+  });
+
+  it('sends operational filters to the staff endpoint and omits blank criteria after clearing', async () => {
+    const service = TestBed.inject(CustomerPaymentService);
+    const filtered = service.loadOperational({ status: 'estornado', de: '', ate: '' });
+    const request = http.expectOne((item) => item.url === `${environment.apiUrl}/pagamentos`);
+    expect(request.request.params.get('status')).toBe('estornado');
+    expect(request.request.params.has('de')).toBe(false);
+    request.flush([]);
+    await filtered;
+    const cleared = service.loadOperational();
+    const clearRequest = http.expectOne((item) => item.url === `${environment.apiUrl}/pagamentos`);
+    expect(clearRequest.request.params.keys()).toEqual([]);
+    clearRequest.flush([]);
+    await cleared;
+  });
 });
 
 describe('operational payment criteria', () => {
@@ -37,9 +84,9 @@ describe('operational payment criteria', () => {
       .toEqual(['pendente', 'pendente']);
   });
 
-  it('keeps operational tabs limited to pending and approved payments', () => {
+  it('includes historical statuses in the unfiltered operational listing', () => {
     expect(filterOperationalPayments(payments, 'Todos').map(({ id }) => id))
-      .toEqual(['pending-a', 'pending-b', 'approved']);
+      .toEqual(['pending-a', 'pending-b', 'approved', 'refused', 'canceled']);
     expect(filterOperationalPayments(payments, 'Realizados').map(({ id }) => id))
       .toEqual(['approved']);
   });

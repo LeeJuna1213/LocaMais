@@ -1,21 +1,42 @@
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { Component, inject } from '@angular/core';
-import { Router } from '@angular/router';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { IonIcon } from '@ionic/angular';
+import { addIcons } from 'ionicons';
+import { chevronDownOutline } from 'ionicons/icons';
 import { CustomerPaymentApi, PaymentReceipt } from '../../core/models';
-import { CustomerPaymentService, filterOperationalPayments } from '../../core/services/customer-payment.service';
+import { CustomerPaymentService } from '../../core/services/customer-payment.service';
 import { ToastService } from '../../core/services/toast.service';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
-import { SegmentTabsComponent } from '../../shared/components/segment-tabs.component';
 
 @Component({
   selector: 'app-admin-payments',
   standalone: true,
-  imports: [AppShellComponent, SegmentTabsComponent, CurrencyPipe, DatePipe],
+  imports: [AppShellComponent, CurrencyPipe, DatePipe, FormsModule, IonIcon],
   template: `
     <app-shell title="Pagamentos" [back]="true" defaultHref="/admin/menu" [showNav]="true" role="admin" activeTab="menu">
-      <app-segment-tabs variant="tabs" [options]="tabs" [active]="tab" (activeChange)="setTab($event)" />
+      <section class="card payment-filters" aria-label="Filtros de pagamentos">
+        <div class="payment-filter-grid payment-primary-filter">
+          <div><label for="payment-status-filter">Status</label>
+            <select id="payment-status-filter" [ngModel]="statusFilter" (ngModelChange)="statusFilter=$event; applyFilters()">
+              <option value="">Todos</option><option value="pendente">Pendente</option><option value="aprovado">Pago</option>
+              <option value="cancelado">Cancelado</option><option value="estornado">Estornado</option><option value="recusado">Recusado</option>
+            </select>
+          </div>
+        </div>
+        <button class="lnk dark payment-filter-toggle" type="button" [attr.aria-expanded]="showMoreFilters" aria-controls="payment-extra-filters" (click)="showMoreFilters=!showMoreFilters">
+          <ion-icon name="chevron-down-outline" aria-hidden="true"></ion-icon>{{showMoreFilters?'Ver menos filtros':'Ver mais filtros'}}
+        </button>
+        <div id="payment-extra-filters" class="payment-filter-panel" [class.expanded]="showMoreFilters" [attr.aria-hidden]="!showMoreFilters" [attr.inert]="showMoreFilters?null:''">
+          <div class="payment-filter-panel-inner"><div class="payment-filter-grid">
+            <div><label for="payment-date-from">Data inicial</label><input id="payment-date-from" type="date" [ngModel]="dateFrom" (ngModelChange)="dateFrom=$event; applyFilters()" /></div>
+            <div><label for="payment-date-to">Data final</label><input id="payment-date-to" type="date" [ngModel]="dateTo" (ngModelChange)="dateTo=$event; applyFilters()" /></div>
+          </div></div>
+        </div>
+        <button class="lnk dark payment-clear-filters" type="button" (click)="clearFilters()">Limpar filtros</button>
+      </section>
       @if (payments.loading()) {
         <div class="card empty" role="status">Carregando pagamentos...</div>
       } @else if (payments.error(); as error) {
@@ -24,19 +45,20 @@ import { SegmentTabsComponent } from '../../shared/components/segment-tabs.compo
       } @else {
         @for (payment of filtered; track payment.id) {
           <article class="card">
-            <div class="row"><b>Pagamento</b><b>{{ payment.status === 'aprovado' ? 'Realizado' : 'Pendente' }}</b></div>
-            <div>Cliente: {{ payment.locacao?.reservation?.client?.user?.name || payment.locacao?.reservation?.client?.user?.email || '—' }}</div>
+            <div class="row"><b>Pagamento</b><b>{{ statusLabel(payment.status) }}</b></div>
+            <div>Cliente: {{ payment.reservation?.client?.user?.name || payment.reservation?.client?.user?.email || payment.locacao?.reservation?.client?.user?.name || payment.locacao?.reservation?.client?.user?.email || '—' }}</div>
             <div>Veículo: {{ vehicleName(payment) }}</div>
-            <div>Reserva: {{ friendlyReservation(payment) }}</div>
-            <div>Locação: {{ payment.locacao_id }}</div>
+            <div>Reserva: {{ payment.reservation?.codigo || friendlyReservation(payment) }}</div>
+            @if (payment.locacao_id) { <div>Locação: {{ payment.locacao_id }}</div> }
             <div>Valor: {{ payment.valor | currency: 'BRL' }}</div>
             @if (payment.metodo) { <div>Forma de pagamento: {{ payment.metodo }}</div> }
-            @if (payment.status === 'aprovado') { <div>Data do pagamento: {{ (payment.comprovante_snapshot?.dataConfirmacao || payment.data) | date: 'dd/MM/yyyy HH:mm' }}</div> }
+            <div>Data: {{ (payment.comprovante_snapshot?.dataConfirmacao || payment.data) | date: 'dd/MM/yyyy HH:mm' }}</div>
+            @if (payment.estorno) { <div>Estorno simulado: {{ payment.estorno.valor | currency: 'BRL' }}</div> }
             @if (payment.status === 'pendente') {
               <div class="small muted">Cobrança pendente; ainda não consta como valor pago.</div>
               <button class="btn" type="button" [disabled]="processingId === payment.id" (click)="confirm(payment)">Processar simulação</button>
             }
-            @if (payment.status === 'aprovado') {
+            @if (payment.status === 'aprovado' || payment.status === 'estornado') {
               <button class="btn" type="button" (click)="showReceipt(payment)">Visualizar recibo</button>
             }
           </article>
@@ -57,28 +79,28 @@ import { SegmentTabsComponent } from '../../shared/components/segment-tabs.compo
   `,
 })
 export class AdminPaymentsPage {
-  private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   readonly payments = inject(CustomerPaymentService);
   private readonly toast = inject(ToastService);
-  readonly tabs = ['Todos', 'Pendentes', 'Realizados'];
-  tab: 'Todos' | 'Pendentes' | 'Realizados' = 'Todos';
+  statusFilter: CustomerPaymentApi['status'] | '' = '';
+  dateFrom = '';
+  dateTo = '';
+  showMoreFilters = false;
   processingId: string | null = null;
   receipt: PaymentReceipt | null = null;
 
   constructor() {
-    void this.payments.loadOperational();
+    addIcons({ chevronDownOutline });
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
-      if (params.get('tab') === 'Pendentes' || params.get('tab') === 'Realizados' || params.get('tab') === 'Todos') this.tab = params.get('tab') as typeof this.tab;
-      else if (params.get('status') === 'pendente') this.tab = 'Pendentes';
+      const status = params.get('status');
+      if (status && ['pendente', 'aprovado', 'cancelado', 'estornado', 'recusado'].includes(status)) this.statusFilter = status as CustomerPaymentApi['status'];
+      void this.load();
     });
   }
 
-  async load(): Promise<void> { await this.payments.loadOperational(); }
+  async load(): Promise<void> { await this.payments.loadOperational({ status: this.statusFilter, de: this.dateFrom, ate: this.dateTo }); }
 
-  get filtered(): CustomerPaymentApi[] {
-    return filterOperationalPayments(this.payments.items(), this.tab);
-  }
+  get filtered(): CustomerPaymentApi[] { return this.payments.items(); }
 
   vehicleName(payment: CustomerPaymentApi): string {
     const car = payment.locacao?.reservation?.car;
@@ -90,9 +112,17 @@ export class AdminPaymentsPage {
     return code ? `Reserva ${code}` : 'Reserva —';
   }
 
-  async setTab(tab: string): Promise<void> {
-    this.tab = tab as typeof this.tab;
-    await this.router.navigate([], { queryParams: { tab }, queryParamsHandling: 'merge' });
+  statusLabel(status: CustomerPaymentApi['status']): string {
+    return ({ pendente: 'Pendente', aprovado: 'Pago', cancelado: 'Cancelado', estornado: 'Estornado', recusado: 'Recusado' })[status];
+  }
+
+  async applyFilters(): Promise<void> { await this.load(); }
+
+  async clearFilters(): Promise<void> {
+    this.statusFilter = '';
+    this.dateFrom = '';
+    this.dateTo = '';
+    await this.load();
   }
 
   async confirm(payment: CustomerPaymentApi): Promise<void> {

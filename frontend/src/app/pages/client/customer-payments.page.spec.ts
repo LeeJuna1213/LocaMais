@@ -71,4 +71,23 @@ describe('CustomerPaymentsPage', () => {
     expect(service.receipt).toHaveBeenCalledWith('approved-1');
     expect(page.receipt?.status).toBe('aprovado');
   });
+
+  it('matches the compact car-filter pattern for expanding date filters and clearing criteria', async () => {
+    const page = fixture.componentInstance;
+    const toggle = fixture.nativeElement.querySelector('.payment-filter-toggle') as HTMLButtonElement;
+    expect(toggle.textContent).toContain('Ver mais filtros');
+    expect(fixture.nativeElement.querySelector('#customer-payment-extra-filters').getAttribute('aria-hidden')).toBe('true');
+    toggle.click();
+    fixture.detectChanges();
+    expect(toggle.textContent).toContain('Ver menos filtros');
+    expect(fixture.nativeElement.querySelector('#customer-payment-extra-filters').getAttribute('aria-hidden')).toBe('false');
+    page.statusFilter = 'cancelado';
+    page.dateFrom = '2026-11-20';
+    page.dateTo = '2026-11-24';
+    await page.clearFilters();
+    expect(page.statusFilter).toBe('');
+    expect(page.dateFrom).toBe('');
+    expect(page.dateTo).toBe('');
+    expect(service.load).toHaveBeenLastCalledWith();
+  });
 });

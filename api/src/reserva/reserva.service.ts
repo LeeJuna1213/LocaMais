@@ -567,7 +567,10 @@ export class ReservaService {
 
     const saved = await this.dataSource.transaction(async (manager) => {
       const repository = manager.getRepository(Reserva);
-      const current = await repository.findOne({ where: { id } });
+       const current = await repository.findOne({
+         where: { id },
+         ...(manager.connection?.options?.type === 'mysql' ? { lock: { mode: 'pessimistic_write' as const } } : {}),
+       });
       if (!current || [StatusReserva.CANCELADA, StatusReserva.CONCLUIDA].includes(current.status)) throw new ConflictException('a reserva já foi cancelada ou concluída');
       const payments = await manager.getRepository(Pagamento).find({ where: { reservation_id: id } });
       const approved = payments.find((payment) => payment.status === StatusPagamento.APROVADO);
@@ -583,10 +586,19 @@ export class ReservaService {
         approved.status = StatusPagamento.ESTORNADO;
         await manager.getRepository(Pagamento).save(approved);
       } else {
-        for (const payment of payments.filter((item) => item.status === StatusPagamento.PENDENTE)) {
+        const pendingPayments = payments.filter((item) => item.status === StatusPagamento.PENDENTE);
+        for (const payment of pendingPayments) {
           payment.status = StatusPagamento.CANCELADO;
           await manager.getRepository(Pagamento).save(payment);
         }
+        if (pendingPayments.length) await notificationRepository.save(notificationRepository.create({
+          usuario_id: reservation.client.user_id,
+          reserva_id: id,
+          tipo: 'pagamento_cancelado',
+          titulo: 'Pagamento cancelado',
+          descricao: `A reserva ${reservation.codigo} foi cancelada antes do pagamento. Não há pagamento pendente.`,
+          lida_em: null,
+        }));
       }
       await notificationRepository.save(notificationRepository.create({
         usuario_id: reservation.client.user_id,

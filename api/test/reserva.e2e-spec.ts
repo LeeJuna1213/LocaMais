@@ -733,12 +733,30 @@ describe('Reservas (e2e)', () => {
     expect(cancelled.status).toBe(200);
     expect(cancelled.body.status).toBe('cancelada');
     const dataSource = app.get(DataSource);
-    const payments = await dataSource.query('SELECT status FROM pagamentos WHERE reservation_id = ?', [created.body.id]) as Array<{ status: string }>;
+    const payments = await dataSource.query('SELECT id, status, comprovante_snapshot FROM pagamentos WHERE reservation_id = ?', [created.body.id]) as Array<{ id: string; status: string; comprovante_snapshot: string | null }>;
+    const paymentIds = await dataSource.query('SELECT id FROM pagamentos WHERE reservation_id = ?', [created.body.id]) as Array<{ id: string }>;
     const refunds = await dataSource.query('SELECT id FROM estornos WHERE pagamento_id IN (SELECT id FROM pagamentos WHERE reservation_id = ?)', [created.body.id]) as unknown[];
     expect(payments.map((item) => item.status)).toEqual(['cancelado']);
+    expect(payments[0].comprovante_snapshot).toBeNull();
+    expect((await get(app, `/pagamentos/${payments[0].id}/comprovante`, clientToken)).status).toBe(409);
     expect(refunds).toHaveLength(0);
     const notifications = await get<Array<{ tipo: string; reserva_id: string }>>(app, '/notificacoes', clientToken);
     expect(notifications.body.some((item) => item.tipo === 'reserva_cancelada' && item.reserva_id === created.body.id)).toBe(true);
+    expect(notifications.body.some((item) => item.tipo === 'pagamento_cancelado' && item.reserva_id === created.body.id && item.descricao.includes('Não há pagamento pendente'))).toBe(true);
+    const pendingForStaff = await get<Array<{ id: string }>>(app, '/pagamentos?status=pendente', adminToken);
+    const cancelledForStaff = await get<Array<{ id: string; status: string }>>(app, '/pagamentos?status=cancelado', adminToken);
+    const cancelledForClient = await get<Array<{ id: string; status: string }>>(app, '/pagamentos/meus?status=cancelado', clientToken);
+    const cancelledForOtherClient = await get<Array<{ id: string }>>(app, '/pagamentos/meus?status=cancelado', otherClientToken);
+    const clientAll = await get<Array<{ id: string }>>(app, '/pagamentos/meus', clientToken);
+    const today = new Date().toISOString().slice(0, 10);
+    const clientByDate = await get<Array<{ id: string; status: string }>>(app, `/pagamentos/meus?status=cancelado&de=${today}&ate=${today}`, clientToken);
+    expect(pendingForStaff.body.some((item) => item.id === paymentIds[0].id)).toBe(false);
+    expect(cancelledForStaff.body.some((item) => item.id === paymentIds[0].id && item.status === 'cancelado')).toBe(true);
+    expect(cancelledForClient.body.some((item) => item.id === paymentIds[0].id)).toBe(true);
+    expect(cancelledForOtherClient.body.some((item) => item.id === paymentIds[0].id)).toBe(false);
+    expect(clientAll.body.some((item) => item.id === paymentIds[0].id)).toBe(true);
+    expect(clientByDate.body.some((item) => item.id === paymentIds[0].id && item.status === 'cancelado')).toBe(true);
+    expect((await get(app, '/pagamentos?de=2026-12-30&ate=2026-01-01', adminToken)).status).toBe(400);
   });
 
   it('admin cancela reserva paga com estorno simulado e preserva o recibo original', async () => {
@@ -758,6 +776,10 @@ describe('Reservas (e2e)', () => {
     const dataSource = app.get(DataSource);
     const finance = await dataSource.query('SELECT p.status, e.valor, e.tipo FROM pagamentos p LEFT JOIN estornos e ON e.pagamento_id = p.id WHERE p.id = ?', [payment.body.id]) as Array<{ status: string; valor: number; tipo: string }>;
     expect(finance[0]).toMatchObject({ status: 'estornado', valor: payment.body.valor, tipo: 'simulado' });
+    const refundedFilter = await get<Array<{ id: string; status: string }>>(app, '/pagamentos?status=estornado', adminToken);
+    const pendingFilter = await get<Array<{ id: string }>>(app, '/pagamentos?status=pendente', adminToken);
+    expect(refundedFilter.body.some((item) => item.id === payment.body.id && item.status === 'estornado')).toBe(true);
+    expect(pendingFilter.body.some((item) => item.id === payment.body.id)).toBe(false);
     const afterRefundReceipt = await get<{ reciboId: string; status: string }>(app, `/pagamentos/${payment.body.id}/comprovante`, clientToken);
     expect(afterRefundReceipt.status).toBe(200);
     expect(afterRefundReceipt.body.reciboId).toBe(originalReceipt.body.reciboId);

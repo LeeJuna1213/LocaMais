@@ -25,7 +25,7 @@ import { NotificationService } from '../../core/services/notification.service';
       }
     </app-shell>
   `,
-  styles: [`.notification{display:grid;gap:8px;width:100%;text-align:left;color:inherit;border:1px solid #eee2d8}.notification.unread{border-color:#ed8a38;background:#fff7ef}.title{font-weight:700;font-size:15px}.new{justify-self:start;border-radius:99px;background:#e86f12;color:white;padding:3px 9px;font-size:11px}time{font-size:12px;color:#755b49}`],
+  styles: [`.notification{display:grid;gap:8px;width:100%;text-align:left;color:#2b1a0d;border:1px solid #d8c5b5;background:#fff;line-height:1.45}.notification.unread{border:2px solid #c85c0b;background:#fff7ef}.notification span,.notification time{color:#2b1a0d}.notification .title{font-weight:750;font-size:16px;line-height:1.3}.notification .new{justify-self:start;border-radius:99px;background:#a94300;color:#fff;padding:3px 9px;font-size:12px;font-weight:700}.notification time{font-size:13px;color:#594332}.notification:not(.unread){border-left:4px solid #a99684}.notification:focus-visible{outline:3px solid #9c4100;outline-offset:2px}`],
 })
 export class NotificationsPage {
   readonly notifications = inject(NotificationService);
@@ -34,7 +34,7 @@ export class NotificationsPage {
   constructor() { void this.load(); }
   async load(): Promise<void> {
     this.error = null;
-    try { await this.notifications.load(); }
+    try { await this.notifications.load(true); }
     catch (error) { this.error = error instanceof Error ? error.message : 'Não foi possível carregar as notificações.'; }
   }
   async open(item: NotificationApi): Promise<void> {

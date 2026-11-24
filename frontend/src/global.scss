@@ -813,3 +813,18 @@ ion-toast {
 .reservation-month-item>span{min-width:0;overflow-wrap:break-word;word-break:normal}
 .reservation-month-item>.bar{width:100%;margin:1px 0 3px}
 @media(max-width:480px){.report-card h2{font-size:15px}.vehicle-report .report-heading{align-items:flex-start;gap:7px}.vehicle-report .report-heading h2{font-size:15px}.vehicle-report .toggle-filters{min-height:34px;padding:6px 8px;font-size:12px}.vehicle-report .filter-icon{width:15px;height:15px;flex-basis:15px}}
+
+/* Payment status/date filters */
+.payment-filters.card{background:transparent;box-shadow:none;padding:0 0 2px;border-radius:0}
+.payment-filters label{color:#f4dfcd;font-size:12px}
+.payment-filter-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.payment-filter-grid>div{min-width:0}
+.payment-primary-filter{grid-template-columns:1fr}
+.payment-filter-panel{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows .22s ease,opacity .22s ease}
+.payment-filter-panel.expanded{grid-template-rows:1fr;opacity:1}
+.payment-filter-panel-inner{min-height:0;overflow:hidden}
+.payment-filter-toggle{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin:2px 0 8px}
+.payment-filter-toggle ion-icon{transition:transform .22s ease}
+.payment-filter-toggle[aria-expanded="true"] ion-icon{transform:rotate(180deg)}
+.payment-clear-filters{margin:0 0 10px;text-align:right}
+@media(prefers-reduced-motion:reduce){.payment-filter-panel,.payment-filter-toggle ion-icon{transition:none}}

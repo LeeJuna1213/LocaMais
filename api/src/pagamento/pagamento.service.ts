@@ -1,11 +1,12 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 
 import { StatusLocacao } from '../locacao/enums/status-locacao.enum.js';
 import { LocacaoService } from '../locacao/locacao.service.js';
@@ -24,6 +25,7 @@ import { StatusReserva } from '../reserva/enums/status-reserva.enum.js';
 import { Estorno } from './entities/estorno.entity.js';
 import { NotificacaoService } from '../notificacao/notificacao.service.js';
 import { RedisService } from '../redis/redis.service.js';
+import { FilterPagamentoDto } from './dto/filter-pagamento.dto.js';
 
 /**
  * Regras de negócio de pagamento de locações.
@@ -192,15 +194,24 @@ export class PagamentoService {
    *
    * @returns Lista de todos os pagamentos.
    */
-  async findAll(): Promise<Pagamento[]> {
-    return this.pagamentosRepository.find({
-      order: { data: 'DESC' },
-      relations: { locacao: { reservation: { client: { user: true }, car: true } }, reservation: { client: { user: true }, car: true, lojaRetirada: true }, estorno: true },
-    });
+  async findAll(filters: FilterPagamentoDto = {}): Promise<Pagamento[]> {
+    const query = this.pagamentosRepository.createQueryBuilder('payment')
+      .leftJoinAndSelect('payment.locacao', 'locacao')
+      .leftJoinAndSelect('locacao.reservation', 'rentalReservation')
+      .leftJoinAndSelect('rentalReservation.client', 'rentalClient')
+      .leftJoinAndSelect('rentalClient.user', 'rentalUser')
+      .leftJoinAndSelect('rentalReservation.car', 'rentalCar')
+      .leftJoinAndSelect('payment.reservation', 'reservation')
+      .leftJoinAndSelect('reservation.client', 'directClient')
+      .leftJoinAndSelect('directClient.user', 'directUser')
+      .leftJoinAndSelect('reservation.car', 'directCar')
+      .leftJoinAndSelect('reservation.lojaRetirada', 'shop')
+      .leftJoinAndSelect('payment.estorno', 'refund');
+    return this.applyFilters(query, filters).orderBy('payment.data', 'DESC').getMany();
   }
 
-  async findMine(actor: UsuarioAutenticado): Promise<Pagamento[]> {
-    return this.pagamentosRepository.createQueryBuilder('payment')
+  async findMine(actor: UsuarioAutenticado, filters: FilterPagamentoDto = {}): Promise<Pagamento[]> {
+    const query = this.pagamentosRepository.createQueryBuilder('payment')
       .leftJoinAndSelect('payment.locacao', 'locacao')
       .leftJoinAndSelect('locacao.reservation', 'reservation')
       .leftJoinAndSelect('payment.reservation', 'directReservation')
@@ -210,9 +221,22 @@ export class PagamentoService {
       .leftJoinAndSelect('directReservation.car', 'directCar')
       .leftJoinAndSelect('reservation.client', 'client')
       .leftJoinAndSelect('reservation.car', 'car')
-      .where('(client.user_id = :userId OR directClient.user_id = :userId)', { userId: actor.id })
-      .orderBy('payment.data', 'DESC')
-      .getMany();
+      .where('(client.user_id = :userId OR directClient.user_id = :userId)', { userId: actor.id });
+    return this.applyFilters(query, filters).orderBy('payment.data', 'DESC').getMany();
+  }
+
+  private applyFilters(query: SelectQueryBuilder<Pagamento>, filters: FilterPagamentoDto): SelectQueryBuilder<Pagamento> {
+    if (filters.de && filters.ate && filters.de > filters.ate) {
+      throw new BadRequestException('A data inicial não pode ser posterior à data final.');
+    }
+    if (filters.status) query.andWhere('payment.status = :status', { status: filters.status });
+    if (filters.de) query.andWhere('payment.data >= :dateFrom', { dateFrom: `${filters.de} 00:00:00` });
+    if (filters.ate) {
+      const exclusiveEnd = new Date(`${filters.ate}T00:00:00.000Z`);
+      exclusiveEnd.setUTCDate(exclusiveEnd.getUTCDate() + 1);
+      query.andWhere('payment.data < :dateTo', { dateTo: exclusiveEnd.toISOString().slice(0, 19).replace('T', ' ') });
+    }
+    return query;
   }
 
   /**
