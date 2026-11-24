@@ -1,66 +1,150 @@
-import { describe, expect, it } from 'vitest';
-import { Reservation, Vehicle } from '../../core/models';
-import { RevisionCostByVehicleApi } from '../../core/models';
-import { buildInspectionCostsByVehicle, buildReservationReportCategories, buildRevisionCostsByVehicle, ReportsPage } from './reports.page';
+import { describe, expect, it, vi } from 'vitest';
+import { of, throwError } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
+import { ReportsPage } from './reports.page.component';
 
-const vehicle = (id: number, name: string): Vehicle => ({
-  id, name, version: 'Teste', pricePerDay: 100, status: 'Disponível', color: '#000',
-  category: 'Teste', transmission: null, revisions: [], favorite: false,
-});
+describe('ReportsPage persisted report presentation', () => {
+  const page = () => Object.create(ReportsPage.prototype) as ReportsPage;
+  const panel = (report: any) => ({ key: 'reservas', title: 'Reservas', mesAno: '', de: '', ate: '', carroId: '', loading: false, error: null, report }) as any;
 
-const reservation = (id: string, status: Reservation['status'], rentalStarted = false): Reservation => ({
-  id, publicCode: id, clientName: 'Cliente', mine: false, vehicleId: 1,
-  start: '2026-12-01T10:00:00.000Z', end: '2026-12-03T10:00:00.000Z', status,
-  total: 200, payment: 'Pendente', paymentMethod: 'PIX', rentalStarted,
-});
-
-describe('ReportsPage report groupings', () => {
-  it('lists only vehicles represented by real revision-cost rows', () => {
-    const vehicles = [vehicle(1, 'Com revisão'), vehicle(2, 'Sem revisão')];
-    const costs: RevisionCostByVehicleApi[] = [{ carro_id: 1, quantidade: 2, total: 480 }];
-
-    expect(buildRevisionCostsByVehicle(vehicles, costs)).toEqual([
-      { vehicle: vehicles[0], quantidade: 2, total: 480 },
-    ]);
-  });
-
-  it('orders pending, confirmed, effective and canceled reservations without duplicates', () => {
-    const items = [
-      reservation('pending', 'Pendente'),
-      reservation('confirmed', 'Confirmada'),
-      reservation('active-rental', 'Em andamento', true),
-      reservation('completed-rental', 'Concluída', true),
-      reservation('canceled', 'Cancelada'),
-      reservation('canceled-rental', 'Cancelada', true),
-    ];
-
-    const categories = buildReservationReportCategories(items);
-
-    expect(categories.map((category) => category.tab)).toEqual([
-      'Pendentes', 'Confirmadas', 'Efetivadas', 'Canceladas',
-    ]);
-    expect(categories.map((category) => category.reservations.map((item) => item.id))).toEqual([
-      ['pending'], ['confirmed'], ['active-rental', 'completed-rental'], ['canceled', 'canceled-rental'],
-    ]);
-    const classified = categories.flatMap((category) => category.reservations.map((item) => item.id));
-    expect(new Set(classified).size).toBe(classified.length);
-  });
-
-  it('keeps completed inspection expenses separate and normalizes individual costs', () => {
-    const inspections = buildInspectionCostsByVehicle([{
-      carro_id: 1, modelo: 'Hyundai HB20', placa: 'ABC1D23', quantidade: '2', total: '285.50',
-      vistorias: [
-        { id: 'v1', data: '2026-01-01', descricao: 'Pneus', km: 50000, valor: '100.00' },
-        { id: 'v2', data: '2026-10-01', descricao: 'Freios', km: 60000, valor: '185.50' },
+  it('excludes canceled reservations from conversion totals and formats the rate', () => {
+    const component = page();
+    const data = panel({
+      mensalReceita: [],
+      statusReservas: [
+        { status: 'pendente', quantidade: '2', locacoes: '0' },
+        { status: 'confirmada', quantidade: '3', locacoes: '3' },
+        { status: 'cancelada', quantidade: '4', locacoes: '0' },
       ],
-    }, { carro_id: 2, modelo: 'Sem vistoria', placa: 'SEM0001', quantidade: 0, total: 0, vistorias: [] }]);
-    expect(inspections).toHaveLength(1);
-    expect(inspections[0].total).toBe(285.5);
-    expect(inspections[0].vistorias.map((item) => item.valor)).toEqual([100, 185.5]);
+      reservasMensais: [], reservasPorVeiculoMes: [], revisoes: [], vistorias: [], veiculos: [],
+    });
+    expect(component.activeReservations(data)).toBe(5);
+    expect(component.rentalCount(data)).toBe(3);
+    expect(component.conversionRate(data)).toBe(60);
   });
 
-  it('formats inspection expense dates without a timezone day shift', () => {
-    const component = Object.create(ReportsPage.prototype) as ReportsPage;
-    expect(component.formatInspectionDate('2026-11-23T00:00:00.000Z')).toBe('23/11/2026');
+  it('uses only approved receipt in revenue and separates pending amounts', () => {
+    const component = page();
+    const data = panel({
+      mensalReceita: [
+        { mes: '2026-01', recebido: '120.50', pendente: '80.00', pagamentosConfirmados: '2', locacoesPagas: '1' },
+        { mes: '2026-02', recebido: '79.50', pendente: '20.00', pagamentosConfirmados: '1', locacoesPagas: '1' },
+      ],
+      statusReservas: [], reservasMensais: [], reservasPorVeiculoMes: [], revisoes: [], vistorias: [], veiculos: [],
+    });
+    expect(component.receivedTotal(data)).toBe(200);
+    expect(component.pendingTotal(data)).toBe(100);
+    expect(component.averageTicket(data)).toBe(100);
+  });
+
+  it('aggregates monthly reservations per vehicle and flags vehicles without reservations', () => {
+    const component = page();
+    const data = panel({
+      mensalReceita: [], statusReservas: [], reservasMensais: [],
+      reservasPorVeiculoMes: [
+        { mes: '2026-01', carro_id: 1, marca: 'Marca', modelo: 'A', placa: 'AAA1234', quantidade: '2' },
+        { mes: '2026-02', carro_id: 1, marca: 'Marca', modelo: 'A', placa: 'AAA1234', quantidade: '3' },
+      ], revisoes: [], vistorias: [],
+      veiculos: [
+        { carro_id: 1, marca: 'Marca', modelo: 'A', placa: 'AAA1234', quilometragemAtual: 100 },
+        { carro_id: 2, marca: 'Marca', modelo: 'B', placa: 'BBB1234', quilometragemAtual: 200 },
+      ],
+    });
+    expect(component.vehicleRanking(data)[0].quantidade).toBe(5);
+    expect(component.unusedVehicles(data).map(v => v.carro_id)).toEqual([2]);
+  });
+
+  it('loads each panel from the reports API with its own selected filters', async () => {
+    const component = page();
+    const data = panel(null);
+    data.key = 'vistorias';
+    data.de = '2026-01-01';
+    data.ate = '2026-01-31';
+    data.carroId = '8';
+    const report = { mensalReceita: [], statusReservas: [], reservasMensais: [], reservasPorVeiculoMes: [], revisoes: [], vistorias: [], veiculos: [] };
+    const get = vi.fn().mockReturnValue(of(report));
+    const markForCheck = vi.fn();
+    (component as any).http = { get };
+    (component as any).apiUrl = 'http://localhost:3000/api';
+    (component as any).changeDetector = { markForCheck };
+
+    await component.load(data);
+
+    expect(get).toHaveBeenCalledWith('http://localhost:3000/api/relatorios', { params: expect.anything() });
+    expect(get.mock.calls[0][1].params.toString()).toBe('de=2026-01-01&ate=2026-01-31&carroId=8');
+    expect(data.report).toBe(report);
+    expect(data.loading).toBe(false);
+    expect(markForCheck).toHaveBeenCalled();
+  });
+
+  it('uses one API response to populate all five report containers initially', async () => {
+    const component = page();
+    const panels = [panel(null), panel(null), panel(null), panel(null), panel(null)];
+    const report = { mensalReceita: [], statusReservas: [], reservasMensais: [], reservasPorVeiculoMes: [], revisoes: [], vistorias: [], veiculos: [] };
+    const get = vi.fn().mockReturnValue(of(report));
+    const markForCheck = vi.fn();
+    (component as any).panels = panels;
+    (component as any).http = { get };
+    (component as any).apiUrl = 'http://localhost:3000/api';
+    (component as any).changeDetector = { markForCheck };
+
+    await component.loadInitialReports();
+
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith('http://localhost:3000/api/relatorios');
+    expect(panels.every((item) => item.report === report && !item.loading && !item.error)).toBe(true);
+    expect(markForCheck).toHaveBeenCalled();
+  });
+
+  it('shows the API error on the report panel and schedules a view update', async () => {
+    const component = page();
+    const data = panel(null);
+    const markForCheck = vi.fn();
+    (component as any).http = { get: vi.fn().mockReturnValue(throwError(() => new HttpErrorResponse({
+      status: 404,
+      error: { message: 'Endpoint de relatórios não encontrado.' },
+    }))) };
+    (component as any).apiUrl = 'http://localhost:3000/api';
+    (component as any).changeDetector = { markForCheck };
+
+    await component.load(data);
+
+    expect(data.error).toBe('Endpoint de relatórios não encontrado.');
+    expect(data.loading).toBe(false);
+    expect(markForCheck).toHaveBeenCalled();
+  });
+
+  it('keeps filter visibility independent between report cards', () => {
+    const component = page();
+    const revenue = { filtersOpen: false } as any;
+    const reservations = { filtersOpen: false } as any;
+
+    component.toggleFilters(revenue);
+    expect(revenue.filtersOpen).toBe(true);
+    expect(reservations.filtersOpen).toBe(false);
+    component.toggleFilters(revenue);
+    expect(revenue.filtersOpen).toBe(false);
+  });
+
+  it('navigates calendar months and years and sends a selected date interval', async () => {
+    const component = page();
+    const data = panel(null);
+    Object.assign(data, { calendarYear: 2026, calendarMonth: 0, calendarTarget: 'de', calendarMode: 'days', calendarOpen: true });
+    component.changeCalendarMonth(data, -1);
+    expect([data.calendarYear, data.calendarMonth]).toEqual([2025, 11]);
+    component.selectCalendarYear(data, 2024);
+    expect(data.calendarYear).toBe(2024);
+    expect(data.calendarMode).toBe('months');
+    component.selectCalendarMonth(data, 1);
+    expect(data.calendarMonth).toBe(1);
+    component.selectCalendarDay(data, 29);
+    expect(data.de).toBe('2024-02-29');
+
+    component.openCalendar(data, 'ate');
+    data.calendarYear = 2024;
+    data.calendarMonth = 1;
+    component.selectCalendarDay(data, 29);
+    expect(data.ate).toBe('2024-02-29');
+    expect(component.calendarDays(data).filter(day => day > 0)).toHaveLength(29);
   });
 });

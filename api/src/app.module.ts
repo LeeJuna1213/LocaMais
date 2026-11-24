@@ -24,6 +24,7 @@ import { ConfiguracaoModule } from './configuracao/configuracao.module.js';
 import { RedisModule } from './redis/redis.module.js';
 import { CacheInvalidationModule } from './redis/cache-invalidation.module.js';
 import { FavoritoModule } from './favorito/favorito.module.js';
+import { RelatorioModule } from './relatorio/relatorio.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -69,6 +70,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     LojaModule,
     ConfiguracaoModule,
     FavoritoModule,
+    RelatorioModule,
   ],
   controllers: [AppController],
   providers: [

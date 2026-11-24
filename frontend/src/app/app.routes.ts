@@ -118,7 +118,7 @@ export const routes: Routes = [
       },
       {
         path: 'relatorios',
-        loadComponent: () => import('./pages/admin/reports.page').then((m) => m.ReportsPage),
+        loadComponent: () => import('./pages/admin/reports.page.component').then((m) => m.ReportsPage),
       },
       {
         path: 'menu',
