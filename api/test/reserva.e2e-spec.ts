@@ -548,6 +548,98 @@ describe('Reservas (e2e)', () => {
     expect(body.conflito?.id).toBe(firstReservationId);
   });
 
+  it('does not offer or accept future dates while a rental is still open, even if the car status is available', async () => {
+    const isolatedCar = await post<CarroBody>(app, '/carros', {
+      placa: 'OPN1A23', modelo: 'Corolla', marca: 'Toyota', categoria: 'Sedan',
+      lugares: 5, ano: 2024, valorDiaria: 100,
+    }, adminToken);
+    expect(isolatedCar.status).toBe(201);
+    const start = futureIso(150);
+    const reservation = await post<ReservaBody>(app, '/reservas', {
+      dataRetirada: start,
+      dataDevolucao: addHours(start, 48),
+      client_id: clientId,
+      car_id: isolatedCar.body.id,
+    }, clientToken);
+    expect(reservation.status).toBe(201);
+    const payment = await post(app, '/pagamentos/meus', {
+      reservation_id: reservation.body.id,
+      metodo: 'pix',
+    }, clientToken);
+    expect(payment.status).toBe(201);
+    const confirmed = await patch(app, `/reservas/${reservation.body.id}`, { status: 'confirmada' }, adminToken);
+    expect(confirmed.status).toBe(200);
+    const rental = await post<{ id: string }>(app, '/locacoes', { reservation_id: reservation.body.id }, adminToken);
+    expect(rental.status).toBe(201);
+    const pickup = await patch(app, `/locacoes/${rental.body.id}/retirada`, {}, adminToken);
+    expect(pickup.status).toBe(200);
+    const now = new Date();
+    await app.get(DataSource).query(
+      'UPDATE reservas SET dataRetirada = ?, dataDevolucao = ? WHERE id = ?',
+      [
+        new Date(now.getTime() - 48 * HOUR).toISOString().slice(0, 19).replace('T', ' '),
+        new Date(now.getTime() - HOUR).toISOString().slice(0, 19).replace('T', ' '),
+        reservation.body.id,
+      ],
+    );
+    await patch(app, `/carros/${isolatedCar.body.id}`, { status: 'disponivel' }, adminToken);
+
+    const requestedStart = futureIso(200);
+    const query = await get<DisponibilidadeBody & { dependeDeDevolucao?: boolean; alternativas?: unknown[] }>(
+      app,
+      queryAvailability(isolatedCar.body.id, requestedStart, addHours(requestedStart, 48)),
+      clientToken,
+    );
+    expect(query.status).toBe(200);
+    expect(query.body.disponivel).toBe(false);
+    expect(query.body.motivo).toBe('locacao_em_andamento');
+    expect(query.body.dependeDeDevolucao).toBe(true);
+    expect(query.body.alternativas).toEqual([]);
+
+    const attempt = await post(app, '/reservas', {
+      dataRetirada: requestedStart,
+      dataDevolucao: addHours(requestedStart, 48),
+      client_id: clientId,
+      car_id: isolatedCar.body.id,
+    }, clientToken);
+    expect(attempt.status).toBe(409);
+  });
+
+  it('returns concrete alternatives after existing reservations within a bounded horizon', async () => {
+    const start = futureIso(240);
+    const reservation = await post<ReservaBody>(app, '/reservas', {
+      dataRetirada: start,
+      dataDevolucao: addHours(start, 48),
+      client_id: clientId,
+      car_id: carId,
+    }, clientToken);
+    expect(reservation.status).toBe(201);
+    const query = await get<DisponibilidadeBody & { alternativas?: Array<{ dataRetirada: string; dataDevolucao: string }> }>(
+      app,
+      queryAvailability(carId, start, addHours(start, 48)),
+      clientToken,
+    );
+    expect(query.status).toBe(200);
+    expect(query.body.disponivel).toBe(false);
+    expect(query.body.alternativas?.length).toBeGreaterThan(0);
+    expect(new Date(query.body.alternativas![0].dataRetirada).getTime()).toBeGreaterThanOrEqual(new Date(addHours(start, 48)).getTime());
+    expect(new Date(query.body.alternativas![0].dataDevolucao).getTime() - new Date(query.body.alternativas![0].dataRetirada).getTime()).toBe(48 * HOUR);
+  });
+
+  it('keeps maintenance as an independent operational availability blocker', async () => {
+    const isolatedCar = await post<CarroBody>(app, '/carros', {
+      placa: 'MNT1A23', modelo: 'Civic', marca: 'Honda', categoria: 'Sedan',
+      lugares: 5, ano: 2024, valorDiaria: 100,
+    }, adminToken);
+    expect(isolatedCar.status).toBe(201);
+    const maintenance = await patch(app, `/carros/${isolatedCar.body.id}`, { status: 'em manutenção' }, adminToken);
+    expect(maintenance.status).toBe(200);
+    const start = futureIso(260);
+    const response = await get<DisponibilidadeBody>(app, queryAvailability(isolatedCar.body.id, start, addHours(start, 24)), clientToken);
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ disponivel: false, motivo: 'manutencao', conflito: null });
+  });
+
   it('cliente só lista e consulta as próprias reservas', async () => {
     const otherList = await get<ReservaBody[]>(
       app,

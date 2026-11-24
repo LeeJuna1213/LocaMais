@@ -21,6 +21,7 @@
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
+    "test:e2e:mysql": "vitest run --config ./vitest.config.mysql.e2e.ts",
     "test:e2e:redis": "vitest run --config ./vitest.config.redis.e2e.ts",
     "migration:show": "node --env-file=.env ./node_modules/typeorm/cli.js migration:show --dataSource src/database/data-source.ts",
     "migration:run": "node --env-file=.env ./node_modules/typeorm/cli.js migration:run --dataSource src/database/data-source.ts",

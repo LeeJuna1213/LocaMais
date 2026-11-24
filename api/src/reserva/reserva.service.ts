@@ -27,6 +27,8 @@ import { StatusPagamento } from '../pagamento/enums/status-pagamento.enum.js';
 import { Notificacao } from '../notificacao/entities/notificacao.entity.js';
 import { Estorno } from '../pagamento/entities/estorno.entity.js';
 import { NotificacaoService } from '../notificacao/notificacao.service.js';
+import { Locacao } from '../locacao/entities/locacao.entity.js';
+import { StatusLocacao } from '../locacao/enums/status-locacao.enum.js';
 
 import { ConsultarDisponibilidadeDto } from './dto/consultar-disponibilidade.dto.js';
 import { CreateReservaDto } from './dto/create-reserva.dto.js';
@@ -48,7 +50,7 @@ const STATUSES_BLOQUEANTES: StatusReserva[] = [
 
 /** Motivos possíveis para um veículo não estar disponível em um período. */
 export type MotivoIndisponibilidade =
-  'manutencao' | 'locacao_em_andamento' | 'conflito';
+  'manutencao' | 'locacao_em_andamento' | 'conflito' | 'impedimento_operacional';
 
 /** Resumo de uma reserva que conflita com o período consultado. */
 export interface ConflitoReserva {
@@ -66,6 +68,10 @@ export interface DisponibilidadeReserva {
   disponivel: boolean;
   motivo: MotivoIndisponibilidade | null;
   conflito: ConflitoReserva | null;
+  locacaoEmAndamento?: { dataRetirada: Date | null; dataDevolucaoPrevista: Date; devolucaoRegistrada: false } | null;
+  dependeDeDevolucao?: boolean;
+  alternativas?: Array<{ dataRetirada: Date; dataDevolucao: Date }>;
+  horizonteAlternativasDias?: number;
 }
 
 /**
@@ -224,6 +230,7 @@ export class ReservaService {
       .leftJoinAndSelect('client.user', 'user')
       .leftJoinAndSelect('reservation.car', 'car')
       .leftJoinAndSelect('reservation.locacao', 'rental')
+      .leftJoinAndSelect('reservation.pagamentos', 'payment')
       .where('client.user_id = :userId', { userId: actor.id })
       .orderBy('reservation.dataRetirada', 'ASC')
       .getMany();
@@ -661,6 +668,9 @@ export class ReservaService {
       dataRetirada,
       dataDevolucao,
     );
+    const alternatives = resultado.motivo === 'conflito'
+      ? await this.getAlternatives(this.reservasRepository, car.id, dataRetirada, dataDevolucao)
+      : [];
 
     return {
       car_id: car.id,
@@ -676,6 +686,14 @@ export class ReservaService {
             status: resultado.conflito.status,
           }
         : null,
+      locacaoEmAndamento: resultado.locacao ? {
+        dataRetirada: resultado.locacao.dataRetirada,
+        dataDevolucaoPrevista: resultado.locacao.reservation.dataDevolucao,
+        devolucaoRegistrada: false,
+      } : null,
+      dependeDeDevolucao: resultado.motivo === 'locacao_em_andamento',
+      alternativas: alternatives,
+      horizonteAlternativasDias: 90,
     };
   }
 
@@ -783,11 +801,46 @@ export class ReservaService {
   }
 
   /**
+   * Pickup shares the vehicle-first lock order with reservation writes.
+   * The pickup rechecks all blocking reservations overlapping the planned
+   * rental interval before switching the car to rented.
+   */
+  async assertCanStartRental(
+    manager: EntityManager,
+    reservationId: string,
+    car: Carro,
+    scheduledReturn: Date,
+  ): Promise<void> {
+    if (car.status === StatusVeiculo.MANUTENCAO) {
+      throw new ConflictException('veiculo em manutencao nao pode ter retirada registrada');
+    }
+    if (car.status === StatusVeiculo.ALUGADO) {
+      throw new ConflictException('veiculo ja esta marcado como alugado');
+    }
+    const conflict = await manager.getRepository(Reserva).createQueryBuilder('reservation')
+      .where('reservation.car_id = :carId', { carId: car.id })
+      .andWhere('reservation.id <> :reservationId', { reservationId })
+      .andWhere('reservation.status IN (:...statuses)', { statuses: STATUSES_BLOQUEANTES })
+      .andWhere('reservation.dataRetirada < :scheduledReturn', { scheduledReturn })
+      .andWhere('reservation.dataDevolucao > :now', { now: new Date() })
+      .getOne();
+    if (conflict) {
+      throw new ConflictException('retirada bloqueada: existe outra reserva válida para este veículo antes de haver devolução efetiva');
+    }
+    const activeRental = await manager.getRepository(Locacao).createQueryBuilder('rental')
+      .innerJoin('rental.reservation', 'rentalReservation')
+      .where('rentalReservation.car_id = :carId', { carId: car.id })
+      .andWhere('rental.status = :status', { status: StatusLocacao.EM_ANDAMENTO })
+      .andWhere('rental.dataDevolucao IS NULL')
+      .getExists();
+    if (activeRental) throw new ConflictException('veiculo possui uma locação em andamento');
+  }
+
+  /**
    * Garante que o carro pode ser reservado no período ou lança 409.
    *
-   * `ALUGADO` representa uma locação em andamento. Para retiradas futuras,
-   * permitimos a reserva e deixamos o calendário de reservas decidir; para
-   * retirada imediata/passada, bloqueamos. `MANUTENCAO` bloqueia sempre.
+   * A locação aberta é verificada pela relação Locacao -> Reserva -> Carro;
+   * o status do veículo permanece um impedimento operacional independente.
    */
   private async assertAvailable(
     repository: Repository<Reserva>,
@@ -812,8 +865,12 @@ export class ReservaService {
 
     if (resultado.motivo === 'locacao_em_andamento') {
       throw new ConflictException(
-        `veiculo ${car.id} esta alugado no momento; escolha uma retirada futura`,
+        'Este veículo está atualmente em locação. A disponibilidade dependerá da devolução efetiva e da liberação do veículo.',
       );
+    }
+
+    if (resultado.motivo === 'impedimento_operacional') {
+      throw new ConflictException(`veiculo ${car.id} possui um impedimento operacional e nao pode ser reservado`);
     }
 
     if (resultado.conflito) {
@@ -823,7 +880,7 @@ export class ReservaService {
     }
   }
 
-  /** Calcula o motivo de indisponibilidade e a reserva conflitante, se houver. */
+  /** Calcula o motivo, conflito e eventual locação aberta a partir do MySQL. */
   private async getAvailability(
     repository: Repository<Reserva>,
     car: Carro,
@@ -833,16 +890,30 @@ export class ReservaService {
   ): Promise<{
     motivo: MotivoIndisponibilidade | null;
     conflito: Reserva | null;
+    locacao: Locacao | null;
   }> {
     if (car.status === StatusVeiculo.MANUTENCAO) {
-      return { motivo: 'manutencao', conflito: null };
+      return { motivo: 'manutencao', conflito: null, locacao: null };
     }
 
-    if (
-      car.status === StatusVeiculo.ALUGADO &&
-      dataRetirada.getTime() <= Date.now()
-    ) {
-      return { motivo: 'locacao_em_andamento', conflito: null };
+    const activeReservation = await repository.createQueryBuilder('reservation')
+      .innerJoinAndSelect('reservation.locacao', 'activeRental')
+      .innerJoinAndSelect('activeRental.reservation', 'rentalReservation')
+      .where('reservation.car_id = :carId', { carId: car.id })
+      .andWhere('activeRental.status = :status', { status: StatusLocacao.EM_ANDAMENTO })
+      .andWhere('activeRental.dataDevolucao IS NULL')
+      .getOne();
+    const locacao = activeReservation?.locacao ?? null;
+    if (locacao && !locacao.reservation) {
+      locacao.reservation = activeReservation!;
+    }
+
+    if (locacao) {
+      return { motivo: 'locacao_em_andamento', conflito: null, locacao };
+    }
+
+    if (car.status === StatusVeiculo.ALUGADO) {
+      return { motivo: 'impedimento_operacional', conflito: null, locacao: null };
     }
 
     const conflito = await this.findConflict(
@@ -856,7 +927,42 @@ export class ReservaService {
     return {
       motivo: conflito ? 'conflito' : null,
       conflito,
+      locacao: null,
     };
+  }
+
+  /** Gera até três alternativas, com duração solicitada e horizonte fixo de 90 dias. */
+  private async getAlternatives(
+    repository: Repository<Reserva>,
+    carId: number,
+    requestedStart: Date,
+    requestedEnd: Date,
+  ): Promise<Array<{ dataRetirada: Date; dataDevolucao: Date }>> {
+    const duration = requestedEnd.getTime() - requestedStart.getTime();
+    const horizonEnd = new Date(Math.max(requestedStart.getTime(), Date.now()) + 90 * 24 * 60 * 60 * 1000);
+    const reservations = await repository.createQueryBuilder('reservation')
+      .where('reservation.car_id = :carId', { carId })
+      .andWhere('reservation.status IN (:...statuses)', { statuses: STATUSES_BLOQUEANTES })
+      .andWhere('reservation.dataDevolucao > :now', { now: new Date() })
+      .orderBy('reservation.dataRetirada', 'ASC')
+      .getMany();
+
+    const alternatives: Array<{ dataRetirada: Date; dataDevolucao: Date }> = [];
+    let candidate = new Date(Math.max(requestedEnd.getTime(), Date.now()));
+    while (alternatives.length < 3 && candidate.getTime() + duration <= horizonEnd.getTime()) {
+      const candidateEnd = new Date(candidate.getTime() + duration);
+      const conflict = reservations.find((reservation) =>
+        reservation.dataRetirada.getTime() < candidateEnd.getTime()
+        && reservation.dataDevolucao.getTime() > candidate.getTime(),
+      );
+      if (conflict) {
+        candidate = new Date(conflict.dataDevolucao);
+        continue;
+      }
+      alternatives.push({ dataRetirada: new Date(candidate), dataDevolucao: candidateEnd });
+      candidate = candidateEnd;
+    }
+    return alternatives;
   }
 
   /**

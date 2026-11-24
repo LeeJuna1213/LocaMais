@@ -27,6 +27,19 @@ export interface CreateReservationInput {
   quotedServiceFee?: number | null;
 }
 export interface ReservationQuote { valorDiaria: number; diarias: number; valorSubtotal: number; taxaServico: number; valorTotal: number }
+export interface AvailabilityAlternative { dataRetirada: string; dataDevolucao: string }
+export interface ReservationAvailability {
+  car_id: number;
+  dataRetirada: string;
+  dataDevolucao: string;
+  disponivel: boolean;
+  motivo: 'manutencao' | 'locacao_em_andamento' | 'conflito' | 'impedimento_operacional' | null;
+  conflito: { id: string; dataRetirada: string; dataDevolucao: string; status: string } | null;
+  locacaoEmAndamento: { dataRetirada: string | null; dataDevolucaoPrevista: string; devolucaoRegistrada: false } | null;
+  dependeDeDevolucao: boolean;
+  alternativas: AvailabilityAlternative[];
+  horizonteAlternativasDias: number;
+}
 
 export type ClientReservationTab = 'Futuras' | 'Em andamento' | 'Histórico';
 export type AdminReservationTab = 'Todas' | 'Pendentes' | 'Confirmadas' | 'Em andamento' | 'Concluídas' | 'Canceladas';
@@ -166,6 +179,24 @@ export class ReservationService {
       return await firstValueFrom(this.http.get<ReservationQuote>(`${this.apiUrl}/reservas/estimativa?${params}`));
     } catch (error) {
       throw new Error(this.apiErrors.message(error, 'Não foi possível calcular os valores da reserva.'));
+    }
+  }
+
+  async checkAvailability(input: Pick<CreateReservationInput, 'vehicleId' | 'start' | 'end' | 'pickupTime' | 'returnTime'>): Promise<ReservationAvailability> {
+    const toLocalDateTimeIso = (date: string, time: string): string => {
+      const [year, month, day] = date.slice(0, 10).split('-').map(Number);
+      const [hours, minutes] = time.split(':').map(Number);
+      return new Date(year, month - 1, day, hours, minutes, 0, 0).toISOString();
+    };
+    const params = new URLSearchParams({
+      car_id: String(input.vehicleId),
+      dataRetirada: toLocalDateTimeIso(input.start, input.pickupTime ?? '10:00'),
+      dataDevolucao: toLocalDateTimeIso(input.end, input.returnTime ?? '10:00'),
+    });
+    try {
+      return await firstValueFrom(this.http.get<ReservationAvailability>(`${this.apiUrl}/reservas/disponibilidade?${params}`));
+    } catch (error) {
+      throw new Error(this.apiErrors.message(error, 'Não foi possível consultar a disponibilidade do veículo.'));
     }
   }
 

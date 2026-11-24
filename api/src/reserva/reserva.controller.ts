@@ -99,7 +99,7 @@ export class ReservaController {
   @ApiOperation({
     summary: 'Consulta disponibilidade de um veiculo em um periodo',
     description:
-      'Retorna disponivel=true/false. Reservas canceladas nao bloqueiam o periodo. O fim de uma reserva pode coincidir com o inicio de outra.',
+      'Retorna disponibilidade, motivo, conflito sem dados pessoais e até três alternativas reais em horizonte de 90 dias. Locações em andamento sem devolução efetiva não geram previsão garantida. Reservas canceladas/concluídas não bloqueiam e períodos consecutivos são permitidos.',
   })
   @ApiOkResponse({
     description: 'Consulta de disponibilidade realizada.',
@@ -116,6 +116,11 @@ export class ReservaController {
           dataDevolucao: '2026-11-12T10:00:00.000Z',
           status: 'pendente',
         },
+        dependeDeDevolucao: false,
+        alternativas: [
+          { dataRetirada: '2026-11-12T10:00:00.000Z', dataDevolucao: '2026-11-14T10:00:00.000Z' },
+        ],
+        horizonteAlternativasDias: 90,
       },
     },
   })

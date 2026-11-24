@@ -84,6 +84,7 @@ describe('ReservaService', () => {
         })),
         save: vi.fn().mockImplementation((_entity: any) => mockReserva),
         createQueryBuilder: vi.fn().mockReturnValue({
+          innerJoinAndSelect: vi.fn().mockReturnThis(),
           where: vi.fn().mockReturnThis(),
           andWhere: vi.fn().mockReturnThis(),
           getOne: vi.fn().mockResolvedValue(null),
@@ -390,6 +391,7 @@ describe('ReservaService', () => {
         create: vi.fn().mockImplementation((dto: any) => dto),
         save: vi.fn().mockRejectedValue(new Error('db error')),
         createQueryBuilder: vi.fn().mockReturnValue({
+          innerJoinAndSelect: vi.fn().mockReturnThis(),
           where: vi.fn().mockReturnThis(),
           andWhere: vi.fn().mockReturnThis(),
           getOne: vi.fn().mockResolvedValue(null),
@@ -414,6 +416,7 @@ describe('ReservaService', () => {
         create: vi.fn().mockImplementation((dto: any) => dto),
         save: vi.fn().mockResolvedValue(mockReserva),
         createQueryBuilder: vi.fn().mockReturnValue({
+          innerJoinAndSelect: vi.fn().mockReturnThis(),
           where: vi.fn().mockReturnThis(),
           andWhere: vi.fn().mockReturnThis(),
           getOne: vi.fn().mockResolvedValue(null),

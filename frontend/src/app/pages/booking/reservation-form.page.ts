@@ -1,9 +1,9 @@
-import { CurrencyPipe } from '@angular/common';
-import { Component, inject } from '@angular/core';
+import { CurrencyPipe, DatePipe } from '@angular/common';
+import { ChangeDetectorRef, Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AlertController } from '@ionic/angular';
 import { ActivatedRoute, Router } from '@angular/router';
-import { addDays, daysBetween, todayISO } from '../../core/data';
+import { addDays, todayISO } from '../../core/data';
 import { Vehicle } from '../../core/models';
 import { AuthService } from '../../core/services/auth.service';
 import { BookingService } from '../../core/services/booking.service';
@@ -14,14 +14,23 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
 import { CarComponent } from '../../shared/components/car.component';
 import { ImageUrlService } from '../../core/services/image-url.service';
 import { ShopService } from '../../core/services/shop.service';
+import { ReservationAvailability, ReservationQuote, ReservationService } from '../../core/services/reservation.service';
 
 @Component({
   selector: 'app-reservation-form',
   standalone: true,
-  imports: [FormsModule, AppShellComponent, CarComponent, CurrencyPipe],
+  imports: [FormsModule, AppShellComponent, CarComponent, CurrencyPipe, DatePipe],
   styles: [`
     .reservation-photo { display:block;width:104px;height:76px;object-fit:cover;border-radius:12px;flex:none }
     .pickup-shop-select { display:block;width:100%;max-width:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    .availability { margin:12px 0; padding:12px; border:1px solid #e8d8c8; border-radius:12px; overflow-wrap:anywhere; }
+    .availability[ data-state="available"] { background:#f1f8f2; border-color:#c7dfca; }
+    .availability[ data-state="unavailable"] { background:#fff6ef; border-color:#edc9ad; }
+    .availability-options { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; width:100%; max-width:100%; min-width:0; margin-top:10px; }
+    .availability-option { box-sizing:border-box; display:flex; flex-direction:column; align-items:flex-start; gap:5px; width:100%; min-width:0; max-width:100%; padding:10px; border:1px solid #eadfd5; border-radius:10px; background:#fff; color:inherit; text-align:left; }
+    .availability-option span { max-width:100%; white-space:nowrap; }
+    .availability-option .period-action { margin-top:2px; color:#a04b0c; font-size:12px; font-weight:700; }
+    input, select, button { box-sizing:border-box; max-width:100%; }
   `],
   template: `
     <app-shell title="Reserva do veículo" [back]="true" [defaultHref]="backHref">
@@ -53,12 +62,39 @@ import { ShopService } from '../../core/services/shop.service';
           <label>Data de retirada</label>
           <input type="date" [min]="today" [ngModel]="start" (ngModelChange)="onStartChange($event)" />
           <label>Horário de retirada</label>
-          <input type="time" [(ngModel)]="pickupTime" />
+          <input type="time" [ngModel]="pickupTime" (ngModelChange)="pickupTime = $event; scheduleAvailability()" />
 
           <label>Data de devolução</label>
-          <input type="date" [min]="minEnd" [ngModel]="end" (ngModelChange)="end = $event" />
+          <input type="date" [min]="start" [ngModel]="end" (ngModelChange)="end = $event; scheduleAvailability()" />
           <label>Horário de devolução</label>
-          <input type="time" [(ngModel)]="returnTime" />
+          <input type="time" [ngModel]="returnTime" (ngModelChange)="returnTime = $event; scheduleAvailability()" />
+
+          @if (availabilityLoading) { <div class="availability" role="status">Consultando disponibilidade...</div> }
+          @else if (availabilityError) { <div class="availability" role="alert">{{ availabilityError }}</div> }
+          @else if (availability; as result) {
+            <section class="availability" [attr.data-state]="result.disponivel ? 'available' : 'unavailable'" aria-live="polite">
+              @if (result.disponivel) { <b>Veículo disponível para o período selecionado.</b> }
+              @else {
+                <b>Este veículo não está disponível para o período selecionado.</b>
+                @if (result.dependeDeDevolucao) { <p>Este veículo está atualmente em locação. A disponibilidade dependerá da devolução efetiva e da liberação do veículo.</p> }
+                @else if (result.motivo === 'conflito') { <p>Já existe uma reserva válida nesse intervalo.</p> }
+                @else if (result.motivo === 'manutencao') { <p>O veículo está em manutenção.</p> }
+                @else { <p>Existe outro impedimento operacional para este veículo.</p> }
+                @if (result.alternativas.length) {
+                  <b>Outros períodos disponíveis</b>
+                  <div class="availability-options">
+                    @for (alternative of result.alternativas; track alternative.dataRetirada) {
+                      <button class="availability-option" type="button" (click)="selectAlternative(alternative)">
+                        <span>{{ alternative.dataRetirada | date:'dd/MM/yyyy HH:mm' }}</span>
+                        <span>até {{ alternative.dataDevolucao | date:'dd/MM/yyyy HH:mm' }}</span>
+                        <span class="period-action">Selecionar período</span>
+                      </button>
+                    }
+                  </div>
+                } @else if (!result.dependeDeDevolucao) { <p>Não há alternativas dentro dos próximos {{ result.horizonteAlternativasDias }} dias.</p> }
+              }
+            </section>
+          }
 
            @if (shops.loading()) { <div class="small muted" role="status">Carregando lojas...</div> }
            @else if (shops.error(); as shopError) { <div class="small" role="alert">{{ shopError }}</div><button class="lnk dark" type="button" (click)="loadShops()">Tentar novamente</button> }
@@ -71,9 +107,9 @@ import { ShopService } from '../../core/services/shop.service';
            }
 
           <div class="kv"><span>Período</span><b>{{ days }} diárias</b></div>
-          <div class="kv"><span>Valor total</span><b>{{ total | currency: 'BRL' }}</b></div>
+          <div class="kv"><span>Valor total estimado</span><b>{{ availability?.disponivel === false ? '—' : (estimate?.valorTotal ?? total | currency: 'BRL') }}</b></div>
 
-          <button class="btn" type="button" (click)="continueBooking()">Continuar</button>
+          <button class="btn" type="button" [disabled]="availabilityLoading || availabilityError !== null || availability?.disponivel === false" (click)="continueBooking()">Continuar</button>
         </div>
       } @else {
         <div class="card empty">Veículo não encontrado</div>
@@ -90,6 +126,8 @@ export class ReservationFormPage {
   private readonly booking = inject(BookingService);
   private readonly toast = inject(ToastService);
   private readonly alerts = inject(AlertController);
+  private readonly changeDetector = inject(ChangeDetectorRef);
+  private readonly reservations = inject(ReservationService);
   private readonly imageUrls = inject(ImageUrlService);
   readonly shops = inject(ShopService);
 
@@ -105,6 +143,12 @@ export class ReservationFormPage {
   selectedShopId: number | null = null;
   pickupTime = '10:00';
   returnTime = '10:00';
+  availability: ReservationAvailability | null = null;
+  availabilityLoading = false;
+  availabilityError: string | null = null;
+  estimate: ReservationQuote | null = null;
+  private availabilityTimer: ReturnType<typeof setTimeout> | null = null;
+  private availabilityRequest = 0;
 
   constructor() {
     if (this.isStaff) void this.loadClients();
@@ -115,7 +159,9 @@ export class ReservationFormPage {
       this.booking.selectVehicle(id);
     }
     if (id > 0 && !this.booking.vehicle()) {
-      void this.vehicleService.loadOne(id).catch(async (error: unknown) => {
+      void this.vehicleService.loadOne(id).then(() => {
+        this.scheduleAvailability();
+      }).catch(async (error: unknown) => {
         await this.toast.show(error instanceof Error ? error.message : 'Não foi possível carregar o veículo');
       });
     }
@@ -127,6 +173,7 @@ export class ReservationFormPage {
     this.selectedShopId = this.booking.pickupShopId();
     this.clientName = this.booking.clientName() || this.activeClients()[0]?.name || '';
     this.selectedClientId = this.booking.clientId() ?? null;
+    this.scheduleAvailability();
   }
 
   async load(): Promise<void> {
@@ -173,11 +220,12 @@ export class ReservationFormPage {
   }
 
   get minEnd(): string {
-    return addDays(this.start, 1);
+    return this.start;
   }
 
   get days(): number {
-    return daysBetween(this.start, this.end);
+    const duration = this.toLocalDateTime(this.end, this.returnTime) - this.toLocalDateTime(this.start, this.pickupTime);
+    return Math.max(1, Math.ceil(duration / (24 * 60 * 60 * 1000)));
   }
 
   get total(): number {
@@ -189,6 +237,59 @@ export class ReservationFormPage {
     if (this.end < this.start || (this.end === this.start && this.returnTime <= this.pickupTime)) {
       this.end = addDays(this.start, 1);
     }
+    this.scheduleAvailability();
+  }
+
+  scheduleAvailability(): void {
+    if (this.availabilityTimer) clearTimeout(this.availabilityTimer);
+    this.availability = null;
+    this.availabilityError = null;
+    this.estimate = null;
+    if (!this.vehicle || !this.start || !this.end || !this.pickupTime || !this.returnTime) {
+      this.availabilityLoading = false;
+      return;
+    }
+    this.availabilityLoading = true;
+    this.availabilityTimer = setTimeout(() => { void this.refreshAvailability(); }, 350);
+  }
+
+  async refreshAvailability(): Promise<boolean> {
+    const vehicle = this.vehicle;
+    if (!vehicle || !this.start || !this.end) return false;
+    const request = ++this.availabilityRequest;
+    this.availabilityLoading = true;
+    this.availabilityError = null;
+    this.changeDetector.markForCheck();
+    try {
+      const input = { vehicleId: vehicle.id, start: this.start, end: this.end, pickupTime: this.pickupTime, returnTime: this.returnTime };
+      const result = await this.reservations.checkAvailability(input);
+      if (request !== this.availabilityRequest) return false;
+      this.availability = result;
+      if (result.disponivel) this.estimate = await this.reservations.quote(input);
+      return result.disponivel;
+    } catch (error) {
+      if (request === this.availabilityRequest) this.availabilityError = error instanceof Error ? error.message : 'Não foi possível consultar a disponibilidade.';
+      return false;
+    } finally {
+      if (request === this.availabilityRequest) {
+        this.availabilityLoading = false;
+        this.changeDetector.markForCheck();
+      }
+    }
+  }
+
+  selectAlternative(alternative: { dataRetirada: string; dataDevolucao: string }): void {
+    const start = new Date(alternative.dataRetirada);
+    const end = new Date(alternative.dataDevolucao);
+    const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const localTime = (date: Date) => `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    this.start = localDate(start);
+    this.end = localDate(end);
+    this.pickupTime = localTime(start);
+    this.returnTime = localTime(end);
+    this.booking.setDates(this.start, this.end);
+    this.booking.setTimes(this.pickupTime, this.returnTime);
+    this.scheduleAvailability();
   }
 
   async continueBooking(): Promise<void> {
@@ -204,8 +305,12 @@ export class ReservationFormPage {
       await this.toast.show('Selecione uma loja ativa para retirada.');
       return;
     }
-    if (this.end <= this.start) {
+    if (this.toLocalDateTime(this.end, this.returnTime) <= this.toLocalDateTime(this.start, this.pickupTime)) {
       await this.toast.show('A devolução deve ser depois da retirada');
+      return;
+    }
+    if (!await this.refreshAvailability()) {
+      if (this.availabilityError) await this.toast.show(this.availabilityError);
       return;
     }
     if (!this.isStaff) {
@@ -226,6 +331,12 @@ export class ReservationFormPage {
     this.booking.setPickupShop(this.selectedShopId, this.location);
     this.booking.setClientName(this.clientName);
     await this.router.navigateByUrl('/booking/confirmar');
+  }
+
+  private toLocalDateTime(day: string, time: string): number {
+    const [year, month, date] = day.split('-').map(Number);
+    const [hours, minutes] = time.split(':').map(Number);
+    return new Date(year, month - 1, date, hours, minutes).getTime();
   }
 
   private async showProfileRequirements(pendencias: string[]): Promise<void> {

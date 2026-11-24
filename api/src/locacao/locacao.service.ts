@@ -229,13 +229,31 @@ export class LocacaoService {
       const locacaoRepository = manager.getRepository(Locacao);
       const carRepository = manager.getRepository(Carro);
 
+      // Sempre bloquear primeiro o veículo, na mesma ordem de ReservaService.
+      const carId = current.reservation.car_id;
+      const carOptions = {
+        where: { id: carId },
+        ...(manager.connection.options.type === 'mysql'
+          ? { lock: { mode: 'pessimistic_write' as const } }
+          : {}),
+      };
+      const lockedCar = await manager.findOne(Carro, carOptions);
+      if (!lockedCar) throw new NotFoundException(`veiculo de ID ${carId} nao encontrado`);
+
       const locacao = await locacaoRepository.findOne({
         where: { id },
         relations: { reservation: { car: true } },
+        ...(manager.connection.options.type === 'mysql'
+          ? { lock: { mode: 'pessimistic_write' as const } }
+          : {}),
       });
 
       if (!locacao) {
         throw new NotFoundException(`locacao de ID ${id} nao encontrada`);
+      }
+
+      if (locacao.reservation.car_id !== lockedCar.id) {
+        throw new ConflictException('a reserva foi alterada durante o início da locação; tente novamente');
       }
 
       if (locacao.status !== StatusLocacao.AGUARDANDO_RETIRADA) {
@@ -244,18 +262,22 @@ export class LocacaoService {
         );
       }
 
+      if (locacao.reservation.status !== StatusReserva.CONFIRMADA) {
+        throw new ConflictException('a reserva precisa continuar confirmada para registrar a retirada');
+      }
+      await this.reservaService.assertCanStartRental(
+        manager,
+        locacao.reservation_id,
+        lockedCar,
+        locacao.reservation.dataDevolucao,
+      );
+
       locacao.registrarRetirada();
 
-      const car = locacao.reservation.car;
-      if (!car) {
-        throw new NotFoundException(
-          `veiculo da reserva ${locacao.reservation_id} nao encontrado`,
-        );
-      }
-      car.status = StatusVeiculo.ALUGADO;
+      lockedCar.status = StatusVeiculo.ALUGADO;
 
       await locacaoRepository.save(locacao);
-      await carRepository.save(car);
+      await carRepository.save(lockedCar);
 
       return locacao;
     });
