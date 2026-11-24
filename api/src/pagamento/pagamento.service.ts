@@ -19,6 +19,11 @@ import { UpdatePagamentoDto } from './dto/update-pagamento.dto.js';
 import { GatewayPagamentoService } from './gateway-pagamento.service.js';
 import type { UsuarioAutenticado } from '../common/interfaces/usuario-autenticado.interface.js';
 import { TipoUsuario } from '../usuario/enums/usuario.enum.js';
+import { Reserva } from '../reserva/entities/reserva.entity.js';
+import { StatusReserva } from '../reserva/enums/status-reserva.enum.js';
+import { Estorno } from './entities/estorno.entity.js';
+import { NotificacaoService } from '../notificacao/notificacao.service.js';
+import { RedisService } from '../redis/redis.service.js';
 
 /**
  * Regras de negócio de pagamento de locações.
@@ -54,6 +59,10 @@ export class PagamentoService {
     private readonly dataSource: DataSource,
     private readonly locacaoService: LocacaoService,
     private readonly gatewayService: GatewayPagamentoService,
+    @InjectRepository(Reserva) private readonly reservasRepository: Repository<Reserva>,
+    @InjectRepository(Estorno) private readonly estornosRepository: Repository<Estorno>,
+    private readonly notificacoes: NotificacaoService,
+    private readonly redis: RedisService,
   ) {}
 
   /**
@@ -126,50 +135,56 @@ export class PagamentoService {
     actor: UsuarioAutenticado,
     dto: CreatePagamentoClienteDto,
   ): Promise<Pagamento> {
-    const locacoes = await this.locacaoService.findAll(actor);
-    let locacao = locacoes.find(
-      (item) => item.reservation_id === dto.reservation_id,
-    );
-
-    if (!locacao) {
-      try {
-        locacao = await this.locacaoService.create(actor, {
-          reservation_id: dto.reservation_id,
-        });
-      } catch (error) {
-        // An earlier concurrent request may have created the one allowed
-        // locação for this reservation. Re-read rather than duplicating it.
-        const refreshed = await this.locacaoService.findAll(actor);
-        locacao = refreshed.find(
-          (item) => item.reservation_id === dto.reservation_id,
-        );
-        if (!locacao) throw error;
-      }
-    }
-
-    if (locacao.status === StatusLocacao.CANCELADA) {
-      throw new ConflictException('não é possível pagar uma locação cancelada');
-    }
-
-    const pendingPayment = await this.pagamentosRepository.exists({
-      where: {
-        locacao_id: locacao.id,
-        status: StatusPagamento.PENDENTE,
-      },
+    const reservation = await this.reservasRepository.findOne({
+      where: { id: dto.reservation_id },
+      relations: { client: { user: true }, car: true, lojaRetirada: true },
     });
-    if (pendingPayment) {
-      throw new ConflictException('já existe um pagamento pendente para esta locação');
+    if (!reservation || reservation.client?.user_id !== actor.id) {
+      throw new NotFoundException(`reserva ${dto.reservation_id} não encontrada`);
     }
-
-    const saldoRestante = await this.calcularSaldoRestante(locacao.id);
-    const valor = dto.valor ?? saldoRestante;
-    if (valor <= 0 || valor > saldoRestante) {
-      throw new ConflictException(
-        `valor do pagamento deve ser maior que zero e não exceder o saldo restante (${saldoRestante})`,
-      );
+    if ([StatusReserva.CANCELADA, StatusReserva.CONCLUIDA].includes(reservation.status)) {
+      throw new ConflictException('não é possível pagar uma reserva cancelada ou concluída');
     }
+    let processed = false;
+    const payment = await this.dataSource.transaction(async (manager) => {
+      const paymentRepository = manager.getRepository(Pagamento);
+      const current = await paymentRepository.findOne({
+        where: { reservation_id: reservation.id },
+        relations: { reservation: { client: { user: true }, car: true, lojaRetirada: true }, locacao: true },
+        ...(manager.connection.options.type === 'mysql' ? { lock: { mode: 'pessimistic_write' as const } } : {}),
+      });
+      if (!current) throw new NotFoundException('pagamento pendente não encontrado para esta reserva');
+      if (current.status === StatusPagamento.APROVADO) return current;
+      if (current.status !== StatusPagamento.PENDENTE) throw new ConflictException('pagamento não está pendente');
 
-    return this.create({ locacaoId: locacao.id, metodo: dto.metodo, valor });
+      const value = Number(reservation.valorTotal);
+      if (!Number.isFinite(value) || value <= 0 || (dto.valor !== undefined && Number(dto.valor) !== value)) {
+        throw new ConflictException('o valor do pagamento deve corresponder ao total calculado pelo sistema');
+      }
+      const result = this.gatewayService.processarTransacao(value, dto.metodo);
+      if (!result.aprovado) throw new ConflictException('pagamento simulado recusado');
+      current.valor = value;
+      current.metodo = dto.metodo;
+      current.status = StatusPagamento.APROVADO;
+      current.data = new Date();
+      const gatewayRepository = manager.getRepository(GatewayPagamento);
+      const gateway = gatewayRepository.create({ tipo: 'simulado', credenciais: 'gateway-simulado-locamais-v1', pagamento_id: current.id });
+      await gatewayRepository.save(gateway);
+      current.gateway_id = gateway.id;
+      current.gateway = gateway;
+      current.comprovante_snapshot = this.buildReceiptSnapshot(current, current.data);
+      await paymentRepository.save(current);
+      await manager.getRepository(Reserva).update({ id: reservation.id, status: StatusReserva.PENDENTE }, { status: StatusReserva.AGUARDANDO_CONFIRMACAO });
+      processed = true;
+      return current;
+    });
+    try { await this.redis.del(`locamais:reserva:${reservation.id}`); } catch { /* MySQL remains authoritative. */ }
+    if (processed) await this.notificacoes.create({
+      usuario_id: actor.id, reserva_id: reservation.id, tipo: 'pagamento_aprovado',
+      titulo: 'Pagamento simulado aprovado',
+      descricao: `O pagamento da reserva ${reservation.codigo} foi aprovado. A equipe pode confirmar a reserva.`,
+    });
+    return payment;
   }
 
   /**
@@ -180,7 +195,7 @@ export class PagamentoService {
   async findAll(): Promise<Pagamento[]> {
     return this.pagamentosRepository.find({
       order: { data: 'DESC' },
-      relations: { locacao: { reservation: { client: { user: true }, car: true } } },
+      relations: { locacao: { reservation: { client: { user: true }, car: true } }, reservation: { client: { user: true }, car: true, lojaRetirada: true }, estorno: true },
     });
   }
 
@@ -188,9 +203,14 @@ export class PagamentoService {
     return this.pagamentosRepository.createQueryBuilder('payment')
       .leftJoinAndSelect('payment.locacao', 'locacao')
       .leftJoinAndSelect('locacao.reservation', 'reservation')
+      .leftJoinAndSelect('payment.reservation', 'directReservation')
+      .leftJoinAndSelect('payment.estorno', 'refund')
+      .leftJoinAndSelect('directReservation.client', 'directClient')
+      .leftJoinAndSelect('directClient.user', 'directUser')
+      .leftJoinAndSelect('directReservation.car', 'directCar')
       .leftJoinAndSelect('reservation.client', 'client')
       .leftJoinAndSelect('reservation.car', 'car')
-      .where('client.user_id = :userId', { userId: actor.id })
+      .where('(client.user_id = :userId OR directClient.user_id = :userId)', { userId: actor.id })
       .orderBy('payment.data', 'DESC')
       .getMany();
   }
@@ -205,7 +225,7 @@ export class PagamentoService {
   async findOne(id: string): Promise<Pagamento> {
     const pagamento = await this.pagamentosRepository.findOne({
       where: { id },
-      relations: { locacao: { reservation: { client: { user: true }, car: true } }, gateway: true },
+      relations: { locacao: { reservation: { client: { user: true }, car: true } }, reservation: { client: { user: true }, car: true, lojaRetirada: true }, gateway: true, estorno: true },
     });
 
     if (!pagamento) {
@@ -257,6 +277,7 @@ export class PagamentoService {
     const changes: Partial<Pagamento> = {};
 
     if (dto.valor !== undefined) {
+      if (!pagamento.locacao_id) throw new ConflictException('pagamentos de reserva não podem ser editados pela rota de locação');
       // Valida que o novo valor não excede o saldo restante da locação
       // (considerando os pagamentos já aprovados, excluindo este pagamento).
       const saldoRestante = await this.calcularSaldoRestante(
@@ -316,6 +337,7 @@ export class PagamentoService {
     }
 
     // Usa o valor informado na confirmação, se fornecido; caso contrário, usa o valor registrado.
+    if (!pagamento.locacao_id) throw new ConflictException('use o fluxo de pagamento da reserva');
     const valorConfirmacao = dto?.valor ?? pagamento.valor;
 
     // Valida que o valor de confirmação não excede o saldo restante da locação.
@@ -438,7 +460,7 @@ export class PagamentoService {
   }> {
     const pagamento = await this.findOne(id);
 
-    if (pagamento.status !== StatusPagamento.APROVADO) {
+    if (pagamento.status !== StatusPagamento.APROVADO && !(pagamento.status === StatusPagamento.ESTORNADO && pagamento.comprovante_snapshot)) {
       throw new ConflictException(
         `o comprovante so pode ser gerado para pagamentos aprovados. Status atual: "${pagamento.status}"`,
       );
@@ -455,14 +477,14 @@ export class PagamentoService {
     };
     return {
       ...snapshot,
-      codigoReserva: snapshot.codigoReserva ?? pagamento.locacao?.reservation?.codigo ?? undefined,
+      codigoReserva: snapshot.codigoReserva ?? pagamento.reservation?.codigo ?? pagamento.locacao?.reservation?.codigo ?? undefined,
     };
   }
 
   async gerarComprovanteParaActor(id: string, actor: UsuarioAutenticado) {
     const pagamento = await this.findOne(id);
     const isStaff = actor.type === TipoUsuario.ADMIN || actor.type === TipoUsuario.FUNCIONARIO;
-    const ownerUserId = pagamento.locacao?.reservation?.client?.user_id;
+    const ownerUserId = pagamento.reservation?.client?.user_id ?? pagamento.locacao?.reservation?.client?.user_id;
     if (!isStaff && ownerUserId !== actor.id) {
       throw new NotFoundException(`pagamento com ID ${id} nao encontrado`);
     }
@@ -471,23 +493,27 @@ export class PagamentoService {
 
   private buildReceiptSnapshot(pagamento: Pagamento, confirmedAt: Date): Record<string, unknown> {
     const locacao = pagamento.locacao;
-    const cliente = locacao.reservation?.client
-      ? locacao.reservation.client.user?.name ??
-          locacao.reservation.client.user?.email ??
+    const reservation = pagamento.reservation ?? locacao?.reservation;
+    const cliente = reservation?.client
+      ? reservation.client.user?.name ??
+          reservation.client.user?.email ??
           undefined
       : undefined;
 
-    const car = locacao.reservation?.car;
+    const car = reservation?.car;
 
     return {
       empresa: 'LocaMais',
       reciboId: pagamento.id,
       pagamentoId: pagamento.id,
-      locacaoId: pagamento.locacao_id,
-      codigoReserva: locacao.reservation?.codigo ?? undefined,
+      locacaoId: pagamento.locacao_id ?? '',
+      codigoReserva: reservation?.codigo ?? undefined,
       cliente,
       veiculo: car ? `${car.marca} ${car.modelo}` : undefined,
       placa: car?.placa,
+      dataRetirada: reservation?.dataRetirada,
+      dataDevolucao: reservation?.dataDevolucao,
+      lojaRetirada: reservation?.lojaRetiradaSnapshot?.nome ?? reservation?.lojaRetirada?.nome,
       valorPago: Number(pagamento.valor),
       metodoPagamento: pagamento.metodo,
       dataConfirmacao: confirmedAt,

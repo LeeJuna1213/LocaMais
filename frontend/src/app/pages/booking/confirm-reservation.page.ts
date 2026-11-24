@@ -9,6 +9,8 @@ import { CarComponent } from '../../shared/components/car.component';
 import { ImageUrlService } from '../../core/services/image-url.service';
 import { ReservationQuote, ReservationService } from '../../core/services/reservation.service';
 import { VehicleService } from '../../core/services/vehicle.service';
+import { ApiSessionStore } from '../../core/services/api-session.store';
+import { ToastService } from '../../core/services/toast.service';
 
 registerLocaleData(localePtBr);
 
@@ -51,7 +53,7 @@ registerLocaleData(localePtBr);
             }
           </section>
 
-          <button class="btn" type="button" [disabled]="quoteLoading || !!quoteError || !quote" (click)="confirm()">Confirmar reserva</button>
+          <button class="btn" type="button" [disabled]="quoteLoading || !!quoteError || !quote || saving" (click)="confirm()">{{ saving ? 'Registrando reserva...' : 'Confirmar reserva' }}</button>
           <button class="lnk dark" type="button" (click)="edit()">Voltar e editar</button>
         </div>
       } @else if (quoteLoading) {
@@ -73,6 +75,9 @@ export class ConfirmReservationPage implements OnInit {
   private readonly imageUrls = inject(ImageUrlService);
   private readonly vehicles = inject(VehicleService);
   private readonly reservations = inject(ReservationService);
+  private readonly session = inject(ApiSessionStore);
+  private readonly toast = inject(ToastService);
+  saving = false;
   quote: ReservationQuote | null = null;
   quoteLoading = true;
   quoteError: string | null = null;
@@ -121,7 +126,37 @@ export class ConfirmReservationPage implements OnInit {
   }
 
   async confirm(): Promise<void> {
-    await this.router.navigateByUrl('/booking/pagamento');
+    if (this.saving || !this.quote) return;
+    const vehicle = this.booking.vehicle();
+    if (!vehicle) return;
+    const clientId = this.isStaff ? this.booking.clientId?.() : this.session.user()?.client?.id;
+    if (!clientId) {
+      await this.toast.show('Não foi possível identificar o cliente da reserva.');
+      return;
+    }
+    const pickupShopId = this.booking.pickupShopId();
+    if (!pickupShopId) {
+      await this.toast.show('Selecione uma loja ativa para retirada.');
+      return;
+    }
+    this.saving = true;
+    try {
+      const reservation = await this.reservations.create({
+        clientId,
+        vehicleId: vehicle.id,
+        start: this.booking.start(),
+        end: this.booking.end(),
+        pickupTime: this.booking.pickupTime(),
+        returnTime: this.booking.returnTime(),
+        pickupShopId,
+        quotedServiceFee: this.quote.taxaServico,
+      });
+      this.booking.setCreatedReservation(reservation);
+      if (this.isStaff) await this.router.navigateByUrl('/admin/reservas');
+      else await this.router.navigate(['/booking/pagamento'], { queryParams: { id: reservation.id } });
+    } catch (error) {
+      await this.toast.show(error instanceof Error ? error.message : 'Não foi possível criar a reserva.');
+    } finally { this.saving = false; }
   }
 
   async edit(): Promise<void> {

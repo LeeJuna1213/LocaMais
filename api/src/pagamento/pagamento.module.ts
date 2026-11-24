@@ -2,9 +2,11 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { LocacaoModule } from '../locacao/locacao.module.js';
+import { ReservaModule } from '../reserva/reserva.module.js';
 
 import { Pagamento } from './entities/pagamento.entity.js';
 import { GatewayPagamento } from './entities/gateway-pagamento.entity.js';
+import { Estorno } from './entities/estorno.entity.js';
 import { PagamentoController } from './pagamento.controller.js';
 import { PagamentoService } from './pagamento.service.js';
 import { GatewayPagamentoService } from './gateway-pagamento.service.js';
@@ -24,8 +26,9 @@ import { GatewayPagamentoService } from './gateway-pagamento.service.js';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Pagamento, GatewayPagamento]),
+    TypeOrmModule.forFeature([Pagamento, GatewayPagamento, Estorno]),
     LocacaoModule,
+    ReservaModule,
   ],
   controllers: [PagamentoController],
   providers: [PagamentoService, GatewayPagamentoService],

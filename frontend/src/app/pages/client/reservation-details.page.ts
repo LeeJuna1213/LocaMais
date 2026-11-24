@@ -2,7 +2,7 @@ import { CurrencyPipe, DatePipe } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Reservation, UserRole, Vehicle } from '../../core/models';
+import { PaymentReceipt, Reservation, UserRole, Vehicle } from '../../core/models';
 import { AuthService } from '../../core/services/auth.service';
 import { ReservationService } from '../../core/services/reservation.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -53,23 +53,13 @@ import { BadgeComponent } from '../../shared/components/badge.component';
             <button class="btn red" type="button" [disabled]="cancelling" (click)="cancel(r)">{{ cancelling ? 'Cancelando...' : 'Cancelar reserva' }}</button>
           }
 
-          @if (!isStaff && r.status === 'Confirmada' && !hasActivePayment(r) && !paymentStarted) {
-            <label for="payment-method">Forma de pagamento</label>
-            <select id="payment-method" [(ngModel)]="paymentMethod">
-              <option value="pix">PIX (simulado)</option>
-              <option value="cartao_credito">Cartão de crédito (simulado)</option>
-              <option value="cartao_debito">Cartão de débito (simulado)</option>
-            </select>
-            <button class="btn" type="button" [disabled]="startingPayment" (click)="startPayment(r)">
-              {{ startingPayment ? 'Iniciando...' : 'Efetuar pagamento' }}
-            </button>
-            <div class="small muted">O pagamento é registrado como pendente. A confirmação usa o gateway simulado do LocaMais; não há cobrança bancária real.</div>
+          @if (!isStaff && r.status === 'Aguardando pagamento' && r.payment === 'Pendente') {
+            <div class="card" role="status">O pagamento desta reserva está pendente.</div>
+            <button class="btn" type="button" (click)="payNow(r)">Pagar agora</button>
           }
-          @if (paymentStarted) {
-            <div class="card" role="status">Cobrança pendente registrada pela API. A equipe concluirá o processamento simulado.</div>
-          }
-          @if (!isStaff && r.status === 'Confirmada' && hasActivePayment(r)) {
-            <div class="card" role="status">Já existe um pagamento {{ activePaymentStatus(r) }} para esta reserva.</div>
+          @if (r.payment === 'Pago' && r.paymentId) {
+            <div class="card" role="status">Pagamento realizado. {{ r.status === 'Aguardando confirmação' ? 'Aguardando confirmação da equipe.' : '' }}</div>
+            <button class="btn" type="button" (click)="openReceipt(r)">Ver recibo de pagamento</button>
           }
 
           @if (isStaff && r.status === 'Confirmada') {
@@ -78,6 +68,7 @@ import { BadgeComponent } from '../../shared/components/badge.component';
           @if (isStaff && r.status === 'Em andamento') {
             <button class="btn" type="button" (click)="registerReturn(r)">Registrar devolução</button>
           }
+          @if (receipt; as receiptData) { <div class="card" role="status"><b>Recibo LocaMais — {{ receiptData.codigoReserva }}</b><div class="kv"><span>Cliente</span><b>{{ receiptData.cliente }}</b></div><div class="kv"><span>Veículo</span><b>{{ receiptData.veiculo }}</b></div><div class="kv"><span>Forma de pagamento</span><b>{{ receiptData.metodoPagamento }}</b></div><div class="kv"><span>Valor pago</span><b>{{ receiptData.valorPago | currency:'BRL' }}</b></div><div class="kv"><span>Data</span><b>{{ receiptData.dataConfirmacao | date:'dd/MM/yyyy HH:mm' }}</b></div></div> }
         </div>
       } @else {
         <div class="card empty">Reserva não encontrada</div>
@@ -102,6 +93,7 @@ export class ReservationDetailsPage {
   startingPayment = false;
   paymentStarted = false;
   paymentMethod = 'pix';
+  receipt: PaymentReceipt | null = null;
 
   get role(): UserRole {
     return this.auth.role() ?? 'client';
@@ -179,18 +171,14 @@ export class ReservationDetailsPage {
     } finally { this.cancelling = false; }
   }
 
-  async startPayment(reservation: Reservation): Promise<void> {
-    this.startingPayment = true;
-    try {
-      await this.payments.initiate(reservation.id, this.paymentMethod);
-      await this.payments.load();
-      this.paymentStarted = true;
-      await this.toast.show('Cobrança pendente registrada. O pagamento ainda não foi confirmado.');
-    } catch (error) {
-      await this.toast.show(error instanceof Error ? error.message : 'Não foi possível iniciar o pagamento.');
-    } finally {
-      this.startingPayment = false;
-    }
+  async payNow(reservation: Reservation): Promise<void> {
+    await this.router.navigate(['/booking/pagamento'], { queryParams: { id: reservation.id } });
+  }
+
+  async openReceipt(reservation: Reservation): Promise<void> {
+    if (!reservation.paymentId) return;
+    try { this.receipt = await this.payments.receipt(reservation.paymentId); }
+    catch (error) { await this.toast.show(error instanceof Error ? error.message : 'Não foi possível carregar o recibo.'); }
   }
 
   async registerPickup(reservation: Reservation): Promise<void> {

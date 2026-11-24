@@ -397,6 +397,8 @@ describe('Reservas (e2e)', () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
     expect(body.codigo).toMatch(/^LOC-\d{6,}$/);
+    expect(body.pagamentos).toHaveLength(1);
+    expect(body.pagamentos[0]).toMatchObject({ status: 'pendente', valor: 301.5 });
 
     const byCode = await get<ReservaBody>(app, `/reservas/${body.codigo}`, clientToken);
     const byUuid = await get<ReservaBody>(app, `/reservas/${body.id}`, clientToken);
@@ -404,6 +406,17 @@ describe('Reservas (e2e)', () => {
     expect(byCode.body.id).toBe(body.id);
     expect(byUuid.status).toBe(200);
     expect(byUuid.body.codigo).toBe(body.codigo);
+
+    const notifications = await get<Array<{ id: string; tipo: string; lida_em: string | null }>>(app, '/notificacoes', clientToken);
+    const createdNotification = notifications.body.find((item) => item.tipo === 'reserva_criada');
+    expect(createdNotification).toBeDefined();
+    expect(createdNotification?.lida_em).toBeNull();
+    const unreadBefore = (await get<{ count: number }>(app, '/notificacoes/nao-lidas/contagem', clientToken)).body.count;
+    expect(unreadBefore).toBeGreaterThan(0);
+    const forbiddenRead = await patch(app, `/notificacoes/${createdNotification?.id}/lida`, {}, otherClientToken);
+    expect(forbiddenRead.status).toBe(404);
+    expect((await patch(app, `/notificacoes/${createdNotification?.id}/lida`, {}, clientToken)).status).toBe(200);
+    expect((await get<{ count: number }>(app, '/notificacoes/nao-lidas/contagem', clientToken)).body.count).toBe(unreadBefore - 1);
 
     firstReservationId = body.id;
     firstReservationCode = body.codigo;
@@ -602,7 +615,7 @@ describe('Reservas (e2e)', () => {
     firstEnd = newEnd;
   });
 
-  it('admin confirma a reserva e congela o período', async () => {
+  it('bloqueia confirmação administrativa enquanto o pagamento está pendente', async () => {
     const confirmed = await patch<ReservaBody>(
       app,
       `/reservas/${firstReservationId}`,
@@ -610,6 +623,30 @@ describe('Reservas (e2e)', () => {
       adminToken,
     );
 
+    expect(confirmed.status).toBe(409);
+    expect(confirmed.body.status).not.toBe('confirmada');
+  });
+
+  it('admin confirma a reserva paga e congela o período', async () => {
+    const paid = await post<{ id: string; status: string }>(app, '/pagamentos/meus', {
+      reservation_id: firstReservationId,
+      metodo: 'pix',
+    }, clientToken);
+    expect(paid.status).toBe(201);
+    expect(paid.body.status).toBe('aprovado');
+    const paidAgain = await post<{ id: string; status: string }>(app, '/pagamentos/meus', { reservation_id: firstReservationId, metodo: 'pix' }, clientToken);
+    expect(paidAgain.status).toBe(201);
+    expect(paidAgain.body.id).toBe(paid.body.id);
+    const receipt = await get<{ codigoReserva?: string; status: string }>(app, `/pagamentos/${paid.body.id}/comprovante`, clientToken);
+    expect(receipt.status).toBe(200);
+    expect(receipt.body.codigoReserva).toBe(firstReservationCode);
+
+    const confirmed = await patch<ReservaBody>(
+      app,
+      `/reservas/${firstReservationId}`,
+      { status: 'confirmada' },
+      adminToken,
+    );
     expect(confirmed.status).toBe(200);
     expect(confirmed.body.status).toBe('confirmada');
 
@@ -684,6 +721,48 @@ describe('Reservas (e2e)', () => {
     expect(availability.status).toBe(200);
     expect(availability.body.disponivel).toBe(true);
     expect(availability.body.conflito).toBeNull();
+  });
+
+  it('admin cancela reserva não paga sem gerar estorno e notifica o cliente', async () => {
+    const start = futureIso(50);
+    const created = await post<ReservaBody>(app, '/reservas', {
+      dataRetirada: start, dataDevolucao: addHours(start, 24), client_id: clientId, car_id: carId,
+    }, clientToken);
+    expect(created.status).toBe(201);
+    const cancelled = await patch<ReservaBody>(app, `/reservas/${created.body.id}/cancelar`, {}, adminToken);
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body.status).toBe('cancelada');
+    const dataSource = app.get(DataSource);
+    const payments = await dataSource.query('SELECT status FROM pagamentos WHERE reservation_id = ?', [created.body.id]) as Array<{ status: string }>;
+    const refunds = await dataSource.query('SELECT id FROM estornos WHERE pagamento_id IN (SELECT id FROM pagamentos WHERE reservation_id = ?)', [created.body.id]) as unknown[];
+    expect(payments.map((item) => item.status)).toEqual(['cancelado']);
+    expect(refunds).toHaveLength(0);
+    const notifications = await get<Array<{ tipo: string; reserva_id: string }>>(app, '/notificacoes', clientToken);
+    expect(notifications.body.some((item) => item.tipo === 'reserva_cancelada' && item.reserva_id === created.body.id)).toBe(true);
+  });
+
+  it('admin cancela reserva paga com estorno simulado e preserva o recibo original', async () => {
+    const start = futureIso(55);
+    const created = await post<ReservaBody>(app, '/reservas', {
+      dataRetirada: start, dataDevolucao: addHours(start, 24), client_id: clientId, car_id: carId,
+    }, clientToken);
+    expect(created.status).toBe(201);
+    const payment = await post<{ id: string; status: string; valor: number }>(app, '/pagamentos/meus', {
+      reservation_id: created.body.id, metodo: 'cartao_credito',
+    }, clientToken);
+    expect(payment.body.status).toBe('aprovado');
+    const originalReceipt = await get<{ reciboId: string; status: string }>(app, `/pagamentos/${payment.body.id}/comprovante`, clientToken);
+    expect(originalReceipt.status).toBe(200);
+    const cancelled = await patch<ReservaBody>(app, `/reservas/${created.body.id}/cancelar`, {}, adminToken);
+    expect(cancelled.status).toBe(200);
+    const dataSource = app.get(DataSource);
+    const finance = await dataSource.query('SELECT p.status, e.valor, e.tipo FROM pagamentos p LEFT JOIN estornos e ON e.pagamento_id = p.id WHERE p.id = ?', [payment.body.id]) as Array<{ status: string; valor: number; tipo: string }>;
+    expect(finance[0]).toMatchObject({ status: 'estornado', valor: payment.body.valor, tipo: 'simulado' });
+    const afterRefundReceipt = await get<{ reciboId: string; status: string }>(app, `/pagamentos/${payment.body.id}/comprovante`, clientToken);
+    expect(afterRefundReceipt.status).toBe(200);
+    expect(afterRefundReceipt.body.reciboId).toBe(originalReceipt.body.reciboId);
+    const notifications = await get<Array<{ tipo: string; reserva_id: string }>>(app, '/notificacoes', clientToken);
+    expect(notifications.body.some((item) => item.tipo === 'estorno_realizado' && item.reserva_id === created.body.id)).toBe(true);
   });
 
   it('não remove fisicamente um carro que possui reservas', async () => {

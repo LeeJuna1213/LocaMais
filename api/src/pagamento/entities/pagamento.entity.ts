@@ -11,6 +11,8 @@ import {
 } from 'typeorm';
 
 import type { Locacao } from '../../locacao/entities/locacao.entity.js';
+import type { Reserva } from '../../reserva/entities/reserva.entity.js';
+import type { Estorno } from './estorno.entity.js';
 import type { GatewayPagamento } from './gateway-pagamento.entity.js';
 import { MetodoPagamento } from '../enums/metodo-pagamento.enum.js';
 import { StatusPagamento } from '../enums/status-pagamento.enum.js';
@@ -77,13 +79,21 @@ export class Pagamento {
 
   /** Chave estrangeira para `locacoes.id` (UUID). */
   @Index()
-  @Column({ type: 'uuid', nullable: false })
-  locacao_id: string;
+  @Column({ type: 'uuid', nullable: true })
+  locacao_id: string | null;
 
   /** Lado proprietário da relação N:1 com a locação. */
-  @ManyToOne('Locacao', 'pagamentos', { nullable: false, onDelete: 'RESTRICT' })
+  @ManyToOne('Locacao', 'pagamentos', { nullable: true, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'locacao_id' })
   locacao: Locacao;
+
+  @Index('idx_pagamentos_reserva')
+  @Column({ type: 'uuid', nullable: true })
+  reservation_id: string | null;
+
+  @ManyToOne('Reserva', { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'reservation_id' })
+  reservation: Reserva | null;
 
   /** Chave estrangeira para `gateways_pagamento.id` (UUID). */
   @Column({ type: 'uuid', nullable: true })
@@ -97,6 +107,9 @@ export class Pagamento {
   @OneToOne('GatewayPagamento', { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'gateway_id' })
   gateway: GatewayPagamento | null;
+
+  @OneToOne('Estorno', 'pagamento')
+  estorno?: Estorno | null;
 
   @CreateDateColumn()
   created_at: Date;
@@ -132,7 +145,7 @@ export class Pagamento {
   }
 
   /** Controla o que é serializado na resposta HTTP. */
-  toJSON(): Omit<Pagamento, 'toJSON' | 'processarPagamento' | 'gerarComprovante'> {
+  toJSON(): Record<string, unknown> {
     const {
       id,
       valor,
@@ -141,9 +154,11 @@ export class Pagamento {
       data,
       locacao_id,
       locacao,
+      reservation_id,
+      reservation,
       gateway_id,
-      gateway,
       comprovante_snapshot,
+      estorno,
       created_at,
       updated_at,
     } = this;
@@ -156,9 +171,11 @@ export class Pagamento {
       data,
       locacao_id,
       locacao,
+      reservation_id,
+      reservation,
       gateway_id,
-      gateway,
       comprovante_snapshot,
+      estorno,
       created_at,
       updated_at,
     };

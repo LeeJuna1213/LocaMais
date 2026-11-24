@@ -45,9 +45,13 @@ import { ImageUrlService } from '../../core/services/image-url.service';
         </div>
       </div>
       <div class="pr" style="font-size: 13px">{{ reservation.total | currency: 'BRL' }}</div>
-      @if (adminActions && reservation.status === 'Pendente') {
+      <div class="small muted">Pagamento: <b>{{ reservation.payment }}</b></div>
+      @if (!adminActions && reservation.status === 'Aguardando pagamento' && reservation.payment === 'Pendente') {
+        <button class="btn" type="button" (click)="$event.stopPropagation(); payRequested.emit(reservation)">Pagar agora</button>
+      }
+      @if (adminActions && (reservation.status === 'Aguardando pagamento' || reservation.status === 'Aguardando confirmação')) {
         <div class="form-actions" (click)="$event.stopPropagation()">
-          <button class="btn" type="button" (click)="confirmRequested.emit(reservation)">Confirmar reserva</button>
+          @if (reservation.status === 'Aguardando confirmação' && reservation.payment === 'Pago') { <button class="btn" type="button" (click)="confirmRequested.emit(reservation)">Confirmar reserva</button> }
           <button class="lnk dark" type="button" (click)="cancelRequested.emit(reservation)">Cancelar reserva</button>
         </div>
       }
@@ -63,6 +67,7 @@ export class ReservationCardComponent {
   @Output() selected = new EventEmitter<Reservation>();
   @Output() confirmRequested = new EventEmitter<Reservation>();
   @Output() cancelRequested = new EventEmitter<Reservation>();
+  @Output() payRequested = new EventEmitter<Reservation>();
 
   photoFailed = false;
 

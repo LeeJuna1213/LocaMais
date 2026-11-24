@@ -1,120 +1,130 @@
-import { CurrencyPipe } from '@angular/common';
-import { Component, OnInit, inject } from '@angular/core';
-import { Router } from '@angular/router';
-import { PaymentMethod } from '../../core/models';
+import { CurrencyPipe, DatePipe } from '@angular/common';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { PaymentMethod, PaymentReceipt, Reservation } from '../../core/models';
 import { AuthService } from '../../core/services/auth.service';
-import { BookingService } from '../../core/services/booking.service';
-import { ClientService } from '../../core/services/client.service';
 import { PaymentService } from '../../core/services/payment.service';
 import { ReservationService } from '../../core/services/reservation.service';
+import { CustomerPaymentService } from '../../core/services/customer-payment.service';
 import { ToastService } from '../../core/services/toast.service';
-import { ApiSessionStore } from '../../core/services/api-session.store';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
+
+const METHOD_CODES: Record<PaymentMethod, string> = {
+  PIX: 'pix',
+  'Cartão de crédito': 'cartao_credito',
+  'Cartão de débito': 'cartao_debito',
+};
 
 @Component({
   selector: 'app-payment',
   standalone: true,
-  imports: [AppShellComponent, CurrencyPipe],
+  imports: [AppShellComponent, CurrencyPipe, DatePipe],
   template: `
-    <app-shell title="Pagamento" [back]="true" defaultHref="/booking/confirmar">
-      @if (booking.vehicle(); as vehicle) {
+    <app-shell title="Pagamento" [back]="true" defaultHref="/client/minhas">
+      @if (loading) { <div class="card empty" role="status">Carregando reserva...</div> }
+      @else if (reservation; as r) {
         <div class="card">
-          <b style="font-size: 13px">Forma de pagamento prevista</b>
-          <div style="margin-top: 8px">
-            @for (method of paymentService.methods; track method) {
-              <div class="rd" [class.on]="booking.method() === method" (click)="select(method)">
-                {{ booking.method() === method ? '●' : '○' }} {{ method }}
-              </div>
-            }
-          </div>
-
-          <div class="kv"><span>Subtotal de diárias</span><b>{{ booking.total() | currency: 'BRL' }}</b></div>
-          <div class="small muted">A taxa vigente será calculada pelo servidor e registrada na reserva. Esta tela ainda não processa cobrança.</div>
-
-          <button class="btn" type="button" [disabled]="saving" (click)="pay()">
-            {{ saving ? 'Confirmando...' : 'Confirmar reserva' }}
-          </button>
-          <div style="text-align: center; font-size: 11px; color: #7a5a40; margin-top: 8px">
-            O processamento de pagamento disponível é demonstrativo e ocorre após a confirmação operacional.
-          </div>
+          <h2>Pagamento da reserva {{ r.publicCode || '—' }}</h2>
+          <div class="kv"><span>Cliente</span><b>{{ r.clientName }}</b></div>
+          <div class="kv"><span>Veículo</span><b>{{ r.vehicle?.make || r.vehicle?.name }} {{ r.vehicle?.model || r.vehicle?.version }}</b></div>
+          <div class="kv"><span>Período</span><b>{{ r.start | date:'dd/MM/yyyy HH:mm' }} — {{ r.end | date:'dd/MM/yyyy HH:mm' }}</b></div>
+          @if (r.pickupShop; as shop) { <div class="kv"><span>Loja de retirada</span><b>{{ shop.nome }}, {{ shop.logradouro }}, {{ shop.numero }} — {{ shop.cidade }}/{{ shop.uf }}</b></div> }
+          <div class="kv"><span>Valor da diária</span><b>{{ dailyRate(r) | currency:'BRL' }}</b></div>
+          <div class="kv"><span>Quantidade de diárias</span><b>{{ r.days }}</b></div>
+          <div class="kv"><span>Subtotal das diárias</span><b>{{ r.subtotal | currency:'BRL' }}</b></div>
+          <div class="kv"><span>Taxa de serviço</span><b>{{ r.serviceFee | currency:'BRL' }}</b></div>
+          <div class="kv total"><span>Valor total</span><b>{{ r.total | currency:'BRL' }}</b></div>
         </div>
-      } @else {
-        <div class="card empty">Nenhum pagamento em andamento</div>
-      }
+
+        @if (receipt; as receiptData) {
+          <section class="card receipt" aria-labelledby="receipt-title">
+            <img src="assets/logo.png" alt="LocaMais" />
+            <h2 id="receipt-title">Pagamento realizado</h2>
+            <div class="kv"><span>Código da reserva</span><b>{{ receiptData.codigoReserva }}</b></div>
+            <div class="kv"><span>Cliente</span><b>{{ receiptData.cliente }}</b></div>
+            <div class="kv"><span>Veículo</span><b>{{ receiptData.veiculo }}</b></div>
+            @if (receiptData.dataRetirada && receiptData.dataDevolucao) { <div class="kv"><span>Período</span><b>{{ receiptData.dataRetirada | date:'dd/MM/yyyy HH:mm' }} — {{ receiptData.dataDevolucao | date:'dd/MM/yyyy HH:mm' }}</b></div> }
+            @if (receiptData.lojaRetirada) { <div class="kv"><span>Loja</span><b>{{ receiptData.lojaRetirada }}</b></div> }
+            <div class="kv"><span>Forma de pagamento</span><b>{{ methodLabel(receiptData.metodoPagamento) }}</b></div>
+            <div class="kv"><span>Valor pago</span><b>{{ receiptData.valorPago | currency:'BRL' }}</b></div>
+            <div class="kv"><span>Data e hora</span><b>{{ receiptData.dataConfirmacao | date:'dd/MM/yyyy HH:mm' }}</b></div>
+            <p>{{ receiptData.aviso }}</p>
+            <button class="btn" type="button" (click)="goToPayments()">Abrir página de Pagamentos</button>
+          </section>
+        } @else if (r.status === 'Aguardando pagamento' && r.payment === 'Pendente') {
+          <div class="card">
+            <label for="payment-method">Forma de pagamento</label>
+            <select id="payment-method" [value]="method" (change)="setMethod($event)">
+              @for (item of paymentService.methods; track item) { <option [value]="item">{{ item }}</option> }
+            </select>
+            <p class="small muted">Pagamento acadêmico simulado. Não solicitamos dados de cartão e nenhuma cobrança real será feita.</p>
+            <button class="btn" type="button" [disabled]="saving" (click)="pay()">{{ saving ? 'Processando...' : 'Pagar' }}</button>
+            <button class="lnk dark" type="button" [disabled]="saving" (click)="payLater()">Pagar depois</button>
+          </div>
+        } @else {
+          <div class="card" role="status">{{ r.payment === 'Pago' ? 'Pagamento aprovado. Aguardando confirmação da equipe.' : 'Esta reserva não está aguardando pagamento.' }}</div>
+          <button class="btn" type="button" (click)="payLater()">Ver minhas reservas</button>
+        }
+      } @else { <div class="card empty" role="alert">Reserva não encontrada.</div> }
     </app-shell>
   `,
+  styles: [`.total{border-top:1px solid #eadfd5;padding-top:10px;font-size:17px}.receipt img{display:block;width:140px;max-height:70px;object-fit:contain;margin:0 auto 14px}.receipt h2{text-align:center;color:#aa510c}.receipt p{padding:12px;background:#fff7ee;border-radius:10px;font-size:12px}`],
 })
 export class PaymentPage implements OnInit {
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly auth = inject(AuthService);
-  private readonly clientService = inject(ClientService);
-  private readonly session = inject(ApiSessionStore);
-  readonly booking = inject(BookingService);
-  readonly paymentService = inject(PaymentService);
   private readonly reservationService = inject(ReservationService);
+  private readonly customerPayments = inject(CustomerPaymentService);
   private readonly toast = inject(ToastService);
-
-  readonly isStaff = this.auth.role() === 'admin' || this.auth.role() === 'funcionario';
+  private readonly changeDetector = inject(ChangeDetectorRef);
+  readonly paymentService = inject(PaymentService);
+  reservation: Reservation | null = null;
+  receipt: PaymentReceipt | null = null;
+  method: PaymentMethod = 'PIX';
+  loading = true;
   saving = false;
 
-  ngOnInit(): void {
-    if (!this.booking.vehicle()) {
-      void this.router.navigateByUrl(this.auth.home());
+  async ngOnInit(): Promise<void> {
+    const id = this.route.snapshot.queryParamMap.get('id');
+    if (!id) { await this.router.navigateByUrl(this.auth.home()); return; }
+    try {
+      this.reservation = await this.reservationService.getById(id) ?? null;
+      if (this.reservation?.payment === 'Pago' && this.reservation.paymentId) {
+        this.receipt = await this.customerPayments.receipt(this.reservation.paymentId);
+      }
+    } catch (error) { await this.toast.show(error instanceof Error ? error.message : 'Não foi possível carregar a reserva.'); }
+    finally {
+      this.loading = false;
+      this.changeDetector.markForCheck();
     }
   }
 
-  select(method: PaymentMethod): void {
-    this.booking.setMethod(method);
-  }
-
-  private async resolveClientId(): Promise<number> {
-    if (this.isStaff) {
-      const clientId = this.booking.clientId();
-      if (clientId && this.clientService.activeClients().some((client) => client.id === clientId)) return clientId;
-      throw new Error('Selecione um cliente ativo para a reserva.');
-    }
-    const sessionUser = this.session.user();
-    const clientId = sessionUser?.client?.id;
-    if (clientId) return clientId;
-    throw new Error('Não foi possível identificar o cliente logado.');
-  }
+  dailyRate(reservation: Reservation): number { return reservation.days ? (reservation.subtotal ?? reservation.total) / reservation.days : 0; }
+  setMethod(event: Event): void { this.method = (event.target as HTMLSelectElement).value as PaymentMethod; }
+  methodLabel(method: string): string { return ({ pix: 'PIX', cartao_credito: 'Cartão de crédito', cartao_debito: 'Cartão de débito', dinheiro: 'Dinheiro' } as Record<string, string>)[method] ?? method; }
 
   async pay(): Promise<void> {
-    if (this.saving) return;
-    const vehicle = this.booking.vehicle();
-    if (!vehicle) {
-      await this.router.navigateByUrl(this.auth.home());
-      return;
-    }
-    if (vehicle.status === 'Em manutenção') {
-      await this.toast.show('Este veículo não está mais disponível');
-      return;
-    }
-    const pickupShopId = this.booking.pickupShopId();
-    if (!pickupShopId) {
-      await this.toast.show('Selecione uma loja ativa para retirada.');
-      return;
-    }
-
+    const reservation = this.reservation;
+    if (!reservation || this.saving || reservation.payment !== 'Pendente') return;
+    this.saving = true;
     try {
-      const clientId = await this.resolveClientId();
-      this.saving = true;
-          const reservation = await this.reservationService.create({
-        clientId,
-        vehicleId: vehicle.id,
-        start: this.booking.start(),
-        end: this.booking.end(),
-        pickupTime: this.booking.pickupTime(),
-        returnTime: this.booking.returnTime(),
-        pickupShopId,
-        quotedServiceFee: this.booking.quotedServiceFee(),
-      });
-      this.booking.setCreatedReservation(reservation);
-      await this.router.navigateByUrl('/booking/sucesso');
-    } catch (error) {
-      await this.toast.show(error instanceof Error ? error.message : 'Não foi possível criar a reserva.');
-    } finally {
+      const payment = await this.customerPayments.initiate(reservation.id, METHOD_CODES[this.method]);
+      await this.reservationService.load();
+      this.reservation = await this.reservationService.getById(reservation.id) ?? reservation;
+      this.receipt = await this.customerPayments.receipt(payment.id);
+      this.changeDetector.markForCheck();
+      await this.toast.show('Pagamento simulado aprovado. O recibo está disponível nesta página e em Pagamentos.');
+    } catch (error) { await this.toast.show(error instanceof Error ? error.message : 'Não foi possível processar o pagamento.'); }
+    finally {
       this.saving = false;
+      this.changeDetector.markForCheck();
     }
   }
+
+  async payLater(): Promise<void> {
+    await this.router.navigateByUrl(this.auth.role() === 'admin' || this.auth.role() === 'funcionario' ? '/admin/reservas' : '/client/minhas');
+  }
+
+  async goToPayments(): Promise<void> { await this.router.navigateByUrl('/client/pagamentos'); }
 }

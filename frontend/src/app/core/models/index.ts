@@ -45,8 +45,8 @@ export interface Client {
   phone: string;
 }
 
-export type ReservationStatus = 'Pendente' | 'Confirmada' | 'Em andamento' | 'Concluída' | 'Cancelada';
-export type PaymentStatus = 'Pago' | 'Pendente';
+export type ReservationStatus = 'Pendente' | 'Aguardando pagamento' | 'Aguardando confirmação' | 'Confirmada' | 'Em andamento' | 'Concluída' | 'Cancelada';
+export type PaymentStatus = 'Pago' | 'Pendente' | 'Estornado' | 'Cancelado';
 export type PaymentMethod = 'PIX' | 'Cartão de crédito' | 'Cartão de débito';
 
 export interface Reservation {
@@ -66,6 +66,7 @@ export interface Reservation {
   serviceFee?: number;
   payment: PaymentStatus;
   paymentMethod: PaymentMethod;
+  paymentId?: string | null;
   pickupShopId?: number | null;
   pickupShop?: { nome: string; logradouro: string; numero: string; cidade: string; uf: string } | null;
   rentalId?: string | null;
@@ -138,10 +139,21 @@ export interface CustomerPaymentApi {
   id: string;
   valor: number | string;
   metodo: string;
-  status: 'pendente' | 'aprovado' | 'recusado' | 'cancelado';
+  status: 'pendente' | 'aprovado' | 'recusado' | 'cancelado' | 'estornado';
   data: string;
   comprovante_snapshot?: { dataConfirmacao?: string } | null;
-  locacao_id: string;
+  locacao_id: string | null;
+  reservation_id?: string | null;
+  estorno?: { id: string; valor: number | string; tipo: string; data: string } | null;
+  reservation?: {
+    id: string;
+    codigo?: string | null;
+    dataRetirada?: string;
+    dataDevolucao?: string;
+    client?: { user?: { name?: string; email?: string } | null } | null;
+    car?: { marca: string; modelo: string; placa: string; foto?: string | null } | null;
+    lojaRetiradaSnapshot?: { nome: string; logradouro: string; numero: string; cidade: string; uf: string } | null;
+  } | null;
   locacao?: {
     id: string;
     created_at: string;
@@ -165,11 +177,25 @@ export interface PaymentReceipt {
   cliente?: string;
   veiculo?: string;
   placa?: string;
+  dataRetirada?: string;
+  dataDevolucao?: string;
+  lojaRetirada?: string;
   valorPago: number;
   metodoPagamento: string;
   dataConfirmacao: string;
   status: string;
   aviso: string;
+}
+
+export interface NotificationApi {
+  id: string;
+  tipo: string;
+  titulo: string;
+  descricao: string;
+  reserva_id: string | null;
+  created_at: string;
+  lida_em: string | null;
+  reserva?: { id: string; codigo?: string | null } | null;
 }
 
 export interface Usuario {

@@ -17,6 +17,7 @@
  */
 export enum StatusReserva {
   PENDENTE = 'pendente',
+  AGUARDANDO_CONFIRMACAO = 'aguardando_confirmacao',
   CONFIRMADA = 'confirmada',
   CANCELADA = 'cancelada',
   CONCLUIDA = 'concluida',

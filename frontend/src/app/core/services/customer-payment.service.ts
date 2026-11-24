@@ -18,7 +18,7 @@ export function filterOperationalPayments(
   return payments.filter((payment) => {
     if (tab === 'Pendentes') return isPendingPayment(payment);
     if (tab === 'Realizados') return payment.status === 'aprovado';
-    return payment.status === 'pendente' || payment.status === 'aprovado';
+    return payment.status === 'pendente' || payment.status === 'aprovado' || payment.status === 'estornado';
   });
 }
 

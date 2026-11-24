@@ -1,11 +1,13 @@
 import { CurrencyPipe, DatePipe, registerLocaleData } from '@angular/common';
 import localePtBr from '@angular/common/locales/pt';
-import { Component, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, inject } from '@angular/core';
+import { Router } from '@angular/router';
 import { IonIcon } from '@ionic/angular';
 import { addIcons } from 'ionicons';
 import { closeOutline, downloadOutline, printOutline, receiptOutline } from 'ionicons/icons';
 import { CustomerPaymentApi, PaymentReceipt } from '../../core/models';
 import { CustomerPaymentService } from '../../core/services/customer-payment.service';
+import { ToastService } from '../../core/services/toast.service';
 import { ImageUrlService } from '../../core/services/image-url.service';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
 
@@ -51,8 +53,8 @@ registerLocaleData(localePtBr);
             <div class="kv"><span>Valor pago</span><b>{{ +item.valor | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}</b></div>
             <div class="kv"><span>Data do pagamento</span><b>{{ item.data | date:'dd/MM/yyyy HH:mm' }}</b></div>
             <div class="kv"><span>Forma</span><b>{{ methodLabel(item.metodo) }}</b></div>
-            <div class="kv"><span>Locação</span><b>{{ item.locacao_id }}</b></div>
-            @if (item.locacao?.reservation?.codigo) { <div class="kv"><span>Reserva</span><b>{{ item.locacao.reservation.codigo }}</b></div> }
+            @if (item.locacao_id) { <div class="kv"><span>Locação</span><b>{{ item.locacao_id }}</b></div> }
+            @if (reservation(item)?.codigo) { <div class="kv"><span>Reserva</span><b>{{ reservation(item)?.codigo }}</b></div> }
             <button class="btn receipt-action" type="button" (click)="openReceipt(item)"><ion-icon name="receipt-outline"></ion-icon>Visualizar comprovante</button>
           </article>
         } @empty { <div class="card empty">Você ainda não possui pagamentos concluídos.</div> }
@@ -64,16 +66,15 @@ registerLocaleData(localePtBr);
             <div class="payment-vehicle">@if (photo(item); as src) { <img class="payment-car-photo" [src]="src" alt="Foto do veículo da reserva" /> }<b>{{ carName(item) }}</b></div>
             <div class="kv"><span>Valor aguardando pagamento</span><b>{{ +item.valor | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}</b></div>
             <div class="kv"><span>Registrado em</span><b>{{ item.data | date:'dd/MM/yyyy HH:mm' }}</b></div>
-            <div class="kv"><span>Locação</span><b>{{ item.locacao_id }}</b></div>
-            @if (item.locacao?.reservation?.codigo) { <div class="kv"><span>Reserva</span><b>{{ item.locacao.reservation.codigo }}</b></div> }
-            <p class="small muted">A confirmação é realizada pela equipe da LocaMais. Este pagamento ainda não foi concluído.</p>
+            @if (reservation(item)?.codigo) { <div class="kv"><span>Reserva</span><b>{{ reservation(item)?.codigo }}</b></div> }
+            <button class="btn" type="button" (click)="payNow(item)">Pagar agora</button>
           </article>
         } @empty { <div class="card empty">Você não possui pagamentos pendentes.</div> }
 
         @if (excluded.length) {
           <h3>Outros status</h3>
           @for (item of excluded; track item.id) {
-            <div class="card payment-card"><b>{{ item.locacao?.reservation?.car?.marca || 'Pagamento' }} {{ item.locacao?.reservation?.car?.modelo || '' }}</b><div class="kv"><span>Valor</span><b>{{ +item.valor | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}</b></div><span class="status">{{ item.status }}</span></div>
+            <div class="card payment-card"><b>{{ carName(item) }}</b><div class="kv"><span>Valor original</span><b>{{ +item.valor | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}</b></div><span class="status">{{ statusLabel(item.status) }}</span>@if (item.estorno) { <div class="kv"><span>Estorno simulado</span><b>{{ +item.estorno.valor | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}</b></div><div class="kv"><span>Data do estorno</span><b>{{ item.estorno.data | date:'dd/MM/yyyy HH:mm' }}</b></div> } @if (item.status === 'estornado' && item.comprovante_snapshot) { <button class="btn" type="button" (click)="openReceipt(item)">Ver recibo original</button> }</div>
           }
         }
       }
@@ -88,8 +89,10 @@ registerLocaleData(localePtBr);
             <div class="line"><span>Data e hora</span><b>{{ r.dataConfirmacao | date:'dd/MM/yyyy HH:mm' }}</b></div>
             @if (r.cliente) { <div class="line"><span>Cliente</span><b>{{ r.cliente }}</b></div> }
             @if (r.codigoReserva) { <div class="line"><span>Reserva</span><b>{{ r.codigoReserva }}</b></div> }
-            <div class="line"><span>Locação</span><b>{{ r.locacaoId }}</b></div>
+            @if (r.locacaoId) { <div class="line"><span>Locação</span><b>{{ r.locacaoId }}</b></div> }
             @if (r.veiculo) { <div class="line"><span>Veículo</span><b>{{ r.veiculo }}{{ r.placa ? ' · ' + r.placa : '' }}</b></div> }
+            @if (r.dataRetirada && r.dataDevolucao) { <div class="line"><span>Período</span><b>{{ r.dataRetirada | date:'dd/MM/yyyy HH:mm' }} — {{ r.dataDevolucao | date:'dd/MM/yyyy HH:mm' }}</b></div> }
+            @if (r.lojaRetirada) { <div class="line"><span>Loja de retirada</span><b>{{ r.lojaRetirada }}</b></div> }
             <div class="line"><span>Valor pago</span><b>{{ r.valorPago | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}</b></div>
             <div class="line"><span>Forma</span><b>{{ methodLabel(r.metodoPagamento) }}</b></div>
             <div class="line"><span>Status</span><b>{{ statusLabel(r.status) }}</b></div>
@@ -107,6 +110,9 @@ registerLocaleData(localePtBr);
 export class CustomerPaymentsPage {
   readonly payments = inject(CustomerPaymentService);
   private readonly imageUrls = inject(ImageUrlService);
+  private readonly router = inject(Router);
+  private readonly changeDetector = inject(ChangeDetectorRef);
+  private readonly toast = inject(ToastService);
   receipt: PaymentReceipt | null = null;
 
   constructor() {
@@ -116,7 +122,7 @@ export class CustomerPaymentsPage {
 
   get approved(): CustomerPaymentApi[] { return this.payments.items().filter((item) => item.status === 'aprovado'); }
   get pending(): CustomerPaymentApi[] { return this.payments.items().filter((item) => item.status === 'pendente'); }
-  get excluded(): CustomerPaymentApi[] { return this.payments.items().filter((item) => item.status === 'cancelado' || item.status === 'recusado'); }
+  get excluded(): CustomerPaymentApi[] { return this.payments.items().filter((item) => item.status === 'cancelado' || item.status === 'recusado' || item.status === 'estornado'); }
   get totalPaid(): number { return this.approved.reduce((total, item) => total + Number(item.valor), 0); }
   get totalPending(): number { return this.pending.reduce((total, item) => total + Number(item.valor), 0); }
 
@@ -126,22 +132,35 @@ export class CustomerPaymentsPage {
   }
 
   statusLabel(value: string): string {
-    const labels: Record<string, string> = { aprovado: 'Aprovado', pendente: 'Pendente', recusado: 'Recusado', cancelado: 'Cancelado' };
+    const labels: Record<string, string> = { aprovado: 'Aprovado', pendente: 'Pendente', recusado: 'Recusado', cancelado: 'Cancelado', estornado: 'Estornado' };
     return labels[value] ?? value;
   }
 
   carName(item: CustomerPaymentApi): string {
-    const car = item.locacao?.reservation?.car;
+    const car = this.reservation(item)?.car ?? item.locacao?.reservation?.car;
     return car ? `${car.marca} ${car.modelo}${car.placa ? ` · ${car.placa}` : ''}` : 'Veículo da locação';
   }
 
   photo(item: CustomerPaymentApi): string | null {
-    return this.imageUrls.resolve(item.locacao?.reservation?.car?.foto);
+    return this.imageUrls.resolve(this.reservation(item)?.car?.foto ?? item.locacao?.reservation?.car?.foto);
+  }
+
+  reservation(item: CustomerPaymentApi) { return item.reservation ?? item.locacao?.reservation ?? null; }
+
+  async payNow(item: CustomerPaymentApi): Promise<void> {
+    const reservationId = item.reservation_id ?? item.reservation?.id ?? item.locacao?.reservation?.id;
+    if (reservationId) await this.router.navigate(['/booking/pagamento'], { queryParams: { id: reservationId } });
   }
 
   async openReceipt(item: CustomerPaymentApi): Promise<void> {
-    if (item.status !== 'aprovado') return;
-    this.receipt = await this.payments.receipt(item.id);
+    if (item.status !== 'aprovado' && item.status !== 'estornado') return;
+    try {
+      this.receipt = await this.payments.receipt(item.id);
+    } catch (error) {
+      await this.toast.show(error instanceof Error ? error.message : 'Não foi possível carregar o recibo.');
+    } finally {
+      this.changeDetector.markForCheck();
+    }
   }
 
   closeReceipt(): void { this.receipt = null; }

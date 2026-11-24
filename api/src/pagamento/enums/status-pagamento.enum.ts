@@ -18,4 +18,5 @@ export enum StatusPagamento {
   APROVADO = 'aprovado',
   RECUSADO = 'recusado',
   CANCELADO = 'cancelado',
+  ESTORNADO = 'estornado',
 }

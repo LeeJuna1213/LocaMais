@@ -32,7 +32,8 @@ export type ClientReservationTab = 'Futuras' | 'Em andamento' | 'Histórico';
 export type AdminReservationTab = 'Todas' | 'Pendentes' | 'Confirmadas' | 'Em andamento' | 'Concluídas' | 'Canceladas';
 
 const API_STATUS_MAP: Record<string, ReservationStatus> = {
-  pendente: 'Pendente',
+  pendente: 'Aguardando pagamento',
+  aguardando_confirmacao: 'Aguardando confirmação',
   confirmada: 'Confirmada',
   cancelada: 'Cancelada',
   concluida: 'Concluída',
@@ -61,6 +62,7 @@ export interface ReservationApiResponse {
   locacao?: { id?: string; status: 'aguardando_retirada' | 'em_andamento' | 'concluida' | 'cancelada'; dataRetirada?: string | null; dataDevolucao?: string | null } | null;
   loja_retirada_id?: number | null;
   lojaRetiradaSnapshot?: { nome: string; logradouro: string; numero: string; cidade: string; uf: string } | null;
+  pagamentos?: Array<{ id: string; status: string; metodo: string; valor: number; data: string; comprovante_snapshot?: { dataConfirmacao?: string } | null }>;
 }
 
 export function mapReservation(api: ReservationApiResponse, sessionUserId: number | null, sessionIsClient: boolean): Reservation {
@@ -92,8 +94,12 @@ export function mapReservation(api: ReservationApiResponse, sessionUserId: numbe
     total: api.valorTotal ?? 0,
     subtotal: api.valorSubtotal ?? api.valorTotal ?? 0,
     serviceFee: api.taxaServico ?? 0,
-    payment: 'Pendente',
-    paymentMethod: 'PIX' as PaymentMethod,
+    payment: api.pagamentos?.some((payment) => payment.status === 'estornado')
+      ? 'Estornado'
+      : api.pagamentos?.some((payment) => payment.status === 'aprovado') ? 'Pago'
+        : api.pagamentos?.some((payment) => payment.status === 'cancelado') ? 'Cancelado' : 'Pendente',
+    paymentMethod: ({ pix: 'PIX', cartao_credito: 'Cartão de crédito', cartao_debito: 'Cartão de débito', dinheiro: 'PIX' } as Record<string, PaymentMethod>)[api.pagamentos?.at(-1)?.metodo ?? 'pix'] ?? 'PIX',
+    paymentId: api.pagamentos?.at(-1)?.id ?? null,
     pickupShopId: api.loja_retirada_id ?? null,
     pickupShop: api.lojaRetiradaSnapshot ?? null,
     rentalId: api.locacao?.id ?? null,
@@ -105,11 +111,12 @@ export function mapReservation(api: ReservationApiResponse, sessionUserId: numbe
 
 export function filterAdminReservations(reservations: Reservation[], tab: AdminReservationTab): Reservation[] {
   if (tab === 'Todas') return reservations;
+  if (tab === 'Pendentes') return reservations.filter((reservation) => reservation.status === 'Aguardando pagamento' || reservation.status === 'Aguardando confirmação');
   if (tab === 'Canceladas') {
     return reservations.filter((reservation) => reservation.status === 'Cancelada' || reservation.rentalStatus === 'cancelada');
   }
   const statuses: Partial<Record<AdminReservationTab, ReservationStatus>> = {
-    Pendentes: 'Pendente', Confirmadas: 'Confirmada', 'Em andamento': 'Em andamento',
+    Confirmadas: 'Confirmada', 'Em andamento': 'Em andamento',
     'Concluídas': 'Concluída',
   };
   const status = statuses[tab];
@@ -203,7 +210,7 @@ export class ReservationService {
 
   mine(tab: ClientReservationTab): Reservation[] {
     const statuses: Record<ClientReservationTab, ReservationStatus[]> = {
-      Futuras: ['Pendente', 'Confirmada'],
+      Futuras: ['Pendente', 'Aguardando pagamento', 'Aguardando confirmação', 'Confirmada'],
       'Em andamento': ['Em andamento'],
       Histórico: ['Concluída', 'Cancelada'],
     };

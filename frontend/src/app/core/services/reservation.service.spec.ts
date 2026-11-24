@@ -40,7 +40,7 @@ describe('mapReservation', () => {
 
   it('keeps persisted pending status and includes the owner-scoped client row', () => {
     const reservation = mapReservation(makeApiReservation(), 99, true);
-    expect(reservation.status).toBe('Pendente');
+    expect(reservation.status).toBe('Aguardando pagamento');
     expect(reservation.mine).toBe(true);
     expect(reservation.days).toBe(2);
   });

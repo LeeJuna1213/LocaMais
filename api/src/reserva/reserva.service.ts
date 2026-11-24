@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, FindOneOptions, Repository } from 'typeorm';
@@ -20,6 +21,12 @@ import { RedisService } from '../redis/redis.service.js';
 import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
 import { ConfiguracaoService } from '../configuracao/configuracao.service.js';
 import { Loja } from '../loja/entities/loja.entity.js';
+import { Pagamento } from '../pagamento/entities/pagamento.entity.js';
+import { MetodoPagamento } from '../pagamento/enums/metodo-pagamento.enum.js';
+import { StatusPagamento } from '../pagamento/enums/status-pagamento.enum.js';
+import { Notificacao } from '../notificacao/entities/notificacao.entity.js';
+import { Estorno } from '../pagamento/entities/estorno.entity.js';
+import { NotificacaoService } from '../notificacao/notificacao.service.js';
 
 import { ConsultarDisponibilidadeDto } from './dto/consultar-disponibilidade.dto.js';
 import { CreateReservaDto } from './dto/create-reserva.dto.js';
@@ -35,6 +42,7 @@ import { StatusReserva } from './enums/status-reserva.enum.js';
  */
 const STATUSES_BLOQUEANTES: StatusReserva[] = [
   StatusReserva.PENDENTE,
+  StatusReserva.AGUARDANDO_CONFIRMACAO,
   StatusReserva.CONFIRMADA,
 ];
 
@@ -88,6 +96,7 @@ export class ReservaService {
     private readonly redis: RedisService,
     private readonly cacheInvalidation: CacheInvalidationService,
     private readonly configuracaoService: ConfiguracaoService,
+    @Optional() private readonly notificationService?: NotificacaoService,
   ) {}
 
   /**
@@ -167,10 +176,30 @@ export class ReservaService {
       const inserted = await repository.save(reservation);
       const sequence = await this.publicCodeSequence(manager, inserted);
       inserted.codigo = `LOC-${String(sequence).padStart(6, '0')}`;
-      return repository.save(inserted);
+      const created = await repository.save(inserted);
+      await manager.getRepository(Pagamento).save(manager.getRepository(Pagamento).create({
+        valor: created.valorTotal,
+        metodo: MetodoPagamento.PIX,
+        status: StatusPagamento.PENDENTE,
+        data: new Date(),
+        locacao_id: null,
+        reservation_id: created.id,
+        gateway_id: null,
+        comprovante_snapshot: null,
+      }));
+      await manager.getRepository(Notificacao).save(manager.getRepository(Notificacao).create({
+        usuario_id: client.user_id,
+        reserva_id: created.id,
+        tipo: 'reserva_criada',
+        titulo: 'Reserva aguardando pagamento',
+        descricao: `A reserva ${created.codigo} foi criada e aguarda o pagamento simulado.`,
+        lida_em: null,
+      }));
+      return created;
     });
 
     // UUID novo não pode ter cache anterior; o GET que vier depois populará.
+    await this.cacheInvalidation.invalidateKeys([`locamais:notificacoes:nao-lidas:${client.user_id}`]);
     return this.findOne(saved.id);
   }
 
@@ -184,7 +213,7 @@ export class ReservaService {
   findAllForActor(actor: UsuarioAutenticado): Promise<Reserva[]> {
     if (this.isStaff(actor)) {
       return this.reservasRepository.find({
-        relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true },
+        relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true, pagamentos: true },
         order: { dataRetirada: 'ASC' },
       });
     }
@@ -207,7 +236,7 @@ export class ReservaService {
   async findOne(id: string): Promise<Reserva> {
     const reservation = await this.reservasRepository.findOne({
       where: { id },
-      relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true },
+      relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true, pagamentos: true },
     });
 
     if (!reservation) {
@@ -278,7 +307,7 @@ export class ReservaService {
     const isPublicCode = /^(LOC|RES)-\d{6,}$/i.test(identifier);
     const reservation = await this.reservasRepository.findOne({
       where: isPublicCode ? { codigo: identifier.trim().toUpperCase() } : { id: identifier },
-      relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true },
+      relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true, pagamentos: true },
     });
     if (!reservation) throw new NotFoundException(`reserva ${identifier} não encontrada`);
     return reservation;
@@ -336,7 +365,7 @@ export class ReservaService {
 
     if (dto.status && dto.status !== current.status) {
       const transicaoPermitida =
-        (current.status === StatusReserva.PENDENTE &&
+        (current.status === StatusReserva.AGUARDANDO_CONFIRMACAO &&
           dto.status === StatusReserva.CONFIRMADA) ||
         (current.status === StatusReserva.CONFIRMADA &&
           dto.status === StatusReserva.CONCLUIDA);
@@ -384,6 +413,13 @@ export class ReservaService {
       const car = await this.findCarForUpdate(manager, carId);
       const repository = manager.getRepository(Reserva);
 
+      if (dto.status === StatusReserva.CONFIRMADA) {
+        const paid = await manager.getRepository(Pagamento).exists({
+          where: { reservation_id: id, status: StatusPagamento.APROVADO },
+        });
+        if (!paid) throw new ConflictException('a reserva só pode ser confirmada após a aprovação do pagamento simulado');
+      }
+
       if (changesDates || changesCar || dto.status === StatusReserva.CONFIRMADA) {
         await this.assertAvailable(
           repository,
@@ -396,7 +432,7 @@ export class ReservaService {
 
       const reservation = await repository.findOne({
         where: { id },
-        relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true },
+        relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true, pagamentos: true },
       });
 
       if (!reservation) {
@@ -431,6 +467,17 @@ export class ReservaService {
 
       if (dto.status && dto.status !== current.status) {
         reservation.status = dto.status;
+        if (dto.status === StatusReserva.CONFIRMADA) {
+          const notificationRepository = manager.getRepository(Notificacao);
+          await notificationRepository.save(notificationRepository.create({
+            usuario_id: reservation.client.user_id,
+            reserva_id: reservation.id,
+            tipo: 'reserva_confirmada',
+            titulo: 'Reserva confirmada',
+            descricao: `A equipe confirmou a reserva ${reservation.codigo}.`,
+            lida_em: null,
+          }));
+        }
       }
 
       return repository.save(reservation);
@@ -447,6 +494,9 @@ export class ReservaService {
       );
     }
     await this.cacheInvalidation.invalidateReservationInspections(id);
+    if (dto.status === StatusReserva.CONFIRMADA) {
+      await this.cacheInvalidation.invalidateKeys([`locamais:notificacoes:nao-lidas:${saved.client.user_id}`]);
+    }
 
     return this.findOne(saved.id);
   }
@@ -466,6 +516,27 @@ export class ReservaService {
     return sequence;
   }
 
+  private async notificacoesEmail(reservation: Reserva, _actor: UsuarioAutenticado, cancelledAt: Date, refunded: boolean): Promise<void> {
+    const user = reservation.client?.user;
+    if (!user?.email || !this.notificationService) return;
+    const payment = reservation.pagamentos?.find((item) => item.status === StatusPagamento.APROVADO || item.status === StatusPagamento.ESTORNADO);
+    const shop = reservation.lojaRetiradaSnapshot ?? (reservation.lojaRetirada ? {
+      nome: reservation.lojaRetirada.nome, logradouro: reservation.lojaRetirada.logradouro,
+      numero: reservation.lojaRetirada.numero, cidade: reservation.lojaRetirada.cidade, uf: reservation.lojaRetirada.uf,
+    } : null);
+    await this.notificationService.sendCancellationEmail(user.email, user.name, {
+      'Código da reserva': reservation.codigo ?? reservation.id,
+      Veículo: `${reservation.car?.marca ?? ''} ${reservation.car?.modelo ?? ''}`.trim(),
+      ...(reservation.car?.placa ? { Placa: reservation.car.placa } : {}),
+      'Loja de retirada': shop ? `${shop.nome} — ${shop.logradouro}, ${shop.numero}, ${shop.cidade}/${shop.uf}` : 'Não informada',
+      'Retirada': new Date(reservation.dataRetirada).toLocaleString('pt-BR'),
+      'Devolução': new Date(reservation.dataDevolucao).toLocaleString('pt-BR'),
+      'Valor total': `R$ ${Number(reservation.valorTotal).toFixed(2)}`,
+      'Forma de pagamento': payment?.metodo ?? 'Não pago',
+      'Cancelada em': cancelledAt.toLocaleString('pt-BR'),
+    }, refunded);
+  }
+
   /**
    * Cancelamento lógico.
    *
@@ -478,8 +549,11 @@ export class ReservaService {
     const reservation = await this.findOne(id);
     this.assertCanRead(actor, reservation);
 
-    if (reservation.status !== StatusReserva.PENDENTE) {
-      throw new ConflictException('somente reservas pendentes podem ser canceladas');
+    if ([StatusReserva.CANCELADA, StatusReserva.CONCLUIDA].includes(reservation.status)) {
+      throw new ConflictException('a reserva já foi cancelada ou concluída');
+    }
+    if (actor.type === TipoUsuario.CLIENTE && reservation.status !== StatusReserva.PENDENTE) {
+      throw new ConflictException('o cliente só pode cancelar reservas aguardando pagamento');
     }
     if (actor.type === TipoUsuario.CLIENTE) {
       const pickup = this.asDate(reservation.dataRetirada, 'dataRetirada');
@@ -494,11 +568,43 @@ export class ReservaService {
     const saved = await this.dataSource.transaction(async (manager) => {
       const repository = manager.getRepository(Reserva);
       const current = await repository.findOne({ where: { id } });
-      if (!current || current.status !== StatusReserva.PENDENTE) {
-        throw new ConflictException('somente reservas pendentes podem ser canceladas');
-      }
+      if (!current || [StatusReserva.CANCELADA, StatusReserva.CONCLUIDA].includes(current.status)) throw new ConflictException('a reserva já foi cancelada ou concluída');
+      const payments = await manager.getRepository(Pagamento).find({ where: { reservation_id: id } });
+      const approved = payments.find((payment) => payment.status === StatusPagamento.APROVADO);
+      const notificationRepository = manager.getRepository(Notificacao);
+      const cancelDate = new Date();
       current.status = StatusReserva.CANCELADA;
-      return repository.save(current);
+      current.cancelada_em = cancelDate;
+      current.cancelada_por = actor.id;
+      if (approved) {
+        const refundRepository = manager.getRepository(Estorno);
+        const existingRefund = await refundRepository.findOne({ where: { pagamento_id: approved.id } });
+        if (!existingRefund) await refundRepository.save(refundRepository.create({ pagamento_id: approved.id, pagamento: approved, valor: approved.valor, tipo: 'simulado' }));
+        approved.status = StatusPagamento.ESTORNADO;
+        await manager.getRepository(Pagamento).save(approved);
+      } else {
+        for (const payment of payments.filter((item) => item.status === StatusPagamento.PENDENTE)) {
+          payment.status = StatusPagamento.CANCELADO;
+          await manager.getRepository(Pagamento).save(payment);
+        }
+      }
+      await notificationRepository.save(notificationRepository.create({
+        usuario_id: reservation.client.user_id,
+        reserva_id: id,
+        tipo: 'reserva_cancelada',
+        titulo: 'Reserva cancelada',
+        descricao: `A reserva ${reservation.codigo} foi cancelada pela equipe LocaMais.`,
+        lida_em: null,
+      }));
+      if (approved) await notificationRepository.save(notificationRepository.create({
+        usuario_id: reservation.client.user_id,
+        reserva_id: id,
+        tipo: 'estorno_realizado',
+        titulo: 'Estorno simulado realizado',
+        descricao: `O valor pago pela reserva ${reservation.codigo} foi estornado na simulação acadêmica.`,
+        lida_em: null,
+      }));
+      return { saved: await repository.save(current), refunded: !!approved, cancelDate };
     });
 
     // Invalida o cache da reserva cancelada somente apos a gravacao no MySQL.
@@ -513,7 +619,13 @@ export class ReservaService {
     }
     await this.cacheInvalidation.invalidateReservationInspections(id);
 
-    return this.findOne(saved.id);
+    await this.cacheInvalidation.invalidateKeys([`locamais:notificacoes:nao-lidas:${reservation.client.user_id}`]);
+    try {
+      await this.notificacoesEmail(reservation, actor, saved.cancelDate, saved.refunded);
+    } catch (error) {
+      this.logger.error(`Reserva ${reservation.codigo} cancelada, mas o e-mail não foi enviado: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return this.findOne(saved.saved.id);
   }
 
   /**

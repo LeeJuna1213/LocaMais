@@ -92,6 +92,7 @@ describe('integração HTTP dos caches Redis (MySQL + Memurai reais)', () => {
     expect(reservationResponse.status).toBe(201);
     const reservation = reservationResponse.body;
     created.reservations.push(reservation.id);
+    expect((await post(app, '/pagamentos/meus', { reservation_id: reservation.id, metodo: 'pix' }, token)).status).toBe(201);
     const confirmed = await patch<JsonObject>(app, `/reservas/${reservation.id}`, {
       status: 'confirmada',
     }, token);
@@ -123,6 +124,7 @@ describe('integração HTTP dos caches Redis (MySQL + Memurai reais)', () => {
 
     const otherReservation = await createScheduledRental(8, 9);
     const cancellationReservation = await createScheduledRental(10, 11);
+    expect((await post(app, '/pagamentos/meus', { reservation_id: cancellationReservation.id, metodo: 'pix' }, token)).status).toBe(201);
     expect((await patch(app, `/reservas/${cancellationReservation.id}`, { status: 'confirmada' }, token)).status).toBe(200);
     const cancellationRentalResponse = await post<JsonObject>(app, '/locacoes', {
       reservation_id: cancellationReservation.id,

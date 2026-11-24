@@ -76,6 +76,8 @@ describe('ReservaService', () => {
       update: vi.fn().mockResolvedValue(undefined),
       getRepository: vi.fn().mockReturnValue({
         findOne: vi.fn().mockResolvedValue(mockReserva),
+        find: vi.fn().mockResolvedValue([]),
+        exists: vi.fn().mockResolvedValue(true),
         create: vi.fn().mockImplementation((dto: any) => ({
           ...dto,
           calcularValor: () => 200,
@@ -124,6 +126,7 @@ describe('ReservaService', () => {
     };
     cacheInvalidation = {
       invalidateReservationInspections: vi.fn().mockResolvedValue(undefined),
+      invalidateKeys: vi.fn().mockResolvedValue(undefined),
     };
     configuracaoService = { getTaxaServico: vi.fn().mockResolvedValue({ valor: 0 }) };
 
@@ -180,7 +183,7 @@ describe('ReservaService', () => {
       const result = await service.findAllForActor(adminActor);
 
       expect(reservasRepository.find).toHaveBeenCalledWith({
-        relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true },
+        relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true, pagamentos: true },
         order: { dataRetirada: 'ASC' },
       });
       expect(result.map((item: Reserva) => item.status)).toEqual([
@@ -265,7 +268,7 @@ describe('ReservaService', () => {
       expect(redisService.get).toHaveBeenCalledWith('locamais:reserva:res-123');
       expect(reservasRepository.findOne).toHaveBeenCalledWith({
         where: { id: 'res-123' },
-        relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true },
+        relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true, pagamentos: true },
       });
       expect(redisService.set).toHaveBeenCalledWith(
         'locamais:reserva:res-123',
@@ -340,7 +343,7 @@ describe('ReservaService', () => {
       );
       expect(reservasRepository.findOne).toHaveBeenCalledWith({
         where: { id: 'inexistente' },
-        relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true },
+        relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true, pagamentos: true },
       });
     });
   });
@@ -356,6 +359,7 @@ describe('ReservaService', () => {
       redisService.del.mockResolvedValue(1);
       reservasRepository.findOne.mockResolvedValue(mockReserva);
       reservasRepository.save.mockResolvedValue(mockReserva);
+      mockReserva.status = StatusReserva.AGUARDANDO_CONFIRMACAO;
 
       await service.update('res-123', { status: StatusReserva.CONFIRMADA });
 
@@ -382,6 +386,7 @@ describe('ReservaService', () => {
       reservasRepository.findOne.mockResolvedValue(mockReserva);
       reservasRepository.getRepository = vi.fn().mockReturnValue({
         findOne: vi.fn().mockResolvedValue(mockReserva),
+        exists: vi.fn().mockResolvedValue(true),
         create: vi.fn().mockImplementation((dto: any) => dto),
         save: vi.fn().mockRejectedValue(new Error('db error')),
         createQueryBuilder: vi.fn().mockReturnValue({
@@ -391,7 +396,7 @@ describe('ReservaService', () => {
         }),
       });
       // Garante que a confirmação passe pela gravação transacional simulada.
-      mockReserva.status = StatusReserva.PENDENTE;
+      mockReserva.status = StatusReserva.AGUARDANDO_CONFIRMACAO;
 
       await expect(
         service.update('res-123', { status: StatusReserva.CONFIRMADA }),
@@ -405,6 +410,7 @@ describe('ReservaService', () => {
       reservasRepository.findOne.mockResolvedValue(mockReserva);
       reservasRepository.getRepository = vi.fn().mockReturnValue({
         findOne: vi.fn().mockResolvedValue(mockReserva),
+        exists: vi.fn().mockResolvedValue(true),
         create: vi.fn().mockImplementation((dto: any) => dto),
         save: vi.fn().mockResolvedValue(mockReserva),
         createQueryBuilder: vi.fn().mockReturnValue({
@@ -415,6 +421,7 @@ describe('ReservaService', () => {
       });
       redisService.del.mockRejectedValue(new Error('Redis indisponível'));
 
+      mockReserva.status = StatusReserva.AGUARDANDO_CONFIRMACAO;
       const resultado = await service.update('res-123', {
         status: StatusReserva.CONFIRMADA,
       });

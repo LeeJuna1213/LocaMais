@@ -6,6 +6,7 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -15,6 +16,7 @@ import type { Carro } from '../../carro/entities/carro.entity.js';
 import type { Cliente } from '../../cliente/entities/cliente.entity.js';
 import type { Loja } from '../../loja/entities/loja.entity.js';
 import type { Locacao } from '../../locacao/entities/locacao.entity.js';
+import type { Pagamento } from '../../pagamento/entities/pagamento.entity.js';
 import { StatusReserva } from '../enums/status-reserva.enum.js';
 
 /**
@@ -135,8 +137,17 @@ export class Reserva {
   @Column({ type: 'simple-json', nullable: true })
   lojaRetiradaSnapshot: { nome: string; logradouro: string; numero: string; cidade: string; uf: string } | null;
 
+  @Column({ type: 'datetime', nullable: true })
+  cancelada_em: Date | null;
+
+  @Column({ type: 'int', nullable: true })
+  cancelada_por: number | null;
+
   @OneToOne('Locacao', 'reservation')
   locacao?: Locacao | null;
+
+  @OneToMany('Pagamento', 'reservation')
+  pagamentos?: Pagamento[];
 
   @CreateDateColumn()
   created_at: Date;
@@ -196,9 +207,7 @@ export class Reserva {
   }
 
   /** Controla o que é serializado na resposta HTTP. */
-  toJSON(): Omit<Reserva, 'toJSON' | 'calcularValor' | 'locacao' | 'codigo_sequencial'> & {
-    locacao: Pick<Locacao, 'id' | 'status' | 'dataRetirada' | 'dataDevolucao'> | null | undefined;
-  } {
+  toJSON(): Record<string, unknown> {
     const {
       id,
       codigo,
@@ -216,7 +225,10 @@ export class Reserva {
       loja_retirada_id,
       lojaRetiradaSnapshot,
       lojaRetirada,
+      cancelada_em,
+      cancelada_por,
       locacao,
+      pagamentos,
       created_at,
       updated_at,
     } = this;
@@ -237,9 +249,19 @@ export class Reserva {
       loja_retirada_id,
       lojaRetiradaSnapshot,
       lojaRetirada,
+      cancelada_em,
+      cancelada_por,
       locacao: locacao
         ? { id: locacao.id, status: locacao.status, dataRetirada: locacao.dataRetirada, dataDevolucao: locacao.dataDevolucao }
         : null,
+      pagamentos: pagamentos?.map(({ id: pagamentoId, status: statusPagamento, metodo, valor, data, comprovante_snapshot }) => ({
+        id: pagamentoId,
+        status: statusPagamento,
+        metodo,
+        valor: Number(valor),
+        data,
+        comprovante_snapshot,
+      })),
       created_at,
       updated_at,
     };

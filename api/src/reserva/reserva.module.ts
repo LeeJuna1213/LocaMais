@@ -26,6 +26,6 @@ import { ReservaService } from './reserva.service.js';
   imports: [TypeOrmModule.forFeature([Reserva, Loja]), ClienteModule, CarroModule, ConfiguracaoModule],
   controllers: [ReservaController],
   providers: [ReservaService],
-  exports: [ReservaService],
+  exports: [ReservaService, TypeOrmModule],
 })
 export class ReservaModule {}

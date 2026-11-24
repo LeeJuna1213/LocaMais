@@ -192,6 +192,8 @@ describe('Vistorias (e2e)', () => {
     }
     reservationId = created.body.id;
 
+    const payment = await post(app, '/pagamentos/meus', { reservation_id: reservationId, metodo: 'pix' }, clientToken);
+    if (payment.status !== 201) throw new Error(`nao foi possivel pagar a reserva: ${JSON.stringify(payment.body)}`);
     const confirmed = await patch<ReservaBody>(
       app,
       `/reservas/${reservationId}`,
@@ -275,6 +277,8 @@ describe('Vistorias (e2e)', () => {
       otherClientToken,
     );
     expect(res2.status).toBe(201);
+    const payment = await post(app, '/pagamentos/meus', { reservation_id: res2.body.id, metodo: 'pix' }, otherClientToken);
+    expect(payment.status).toBe(201);
     await patch<ReservaBody>(
       app,
       `/reservas/${res2.body.id}`,
@@ -360,6 +364,8 @@ describe('Vistorias (e2e)', () => {
       clientToken,
     );
     expect(res3.status).toBe(201);
+    const payment = await post(app, '/pagamentos/meus', { reservation_id: res3.body.id, metodo: 'pix' }, clientToken);
+    expect(payment.status).toBe(201);
     await patch<ReservaBody>(
       app,
       `/reservas/${res3.body.id}`,

@@ -162,6 +162,9 @@ describe('Locações (e2e)', () => {
     reservationCode = created.body.codigo;
     expect(reservationCode).toMatch(/^LOC-\d{6,}$/);
 
+    const payment = await post(app, '/pagamentos/meus', { reservation_id: reservationId, metodo: 'pix' }, clientToken);
+    if (payment.status !== 201) throw new Error(`nao foi possivel pagar a reserva: ${JSON.stringify(payment.body)}`);
+
     const confirmed = await patch<ReservaBody>(
       app,
       `/reservas/${reservationId}`,
@@ -337,6 +340,8 @@ describe('Locações (e2e)', () => {
       adminToken,
     );
     expect(outraReserva.status).toBe(201);
+    const otherPayment = await post(app, '/pagamentos/meus', { reservation_id: outraReserva.body.id, metodo: 'pix' }, clientToken);
+    expect(otherPayment.status).toBe(201);
     await patch<ReservaBody>(
       app,
       `/reservas/${outraReserva.body.id}`,
@@ -495,6 +500,8 @@ describe('Locações (e2e)', () => {
   });
 
   it('permite finalizar devolução sem descrição de avaria', async () => {
+    const payment = await post(app, '/pagamentos/meus', { reservation_id: pendingReservationId, metodo: 'pix' }, clientToken);
+    expect(payment.status).toBe(201);
     const confirmed = await patch<ReservaBody>(app, `/reservas/${pendingReservationId}`, { status: 'confirmada' }, adminToken);
     expect(confirmed.status).toBe(200);
     const created = await post<LocacaoBody>(app, '/locacoes', { reservation_id: pendingReservationId }, adminToken);
@@ -522,6 +529,8 @@ describe('Locações (e2e)', () => {
       car_id: carId,
     }, clientToken);
     expect(createdReservation.status).toBe(201);
+    const payment = await post(app, '/pagamentos/meus', { reservation_id: createdReservation.body.id, metodo: 'pix' }, clientToken);
+    expect(payment.status).toBe(201);
     const confirmed = await patch<ReservaBody>(app, `/reservas/${createdReservation.body.id}`, {
       status: 'confirmada',
     }, adminToken);

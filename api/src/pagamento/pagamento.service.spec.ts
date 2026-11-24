@@ -13,6 +13,11 @@ describe('PagamentoService', () => {
   let dataSource: any;
   let locacaoService: LocacaoService;
   let gatewayService: GatewayPagamentoService;
+  let reservationsRepository: any;
+  let refundsRepository: any;
+  let notificationService: any;
+  let redisService: any;
+  let reservationPayment: any;
 
   const mockLocacao = {
     id: 'loc-123',
@@ -81,9 +86,31 @@ describe('PagamentoService', () => {
       save: vi.fn().mockImplementation((entity: any) => entity),
     };
 
+    reservationPayment = { ...mockPagamento, id: 'reservation-payment', status: StatusPagamento.PENDENTE, reservation_id: 'res-456', locacao_id: null, gateway_id: null, reservation: null, comprovante_snapshot: null };
+    reservationsRepository = {
+      findOne: vi.fn().mockResolvedValue({
+        id: 'res-456', codigo: 'RSV-000456', status: 'pendente', valorTotal: 300,
+        client: { user_id: 1, user: { id: 1, name: 'Cliente Teste', email: 'cliente@exemplo.com' } },
+        car: { marca: 'Fiat', modelo: 'Palio', placa: 'ABC-1234' },
+      }),
+      update: vi.fn().mockResolvedValue(undefined),
+    };
+    refundsRepository = {};
+    notificationService = { create: vi.fn().mockResolvedValue(undefined) };
+    redisService = { del: vi.fn().mockResolvedValue(undefined) };
+
     dataSource = {
       transaction: vi.fn().mockImplementation(async (cb: any) => {
-        const manager = { ...pagamentosRepository, ...gatewaysRepository };
+        const manager = {
+          connection: { options: { type: 'sqlite' } },
+          save: vi.fn().mockImplementation(async (entity: any) => entity),
+          getRepository: (entity: any) => entity.name === 'Reserva' ? reservationsRepository
+            : entity.name === 'GatewayPagamento' ? gatewaysRepository
+              : entity.name === 'Estorno' ? refundsRepository : {
+                ...pagamentosRepository,
+                findOne: vi.fn().mockResolvedValue(reservationPayment),
+              },
+        };
         return cb(manager);
       }),
     };
@@ -105,6 +132,10 @@ describe('PagamentoService', () => {
       dataSource,
       locacaoService,
       gatewayService,
+      reservationsRepository,
+      refundsRepository,
+      notificationService,
+      redisService,
     );
   });
 
@@ -165,29 +196,28 @@ describe('PagamentoService', () => {
     const actor = { id: 1, type: 'cliente' } as any;
     const dto = { reservation_id: 'res-456', metodo: MetodoPagamento.PIX };
 
-    it('cria uma cobrança pendente para locação existente, pelo saldo calculado no backend', async () => {
+    it('aprova uma cobrança pendente da reserva e atualiza a reserva', async () => {
       const result = await service.createMine(actor, dto);
 
-      expect(result.status).toBe(StatusPagamento.PENDENTE);
-      expect(result.locacao_id).toBe('loc-123');
+      expect(result.status).toBe(StatusPagamento.APROVADO);
+      expect(result.locacao_id).toBeNull();
       expect(result.valor).toBe(300);
-      expect(locacaoService.create).not.toHaveBeenCalled();
+      expect(result.comprovante_snapshot).toBeTruthy();
+      expect(reservationsRepository.update).toHaveBeenCalledWith({ id: 'res-456', status: 'pendente' }, { status: 'aguardando_confirmacao' });
+      expect(notificationService.create).toHaveBeenCalledOnce();
     });
 
-    it('cria locação somente quando ainda não existe para reserva confirmada', async () => {
-      locacaoService.findAll = vi.fn()
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([]);
+    it('impede pagamento de uma reserva pertencente a outro cliente', async () => {
+      reservationsRepository.findOne.mockResolvedValueOnce({ id: 'res-456', client: { user_id: 99 } });
+      await expect(service.createMine(actor, dto)).rejects.toThrow(/não encontrada/);
+    });
+
+    it('não duplica um pagamento já aprovado', async () => {
+      reservationPayment.status = StatusPagamento.APROVADO;
       const result = await service.createMine(actor, dto);
-
-      expect(locacaoService.create).toHaveBeenCalledWith(actor, { reservation_id: 'res-456' });
-      expect(result.locacao_id).toBe('loc-123');
-    });
-
-    it('impede cobranças pendentes duplicadas', async () => {
-      pagamentosRepository.exists = vi.fn().mockResolvedValue(true);
-
-      await expect(service.createMine(actor, dto)).rejects.toThrow(/já existe um pagamento pendente/);
+      expect(result.status).toBe(StatusPagamento.APROVADO);
+      expect(gatewayService.processarTransacao).not.toHaveBeenCalled();
+      expect(notificationService.create).not.toHaveBeenCalled();
     });
   });
 

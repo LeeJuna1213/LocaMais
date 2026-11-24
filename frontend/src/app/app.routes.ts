@@ -36,6 +36,10 @@ export const routes: Routes = [
         path: 'pagamentos',
         loadComponent: () => import('./pages/client/customer-payments.page').then((m) => m.CustomerPaymentsPage),
       },
+      {
+        path: 'notificacoes',
+        loadComponent: () => import('./pages/client/notifications.page').then((m) => m.NotificationsPage),
+      },
       { path: 'favoritos', loadComponent: () => import('./pages/client/favorites.page').then((m) => m.FavoritesPage) },
       {
         path: 'reservas/:id',

@@ -26,6 +26,7 @@ import { SegmentTabsComponent } from '../../shared/components/segment-tabs.compo
             [reservation]="reservation"
             [vehicle]="vehicleOf(reservation)"
             (selected)="open($event)"
+            (payRequested)="pay($event)"
           />
         } @empty {
           <div class="card empty">
@@ -79,6 +80,10 @@ export class MyReservationsPage {
 
   async open(reservation: Reservation): Promise<void> {
     await this.router.navigate(['/client/reservas', reservation.id]);
+  }
+
+  async pay(reservation: Reservation): Promise<void> {
+    await this.router.navigate(['/booking/pagamento'], { queryParams: { id: reservation.id } });
   }
 
   async newReservation(): Promise<void> {

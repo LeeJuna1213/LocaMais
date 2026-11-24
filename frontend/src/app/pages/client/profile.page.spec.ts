@@ -86,10 +86,10 @@ describe('ProfilePage photo controls', () => {
     await render();
     const rows = Array.from(fixture.nativeElement.querySelectorAll('.mn')) as HTMLButtonElement[];
     expect(rows.map((row) => row.textContent?.trim().replace(/›$/, '').trim())).toEqual([
-      'Dados pessoais', 'CNH', 'Alterar senha', 'Endereço', 'Favoritos',
+      'Dados pessoais', 'CNH', 'Alterar senha', 'Endereço', 'Favoritos', 'Notificações',
     ]);
     expect(rows.map((row) => row.querySelector('ion-icon')?.getAttribute('name'))).toEqual([
-      'person-outline', 'id-card-outline', 'lock-closed-outline', 'location-outline', 'heart-outline',
+      'person-outline', 'id-card-outline', 'lock-closed-outline', 'location-outline', 'heart-outline', 'notifications-outline',
     ]);
     expect(rows.every((row) => !!row.querySelector('.mn-main ion-icon'))).toBe(true);
     expect(fixture.nativeElement.querySelector('.profile-logout ion-icon')?.getAttribute('name')).toBe('log-out-outline');

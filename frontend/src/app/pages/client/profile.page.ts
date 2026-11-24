@@ -10,6 +10,7 @@ import {
   lockClosedOutline,
   logOutOutline,
   personOutline,
+  notificationsOutline,
   trashOutline,
 } from 'ionicons/icons';
 import { Router } from '@angular/router';
@@ -17,6 +18,7 @@ import { Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { ImageUrlService } from '../../core/services/image-url.service';
 import { ToastService } from '../../core/services/toast.service';
+import { NotificationService } from '../../core/services/notification.service';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
 
 const MAX_PHOTO_SIZE = 5 * 1024 * 1024;
@@ -48,6 +50,7 @@ const VALID_PHOTO_TYPES: Record<string, string[]> = {
     .file-input { display: none; }
     .profile-logout { display: flex; align-items: center; justify-content: center; gap: 9px; }
     .profile-logout ion-icon { width: 20px; height: 20px; font-size: 20px; }
+    .notification-count { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: #e86f12; color: #fff; font-size: 11px; font-weight: 700; }
   `],
   template: `
     <app-shell title="Meu perfil" [showNav]="true" role="client" activeTab="perfil">
@@ -84,7 +87,7 @@ const VALID_PHOTO_TYPES: Record<string, string[]> = {
       <div class="card">
         @for (section of sections; track section) {
           <button class="mn" type="button" (click)="openSection(section)">
-            <span class="mn-main"><ion-icon [name]="sectionIcon(section)" aria-hidden="true"></ion-icon>{{ section }}</span><span>›</span>
+            <span class="mn-main"><ion-icon [name]="sectionIcon(section)" aria-hidden="true"></ion-icon>{{ section }} @if (section === 'Notificações' && notifications.unreadCount() > 0) { <span class="notification-count" aria-label="Notificações não lidas">{{ notifications.unreadCount() }}</span> }</span><span>›</span>
           </button>
         }
       </div>
@@ -100,8 +103,9 @@ export class ProfilePage {
   private readonly alerts = inject(AlertController);
   private readonly actionSheets = inject(ActionSheetController);
   private readonly imageUrls = inject(ImageUrlService);
+  readonly notifications = inject(NotificationService);
 
-  readonly sections = ['Dados pessoais', 'CNH', 'Alterar senha', 'Endereço', 'Favoritos'];
+  readonly sections = ['Dados pessoais', 'CNH', 'Alterar senha', 'Endereço', 'Favoritos', 'Notificações'];
   selectedPhoto: File | null = null;
   previewUrl: string | null = null;
   imageFailed = false;
@@ -118,7 +122,9 @@ export class ProfilePage {
       heartOutline,
       logOutOutline,
       trashOutline,
+      notificationsOutline,
     });
+    void this.notifications.load().catch(() => undefined);
   }
 
   get profile() {
@@ -232,6 +238,10 @@ export class ProfilePage {
       await this.router.navigateByUrl('/client/favoritos');
       return;
     }
+    if (section === 'Notificações') {
+      await this.router.navigateByUrl('/client/notificacoes');
+      return;
+    }
     await this.router.navigate(['/client/perfil', section]);
   }
 
@@ -242,6 +252,7 @@ export class ProfilePage {
       'Alterar senha': 'lock-closed-outline',
       Endereço: 'location-outline',
       Favoritos: 'heart-outline',
+      Notificações: 'notifications-outline',
     };
     return icons[section] ?? 'person-outline';
   }
