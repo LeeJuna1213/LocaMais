@@ -117,6 +117,62 @@ describe('NewVehiclePage create/edit form', () => {
     expect(fixture.componentInstance.fieldError('ano')).toContain('entre 1900');
   });
 
+  it('normalizes plate input to uppercase and validates supported Brazilian formats', async () => {
+    await render();
+    const page = fixture.componentInstance;
+    page.submitted = true;
+    const cases: Array<[string, boolean]> = [
+      ['ABC-1234', true], ['ABC1234', true], ['ABC1D23', true], ['abc-1234', true],
+      ['ABC12D3', false], ['AB12345', false], ['ABC-12345', false], ['ABC@1234', false],
+    ];
+
+    const input = fixture.nativeElement.querySelector('#vehicle-plate') as HTMLInputElement;
+    input.value = 'abc-1234';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(page.placa).toBe('ABC-1234');
+
+    for (const [plate, valid] of cases) {
+      page.onPlateInput(plate);
+      expect(page.placa).toBe(plate.toUpperCase());
+      expect(page.fieldError('placa') === null).toBe(valid);
+    }
+  });
+
+  it('does not submit creation when the plate format is invalid', async () => {
+    await render();
+    const page = fixture.componentInstance;
+    fillValidForm(page);
+    page.onPlateInput('ABC@1234');
+    await page.save();
+
+    expect(create).not.toHaveBeenCalled();
+    expect(page.fieldError('placa')).toContain('ABC-1234, ABC1234 ou ABC1D23');
+  });
+
+  it('does not submit plate changes in edit mode when the format is invalid', async () => {
+    routeId = '17';
+    await render();
+    const page = fixture.componentInstance;
+    page.onPlateInput('ABC12D3');
+    await page.save();
+
+    expect(update).not.toHaveBeenCalled();
+    expect(page.fieldError('placa')).toContain('ABC-1234, ABC1234 ou ABC1D23');
+  });
+
+  it('uses shared equal-size photo action styling in edit mode', async () => {
+    routeId = '17';
+    await render();
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('.photo-actions .photo-action')) as HTMLButtonElement[];
+
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0].textContent).toContain('Trocar foto');
+    expect(buttons[1].textContent).toContain('Remover foto');
+    expect(buttons.every((button) => button.classList.contains('photo-action'))).toBe(true);
+    expect(fixture.nativeElement.querySelectorAll('.photo-actions ion-icon')).toHaveLength(2);
+  });
+
   it('uses a free-text model input and persisted categories with an inline add-category action', async () => {
     await render();
     const model = fixture.nativeElement.querySelector('#vehicle-model') as HTMLInputElement;

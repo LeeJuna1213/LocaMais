@@ -5,13 +5,14 @@ import {
   IsNumber,
   IsOptional,
   IsPositive,
-  IsString,
   IsIn,
+  IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 import { StatusVeiculo } from '../enums/status-veiculo.enum.js';
 
@@ -26,6 +27,10 @@ export class CreateCarroDto {
   @IsString()
   @IsNotEmpty({ message: 'A placa e obrigatoria' })
   @MaxLength(20, { message: 'A placa nao pode ter mais de 20 caracteres' })
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
+  @Matches(/^(?:[A-Z]{3}-?[0-9]{4}|[A-Z]{3}[0-9][A-Z][0-9]{2})$/, {
+    message: 'A placa deve seguir o formato ABC-1234, ABC1234 ou ABC1D23',
+  })
   placa: string;
 
   @IsString()

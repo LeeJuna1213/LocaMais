@@ -39,15 +39,21 @@ type VehicleField = 'placa' | 'marca' | 'modelo' | 'categoria' | 'ano' | 'valorD
       width: 100%; max-height: 190px; object-fit: cover; border-radius: 12px;
     }
     .file-input { display: none; }
-    .photo-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; }
-    .photo-actions .btn { width: auto; min-width: 150px; margin-top: 8px; }
-    .photo-actions .lnk { width: auto; margin-top: 8px; }
-    .photo-actions .remove-photo {
-      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-      min-height: 40px; padding: 8px 12px; border: 1px solid #b42318; border-radius: 12px;
-      background: #fff; color: #b42318; font: inherit; font-weight: 600; cursor: pointer;
+    .photo-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    .photo-actions.with-remove { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .photo-actions .photo-action {
+      box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      width: 100%; min-width: 0; max-width: 100%; height: 44px; min-height: 44px; max-height: 44px;
+      margin: 8px 0 0; padding: 0 10px; border-width: 1px;
+      border-radius: 12px; font: inherit; font-size: 13px; font-weight: 600; line-height: 1.2;
+      transition: filter 150ms ease, transform 150ms ease;
     }
-    .photo-actions .remove-photo ion-icon { font-size: 18px; }
+    .photo-actions .photo-action ion-icon { flex: none; font-size: 18px; }
+    .photo-actions .photo-action span { overflow-wrap: anywhere; }
+    .photo-actions .remove-photo { border: 1px solid #b42318; background: #fff; color: #b42318; cursor: pointer; }
+    .photo-actions .photo-action:not(:disabled):hover { transform: translateY(-1px); }
+    .photo-actions .btn.photo-action:not(:disabled):hover { filter: brightness(0.94); }
+    @media (max-width: 380px) { .photo-actions.with-remove { grid-template-columns: minmax(0, 1fr); } }
     input[type="number"] { color-scheme: light; }
     input[type="number"]::-webkit-inner-spin-button,
     input[type="number"]::-webkit-outer-spin-button { opacity: 1; background: transparent; filter: grayscale(1); }
@@ -92,12 +98,13 @@ type VehicleField = 'placa' | 'marca' | 'modelo' | 'categoria' | 'ano' | 'valorD
                 aria-label="Selecionar foto do veículo"
                 (change)="selectPhoto($event)"
               />
-              <div class="photo-actions">
-                <button class="btn sec" type="button" [disabled]="saving" (click)="photoInput.click()">
-                  {{ previewUrl || currentPhotoUrl ? 'Trocar foto' : 'Selecionar foto' }}
+              <div class="photo-actions" [class.with-remove]="previewUrl || photoError || (editing && currentPhotoUrl && !removeCurrentPhoto)">
+                <button class="btn sec photo-action" type="button" [disabled]="saving" (click)="photoInput.click()">
+                  <ion-icon name="camera-outline" aria-hidden="true"></ion-icon>
+                  <span>{{ previewUrl || currentPhotoUrl ? 'Trocar foto' : 'Selecionar foto' }}</span>
                 </button>
                 @if (previewUrl || photoError || (editing && currentPhotoUrl && !removeCurrentPhoto)) {
-                  <button class="remove-photo" type="button" [disabled]="saving" (click)="removePhoto()" [attr.aria-label]="previewUrl ? 'Cancelar foto selecionada' : 'Remover foto do veículo'" [title]="previewUrl ? 'Cancelar foto selecionada' : 'Remover foto do veículo'">
+                  <button class="remove-photo photo-action" type="button" [disabled]="saving" (click)="removePhoto()" [attr.aria-label]="previewUrl ? 'Cancelar foto selecionada' : 'Remover foto do veículo'" [title]="previewUrl ? 'Cancelar foto selecionada' : 'Remover foto do veículo'">
                     <ion-icon name="trash-outline" aria-hidden="true"></ion-icon>
                     <span>{{ previewUrl ? 'Cancelar seleção' : 'Remover foto' }}</span>
                   </button>
@@ -109,7 +116,7 @@ type VehicleField = 'placa' | 'marca' | 'modelo' | 'categoria' | 'ano' | 'valorD
           <h2>Dados do veículo</h2>
 
           <label for="vehicle-plate">Placa *</label>
-          <input id="vehicle-plate" name="placa" [(ngModel)]="placa" required maxlength="20" autocomplete="off" [attr.aria-invalid]="fieldError('placa') ? 'true' : null" />
+          <input id="vehicle-plate" name="placa" [ngModel]="placa" (ngModelChange)="onPlateInput($event)" required maxlength="20" autocomplete="off" [attr.aria-invalid]="fieldError('placa') ? 'true' : null" />
           @if (fieldError('placa'); as error) { <div class="field-error" role="alert">{{ error }}</div> }
 
           <label for="vehicle-make">Marca *</label>
@@ -216,6 +223,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
   photoError: string | null = null;
   private baseline: VehicleWriteInput | null = null;
   private baselinePhoto: string | null = null;
+  private readonly platePattern = /^(?:[A-Z]{3}-?[0-9]{4}|[A-Z]{3}[0-9][A-Z][0-9]{2})$/;
 
   constructor() {
     addIcons({ cameraOutline, trashOutline });
@@ -240,7 +248,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
       if (!vehicle?.plate || !vehicle.make || !vehicle.model || vehicle.year === undefined) {
         throw new Error('Os dados do veículo não estão disponíveis para edição.');
       }
-      this.placa = vehicle.plate;
+      this.placa = vehicle.plate.toUpperCase();
       this.marca = vehicle.make;
       this.modelo = vehicle.model;
       this.categoriaId = vehicle.categoryId ?? this.categoryService.categories().find((item) => item.nome === vehicle.category)?.id ?? null;
@@ -278,6 +286,10 @@ export class NewVehiclePage implements OnInit, OnDestroy {
     if (value === 'new') this.categoriaId = null;
   }
 
+  onPlateInput(value: string): void {
+    this.placa = value.toUpperCase();
+  }
+
   async addCategory(): Promise<void> {
     try {
       const category = await this.categoryService.create(this.newCategoryName);
@@ -305,7 +317,9 @@ export class NewVehiclePage implements OnInit, OnDestroy {
     };
     const value = values[field];
     if (value === null || (typeof value === 'string' && !value.trim())) return 'Este campo é obrigatório.';
-    if (field === 'placa' && this.placa.trim().length > 20) return 'A placa deve ter no máximo 20 caracteres.';
+    if (field === 'placa' && !this.platePattern.test(this.placa.trim().toUpperCase())) {
+      return 'Informe uma placa válida: ABC-1234, ABC1234 ou ABC1D23.';
+    }
     if (field === 'marca' && this.marca.trim().length > 100) return 'A marca deve ter no máximo 100 caracteres.';
     if (field === 'modelo' && this.modelo.trim().length > 100) return 'O modelo deve ter no máximo 100 caracteres.';
     if (field === 'categoria' && this.categoriaId === null) return 'Selecione uma categoria.';
@@ -426,7 +440,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
 
   private payload(): VehicleWriteInput {
     return {
-      placa: this.placa.trim(),
+      placa: this.placa.trim().toUpperCase(),
       marca: this.marca.trim(),
       modelo: this.modelo.trim().replace(/\s+/g, ' '),
       categoriaId: this.categoriaId ?? 0,

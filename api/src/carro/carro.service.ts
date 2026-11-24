@@ -41,8 +41,9 @@ export class CarroService {
   ) {}
 
   async create(dto: CreateCarroDto): Promise<Carro> {
+    const placa = dto.placa.trim().toUpperCase();
     const placaExists = await this.carrosRepository.exists({
-      where: { placa: dto.placa },
+      where: { placa },
     });
 
     if (placaExists) {
@@ -53,7 +54,7 @@ export class CarroService {
 
     const saved = await this.carrosRepository.save(
       this.carrosRepository.create({
-        placa: dto.placa,
+        placa,
         modelo: dto.modelo,
         marca: dto.marca,
         categoria: categoria.nome,
@@ -159,9 +160,10 @@ export class CarroService {
     const carroExistente = await this.carrosRepository.findOne({ where: { id } });
     if (!carroExistente) throw new NotFoundException(`veiculo com ID ${id} nao encontrado`);
 
-    if (dto.placa && dto.placa !== carroExistente.placa) {
+    const placa = dto.placa?.trim().toUpperCase();
+    if (placa && placa !== carroExistente.placa.trim().toUpperCase()) {
       const placaExists = await this.carrosRepository.exists({
-        where: { placa: dto.placa },
+        where: { placa },
       });
 
       if (placaExists) {
@@ -172,7 +174,7 @@ export class CarroService {
     // A placa e um dos campos do status de revisao em cache, entao ela so pode
     // tornar a entrada antiga invalida se realmente foi alterada.
     const placaMudou =
-      dto.placa !== undefined && dto.placa !== carroExistente.placa;
+      placa !== undefined && placa !== carroExistente.placa;
 
     const categoria = dto.categoria_id !== undefined || dto.categoria !== undefined
       ? await this.categorias.resolveForVehicle(dto.categoria_id, dto.categoria)
@@ -180,7 +182,7 @@ export class CarroService {
 
     const changes: Partial<Carro> = {};
 
-    if (dto.placa !== undefined) changes.placa = dto.placa;
+    if (placa !== undefined) changes.placa = placa;
     if (dto.modelo !== undefined) changes.modelo = dto.modelo;
     if (dto.marca !== undefined) changes.marca = dto.marca;
     if (categoria) {

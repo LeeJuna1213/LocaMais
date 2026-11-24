@@ -257,6 +257,11 @@ describe('CarroService', () => {
   });
 
   describe('update', () => {
+    it('normaliza a placa para maiúsculas antes de persistir', async () => {
+      await service.update(1, { placa: 'xyz-9999' });
+      expect(carrosRepository.update).toHaveBeenCalledWith({ id: 1 }, { placa: 'XYZ-9999' });
+    });
+
     it('persiste capacidade e descrição recebidas no DTO', async () => {
       await service.update(1, { lugares: 7, descricao: 'SUV com porta-malas amplo' });
       expect(carrosRepository.update).toHaveBeenCalledWith(

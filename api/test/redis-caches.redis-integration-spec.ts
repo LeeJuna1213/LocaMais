@@ -75,7 +75,7 @@ describe('integração HTTP dos caches Redis (MySQL + Memurai reais)', () => {
     created.address = address.id;
 
     const carResponse = await post<JsonObject>(app, '/carros', {
-      placa: `IT${String(Date.now()).slice(-6)}`,
+      placa: `IT${Math.random().toString(36).slice(2, 3).toUpperCase()}${String(Date.now()).slice(-4)}`,
       modelo: 'Integration', marca: 'LocaMais', categoria: 'Hatch',
       ano: 2024, valorDiaria: 150,
     }, token);

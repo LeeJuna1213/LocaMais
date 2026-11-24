@@ -1,8 +1,9 @@
 import { INestApplication } from '@nestjs/common';
-import { createTestingApp, get, login, post } from './helpers.js';
+import { createTestingApp, get, login, patch, post } from './helpers.js';
 
 interface VehicleResponse {
   id: number;
+  placa?: string;
   quilometragem: number;
   proximaVistoriaKm: number | null;
   vistoriaPendente: boolean;
@@ -41,8 +42,8 @@ describe('Vistorias periódicas por veículo (e2e)', () => {
       expect(result.status).toBe(201);
       return result.body.id;
     };
-    carId = await createCar('VTST001', 50000);
-    overLimitCarId = await createCar('VTST002', 60000);
+    carId = await createCar('VTS0001', 50000);
+    overLimitCarId = await createCar('VTS0002', 60000);
   }, 30000);
 
   afterAll(async () => {
@@ -50,6 +51,42 @@ describe('Vistorias periódicas por veículo (e2e)', () => {
     delete process.env.ADMIN_EMAIL;
     delete process.env.ADMIN_PASSWORD;
     delete process.env.ADMIN_NAME;
+  });
+
+  it('normaliza placas na criação e edição e rejeita formatos inválidos na API', async () => {
+    const created = await post<VehicleResponse>(app, '/carros', {
+      placa: 'abc-1234', modelo: 'Veículo placa teste', marca: 'LocaMais', categoria: 'Teste',
+      ano: 2026, valorDiaria: 100,
+    }, adminToken);
+    expect(created.status).toBe(201);
+    expect(created.body.placa).toBe('ABC-1234');
+
+    const updated = await patch<VehicleResponse>(app, `/carros/${created.body.id}`, { placa: 'abc1d23' }, adminToken);
+    expect(updated.status).toBe(200);
+    expect(updated.body.placa).toBe('ABC1D23');
+
+    const invalidUpdate = await patch(app, `/carros/${created.body.id}`, { placa: 'ABC12D3' }, adminToken);
+    expect(invalidUpdate.status).toBe(400);
+    const invalidCreate = await post(app, '/carros', {
+      placa: 'ABC@1234', modelo: 'Veículo inválido', marca: 'LocaMais', categoria: 'Teste',
+      ano: 2026, valorDiaria: 100,
+    }, adminToken);
+    expect(invalidCreate.status).toBe(400);
+  });
+
+  it('consulta os relatórios persistidos e aplica filtro por intervalo e veículo', async () => {
+    const response = await get<Record<string, any>>(
+      app,
+      `/relatorios?de=2026-01-01&ate=2026-12-31&carroId=${carId}`,
+      adminToken,
+    );
+    expect(response.status).toBe(200);
+    expect(response.body.filtros).toEqual({ de: '2026-01-01', ate: '2026-12-31', carroId: carId });
+    expect(response.body).toEqual(expect.objectContaining({
+      mensalReceita: expect.any(Array), statusReservas: expect.any(Array), reservasMensais: expect.any(Array),
+      reservasPorVeiculoMes: expect.any(Array), revisoes: expect.any(Array), vistorias: expect.any(Array), veiculos: expect.any(Array),
+    }));
+    expect(response.body.veiculos.every((vehicle: { carro_id: number }) => vehicle.carro_id === carId)).toBe(true);
   });
 
   it('detecta abaixo do limite, limite exato e quilometragem acima do limite com dados de teste isolados', async () => {
