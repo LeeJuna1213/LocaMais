@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CustomerPaymentApi } from '../models';
 import {
   countPendingPayments,
+  filterPayments,
   filterOperationalPayments,
 } from './customer-payment.service';
 
@@ -41,5 +42,26 @@ describe('operational payment criteria', () => {
       .toEqual(['pending-a', 'pending-b', 'approved']);
     expect(filterOperationalPayments(payments, 'Realizados').map(({ id }) => id))
       .toEqual(['approved']);
+  });
+
+  it('filters individually by all persisted statuses and includes historical statuses in all', () => {
+    expect(filterPayments(payments, { status: 'cancelado' }).map(({ id }) => id)).toEqual(['canceled']);
+    expect(filterPayments(payments, { status: 'pendente' }).map(({ status }) => status)).toEqual(['pendente', 'pendente']);
+    expect(filterPayments(payments, { status: 'aprovado' }).map(({ id }) => id)).toEqual(['approved']);
+    expect(filterPayments(payments, { status: 'estornado' })).toEqual([]);
+    expect(filterPayments(payments).map(({ status }) => status)).toEqual([
+      'pendente', 'pendente', 'aprovado', 'recusado', 'cancelado',
+    ]);
+  });
+
+  it('combines status with inclusive date range and resets when filters are cleared', () => {
+    const ranged = [
+      payment('before', 'pendente'),
+      { ...payment('inside', 'pendente'), data: '2026-11-24T12:00:00.000Z' },
+      { ...payment('after', 'pendente'), data: '2026-11-25T00:00:00.000Z' },
+    ];
+    expect(filterPayments(ranged, { status: 'pendente', de: '2026-11-24', ate: '2026-11-24' }).map(({ id }) => id))
+      .toEqual(['inside']);
+    expect(filterPayments(ranged, {}).map(({ id }) => id)).toEqual(['before', 'inside', 'after']);
   });
 });
