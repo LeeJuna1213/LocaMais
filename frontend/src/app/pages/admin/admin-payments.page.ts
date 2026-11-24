@@ -87,8 +87,7 @@ export class AdminPaymentsPage {
 
   friendlyReservation(payment: CustomerPaymentApi): string {
     const code = payment.locacao?.reservation?.codigo;
-    const digits = code?.match(/(\d+)$/)?.[1];
-    return digits ? `Reserva ${digits.padStart(3, '0')}` : 'Reserva —';
+    return code ? `Reserva ${code}` : 'Reserva —';
   }
 
   async setTab(tab: string): Promise<void> {

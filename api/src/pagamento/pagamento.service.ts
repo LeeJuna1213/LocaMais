@@ -427,6 +427,7 @@ export class PagamentoService {
     reciboId: string;
     pagamentoId: string;
     locacaoId: string;
+    codigoReserva?: string;
     cliente?: string;
     veiculo?: string;
     valorPago: number;
@@ -447,10 +448,14 @@ export class PagamentoService {
       pagamento.comprovante_snapshot = this.buildReceiptSnapshot(pagamento, pagamento.updated_at ?? pagamento.data);
       await this.pagamentosRepository.save(pagamento);
     }
-    return pagamento.comprovante_snapshot as {
-      empresa: string; reciboId: string; pagamentoId: string; locacaoId: string;
+    const snapshot = pagamento.comprovante_snapshot as {
+      empresa: string; reciboId: string; pagamentoId: string; locacaoId: string; codigoReserva?: string;
       cliente?: string; veiculo?: string; placa?: string; valorPago: number;
       metodoPagamento: string; dataConfirmacao: Date; status: StatusPagamento; aviso: string;
+    };
+    return {
+      ...snapshot,
+      codigoReserva: snapshot.codigoReserva ?? pagamento.locacao?.reservation?.codigo ?? undefined,
     };
   }
 
@@ -479,6 +484,7 @@ export class PagamentoService {
       reciboId: pagamento.id,
       pagamentoId: pagamento.id,
       locacaoId: pagamento.locacao_id,
+      codigoReserva: locacao.reservation?.codigo ?? undefined,
       cliente,
       veiculo: car ? `${car.marca} ${car.modelo}` : undefined,
       placa: car?.placa,

@@ -20,7 +20,6 @@ import { RedisService } from '../redis/redis.service.js';
 import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
 import { ConfiguracaoService } from '../configuracao/configuracao.service.js';
 import { Loja } from '../loja/entities/loja.entity.js';
-import { ReservationPublicCodeSequence } from './entities/reservation-public-code-sequence.entity.js';
 
 import { ConsultarDisponibilidadeDto } from './dto/consultar-disponibilidade.dto.js';
 import { CreateReservaDto } from './dto/create-reserva.dto.js';
@@ -140,7 +139,7 @@ export class ReservaService {
       await this.assertAvailable(repository, car, dataRetirada, dataDevolucao);
 
       const reservation = repository.create({
-        codigo: await this.nextPublicCode(manager),
+        codigo: null,
         dataRetirada,
         dataDevolucao,
         status: StatusReserva.PENDENTE,
@@ -165,7 +164,10 @@ export class ReservaService {
       reservation.taxaServico = taxaServico;
       reservation.valorTotal = Math.round((reservation.valorSubtotal + taxaServico) * 100) / 100;
 
-      return repository.save(reservation);
+      const inserted = await repository.save(reservation);
+      const sequence = await this.publicCodeSequence(manager, inserted);
+      inserted.codigo = `LOC-${String(sequence).padStart(6, '0')}`;
+      return repository.save(inserted);
     });
 
     // UUID novo não pode ter cache anterior; o GET que vier depois populará.
@@ -218,9 +220,11 @@ export class ReservaService {
   /** Leitura com controle de acesso (staff ou dono da reserva) e cache Redis. */
   async findOneForActor(
     actor: UsuarioAutenticado,
-    id: string,
+    identifier: string,
   ): Promise<Reserva> {
-    const cacheKey = `locamais:reserva:${id}`;
+    const isPublicCode = /^(LOC|RES)-\d{6,}$/i.test(identifier);
+    const reservation = isPublicCode ? await this.findByIdentifier(identifier) : null;
+    const cacheKey = `locamais:reserva:${reservation?.id ?? identifier}`;
 
     // Redis é apenas uma otimização: em MISS/falha, o MySQL segue como fonte
     // oficial. A autorização será aplicada tanto no HIT quanto no MISS.
@@ -229,7 +233,7 @@ export class ReservaService {
       cached = await this.redis.get<Reserva>(cacheKey);
     } catch (error) {
       this.logger.error(
-        `Falha ao ler cache da reserva ${id}: ${
+        `Falha ao ler cache da reserva ${reservation?.id ?? identifier}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -248,25 +252,35 @@ export class ReservaService {
 
     // Cache MISS (ou falha na leitura): consulta o MySQL com os relacionamentos
     // que compõem a resposta pública atual da reserva.
-    const reservation = await this.findOne(id);
-    this.assertCanRead(actor, reservation);
+    const resolvedReservation = reservation ?? await this.findByIdentifier(identifier);
+    this.assertCanRead(actor, resolvedReservation);
 
     // Só armazena depois da autorização. A falha de gravação não afeta a API.
     try {
       // Compatibilidade com chaves anteriores: nenhum carro cacheado mantém `foto`.
-      const dadosCache = JSON.parse(JSON.stringify(reservation)) as Reserva;
+      const dadosCache = JSON.parse(JSON.stringify(resolvedReservation)) as Reserva;
       if (dadosCache.car) {
         delete (dadosCache.car as { foto?: string | null }).foto;
       }
-      await this.redis.set(cacheKey, dadosCache, 120);
+      await this.redis.set(`locamais:reserva:${resolvedReservation.id}`, dadosCache, 120);
     } catch (error) {
       this.logger.error(
-        `Falha ao gravar cache da reserva ${id}: ${
+        `Falha ao gravar cache da reserva ${resolvedReservation.id}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
     }
 
+    return resolvedReservation;
+  }
+
+  private async findByIdentifier(identifier: string): Promise<Reserva> {
+    const isPublicCode = /^(LOC|RES)-\d{6,}$/i.test(identifier);
+    const reservation = await this.reservasRepository.findOne({
+      where: isPublicCode ? { codigo: identifier.trim().toUpperCase() } : { id: identifier },
+      relations: { client: { user: true }, car: true, lojaRetirada: true, locacao: true },
+    });
+    if (!reservation) throw new NotFoundException(`reserva ${identifier} não encontrada`);
     return reservation;
   }
 
@@ -437,9 +451,19 @@ export class ReservaService {
     return this.findOne(saved.id);
   }
 
-  private async nextPublicCode(manager: import('typeorm').EntityManager): Promise<string> {
-    const sequence = await manager.getRepository(ReservationPublicCodeSequence).save({});
-    return `RES-${String(sequence.id).padStart(6, '0')}`;
+  private async publicCodeSequence(manager: import('typeorm').EntityManager, reservation: Reserva): Promise<number> {
+    const type = manager.connection.options.type;
+    if (type === 'mysql' || type === 'mariadb') {
+      const rows = await manager.query('SELECT codigo_sequencial FROM reservas WHERE id = ?', [reservation.id]) as Array<{ codigo_sequencial: number }>;
+      const sequence = Number(rows[0]?.codigo_sequencial);
+      if (!Number.isSafeInteger(sequence) || sequence < 1) throw new Error('Não foi possível obter a sequência do código da reserva.');
+      return sequence;
+    }
+
+    const rows = await manager.query('SELECT COALESCE(MAX(codigo_sequencial), 0) + 1 AS next FROM reservas') as Array<{ next: number }>;
+    const sequence = Number(rows[0]?.next);
+    await manager.query('UPDATE reservas SET codigo_sequencial = ? WHERE id = ?', [sequence, reservation.id]);
+    return sequence;
   }
 
   /**

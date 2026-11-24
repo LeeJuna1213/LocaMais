@@ -24,6 +24,7 @@ interface CarroBody {
 
 interface ReservaBody {
   id: string;
+  codigo: string;
   dataRetirada: string;
   dataDevolucao: string;
   status: string;
@@ -83,6 +84,7 @@ describe('Locações (e2e)', () => {
   let clientId: number;
   let carId: number;
   let reservationId: string;
+  let reservationCode: string;
   let pendingReservationId: string;
   let locacaoId: string;
 
@@ -157,6 +159,8 @@ describe('Locações (e2e)', () => {
       throw new Error(`nao foi possivel criar a reserva: ${JSON.stringify(created.body)}`);
     }
     reservationId = created.body.id;
+    reservationCode = created.body.codigo;
+    expect(reservationCode).toMatch(/^LOC-\d{6,}$/);
 
     const confirmed = await patch<ReservaBody>(
       app,
@@ -285,7 +289,7 @@ describe('Locações (e2e)', () => {
     expect(confirmed.status).toBe(200);
     expect(confirmed.body.status).toBe('aprovado');
 
-    const receipt = await get<{ pagamentoId: string; locacaoId: string; valorPago: number; status: string; cliente: string; veiculo: string; placa: string }>(
+    const receipt = await get<{ pagamentoId: string; locacaoId: string; codigoReserva: string; valorPago: number; status: string; cliente: string; veiculo: string; placa: string }>(
       app,
       `/pagamentos/${created.body.id}/comprovante`,
       clientToken,
@@ -294,6 +298,7 @@ describe('Locações (e2e)', () => {
     expect(receipt.body).toMatchObject({
       pagamentoId: created.body.id,
       locacaoId,
+      codigoReserva: reservationCode,
       valorPago: 75,
       status: 'aprovado',
       cliente: 'Cliente Locacao',

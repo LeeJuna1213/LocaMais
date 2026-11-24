@@ -161,6 +161,7 @@ export interface PaymentReceipt {
   reciboId: string;
   pagamentoId: string;
   locacaoId: string;
+  codigoReserva?: string;
   cliente?: string;
   veiculo?: string;
   placa?: string;

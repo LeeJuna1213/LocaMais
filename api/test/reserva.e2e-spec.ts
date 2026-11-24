@@ -28,6 +28,7 @@ interface CarroBody {
 
 interface ReservaBody {
   id: string;
+  codigo: string;
   dataRetirada: string;
   dataDevolucao: string;
   status: string;
@@ -108,6 +109,7 @@ describe('Reservas (e2e)', () => {
   let inactiveShopId: number;
 
   let firstReservationId: string;
+  let firstReservationCode: string;
   let firstStart: string;
   let firstEnd: string;
 
@@ -394,8 +396,24 @@ describe('Reservas (e2e)', () => {
     expect(body.id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
+    expect(body.codigo).toMatch(/^LOC-\d{6,}$/);
+
+    const byCode = await get<ReservaBody>(app, `/reservas/${body.codigo}`, clientToken);
+    const byUuid = await get<ReservaBody>(app, `/reservas/${body.id}`, clientToken);
+    expect(byCode.status).toBe(200);
+    expect(byCode.body.id).toBe(body.id);
+    expect(byUuid.status).toBe(200);
+    expect(byUuid.body.codigo).toBe(body.codigo);
 
     firstReservationId = body.id;
+    firstReservationCode = body.codigo;
+    const allReservations = await get<ReservaBody[]>(app, '/reservas', adminToken);
+    const codes = allReservations.body.map((reservation) => reservation.codigo);
+    expect(new Set(codes).size).toBe(codes.length);
+
+    const attemptedCodeChange = await patch(app, `/reservas/${body.id}`, { codigo: 'LOC-999999' }, adminToken);
+    expect(attemptedCodeChange.status).toBe(400);
+    expect((await get<ReservaBody>(app, `/reservas/${body.id}`, adminToken)).body.codigo).toBe(firstReservationCode);
   });
 
   it('expõe somente lojas ativas para retirada e rejeita loja inativa na reserva', async () => {
@@ -577,6 +595,7 @@ describe('Reservas (e2e)', () => {
     expect(status).toBe(200);
     expect(body.status).toBe('pendente');
     expect(body.valorTotal).toBeCloseTo(201, 2);
+    expect(body.codigo).toBe(firstReservationCode);
 
     // Guarda o novo período para os testes de disponibilidade/cancelamento.
     firstStart = newStart;

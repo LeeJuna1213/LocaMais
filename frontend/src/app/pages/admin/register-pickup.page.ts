@@ -26,7 +26,7 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
         <div class="card empty" role="alert">{{ error }}</div>
       } @else if (reservation; as r) {
         <div class="card">
-          <h2>Reserva #{{ r.id }}</h2>
+          <h2>Reserva {{ r.publicCode || '—' }}</h2>
           <div class="kv"><span>Cliente</span><b>{{ r.clientName }}</b></div>
           <div class="kv"><span>Veículo</span><b>{{ vehicle?.name }}</b></div>
           <div class="kv">
@@ -82,7 +82,7 @@ export class RegisterPickupPage {
   }
 
   get reservation(): Reservation | undefined {
-    return this.reservationService.reservations().find((r) => r.id === this.id);
+    return this.reservationService.reservations().find((r) => r.id === this.id || r.publicCode?.toUpperCase() === this.id.toUpperCase());
   }
 
   get vehicle(): Vehicle | undefined {
@@ -92,7 +92,7 @@ export class RegisterPickupPage {
 
   async confirm(): Promise<void> {
     try {
-      await this.reservationService.registerPickup(this.id);
+      await this.reservationService.registerPickup(this.reservation?.id ?? this.id);
       await this.toast.show('Retirada registrada');
       await this.router.navigate(['/admin/reservas'], { queryParams: { tab: 'Em andamento' } });
     } catch (error) {

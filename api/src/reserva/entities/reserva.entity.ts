@@ -31,7 +31,7 @@ import { StatusReserva } from '../enums/status-reserva.enum.js';
  * e não são carregadas automaticamente.
  *
  * Decisões de modelagem:
- * - `id` é UUID para não expor um contador sequencial na API.
+  * - `id` é a chave técnica UUID; `codigo` é o identificador público exibível.
  * - `dataRetirada`/`dataDevolucao` usam `datetime` para preservar horário.
  * - `valorTotal` usa `decimal(10,2)` para não acumular erro de ponto
  *   flutuante em valores monetários.
@@ -48,13 +48,17 @@ import { StatusReserva } from '../enums/status-reserva.enum.js';
 @Check('chk_reservations_periodo', 'dataDevolucao > dataRetirada')
 @Check('chk_reservations_valor_total', 'valorTotal >= 0')
 export class Reserva {
-  /** Identificador público da reserva. */
+  /** Identificador interno e chave primária referenciada pelos relacionamentos. */
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   /** Código curto de exibição; o UUID segue como chave técnica. */
   @Column({ type: 'varchar', length: 20, unique: true, nullable: true })
   codigo: string | null;
+
+  /** Allocation token populated by the database; never exposed as the public code. */
+  @Column({ type: 'int', unsigned: true, nullable: true, unique: true, insert: false, update: false })
+  codigo_sequencial: number | null;
 
   /** Data e hora previstas para a retirada do veículo. */
   @Column({ type: 'datetime', nullable: false })
@@ -192,12 +196,13 @@ export class Reserva {
   }
 
   /** Controla o que é serializado na resposta HTTP. */
-  toJSON(): Omit<Reserva, 'toJSON' | 'calcularValor' | 'locacao'> & {
+  toJSON(): Omit<Reserva, 'toJSON' | 'calcularValor' | 'locacao' | 'codigo_sequencial'> & {
     locacao: Pick<Locacao, 'id' | 'status' | 'dataRetirada' | 'dataDevolucao'> | null | undefined;
   } {
     const {
       id,
       codigo,
+      codigo_sequencial: _codigoSequencial,
       dataRetirada,
       dataDevolucao,
       status,

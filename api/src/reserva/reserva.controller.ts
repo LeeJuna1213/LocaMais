@@ -1,9 +1,10 @@
 import {
+  BadRequestException,
+  ParseUUIDPipe,
   Body,
   Controller,
   Get,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -130,15 +131,10 @@ export class ReservaController {
   @Roles(TipoUsuario.CLIENTE, TipoUsuario.FUNCIONARIO, TipoUsuario.ADMIN)
   quote(@Query() dto: ConsultarDisponibilidadeDto) { return this.reservaService.quote(dto); }
 
-  /** Consulta uma reserva por UUID, com controle de acesso. */
+  /** Consulta uma reserva por UUID interno ou código amigável. */
   @Get(':id')
-  @ApiOperation({ summary: 'Consulta uma reserva pelo UUID' })
-  @ApiParam({
-    name: 'id',
-    description: 'UUID da reserva.',
-    format: 'uuid',
-    example: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
-  })
+  @ApiOperation({ summary: 'Consulta uma reserva pelo UUID interno ou código amigável' })
+  @ApiParam({ name: 'id', description: 'UUID interno ou código amigável, por exemplo LOC-000125.' })
   @ApiOkResponse({ description: 'Reserva encontrada com sucesso.' })
   @ApiNotFoundResponse({ description: 'Reserva nao encontrada.' })
   @ApiForbiddenResponse({
@@ -146,8 +142,11 @@ export class ReservaController {
   })
   findOne(
     @CurrentUser() actor: UsuarioAutenticado,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
   ): Promise<Reserva> {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+    const isPublicCode = /^(LOC|RES)-\d{6,}$/i.test(id);
+    if (!isUuid && !isPublicCode) throw new BadRequestException('Informe um UUID válido ou código de reserva.');
     return this.reservaService.findOneForActor(actor, id);
   }
 

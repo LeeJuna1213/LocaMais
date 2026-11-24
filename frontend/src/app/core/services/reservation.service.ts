@@ -29,7 +29,7 @@ export interface CreateReservationInput {
 export interface ReservationQuote { valorDiaria: number; diarias: number; valorSubtotal: number; taxaServico: number; valorTotal: number }
 
 export type ClientReservationTab = 'Futuras' | 'Em andamento' | 'Histórico';
-export type AdminReservationTab = 'Todas' | 'Pendentes' | 'Confirmadas' | 'Efetivadas' | 'Em andamento' | 'Concluídas' | 'Canceladas';
+export type AdminReservationTab = 'Todas' | 'Pendentes' | 'Confirmadas' | 'Em andamento' | 'Concluídas' | 'Canceladas';
 
 const API_STATUS_MAP: Record<string, ReservationStatus> = {
   pendente: 'Pendente',
@@ -103,13 +103,8 @@ export function mapReservation(api: ReservationApiResponse, sessionUserId: numbe
   };
 }
 
-export function isEffectiveReservation(reservation: Reservation): boolean {
-  return reservation.status !== 'Cancelada' && reservation.rentalStarted === true;
-}
-
 export function filterAdminReservations(reservations: Reservation[], tab: AdminReservationTab): Reservation[] {
   if (tab === 'Todas') return reservations;
-  if (tab === 'Efetivadas') return reservations.filter(isEffectiveReservation);
   if (tab === 'Canceladas') {
     return reservations.filter((reservation) => reservation.status === 'Cancelada' || reservation.rentalStatus === 'cancelada');
   }
@@ -196,8 +191,8 @@ export class ReservationService {
       );
       const reservation = mapReservation(item, this.sessionUserId, this.session.user()?.type === 'cliente');
       this._reservations.update((list) =>
-        list.some((r) => r.id === id)
-          ? list.map((r) => (r.id === id ? reservation : r))
+        list.some((r) => r.id === id || r.publicCode?.toUpperCase() === id.toUpperCase())
+          ? list.map((r) => (r.id === id || r.publicCode?.toUpperCase() === id.toUpperCase() ? reservation : r))
           : [...list, reservation],
       );
       return reservation;

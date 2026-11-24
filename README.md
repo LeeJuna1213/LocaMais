@@ -474,12 +474,14 @@ curl "http://localhost:3000/api/reservations/availability?car_id=1&dataRetirada=
 - **Remoção de carro**: além de exigir `disponivel`, o `CarService` bloqueia a remoção quando existe qualquer reserva, preservando o histórico; o banco também usa `ON DELETE RESTRICT`.
 - **Segredos**: `JWT_SECRET`, credenciais de banco e chaves do Observe vêm do ambiente. Não há credenciais reais no código.
 - **`synchronize`**: conveniente em desenvolvimento, mas deve ser `false` em produção com migrações.
+- **Nomes físicos das tabelas**: entidades novas usam nomes em português. A migration `RenameTablesToPortuguese1796500000000` renomeia tabelas existentes preservando registros, índices e chaves estrangeiras; as migrations históricas que criavam os nomes antigos permanecem imutáveis.
+- **Códigos de reserva**: o UUID continua como chave primária e identificador de relacionamento. `reservas.codigo` é o identificador público único; códigos já emitidos são preservados, e novas reservas recebem `LOC-000001` sequencialmente. `codigo_sequencial` é uma coluna única `AUTO_INCREMENT` no MySQL (contador transacional na própria tabela em SQLite). `UseReservationSequenceColumn1796600000000` migra o alocador, valida códigos antes de remover `sequencia_codigos_publicos_reserva` e pode recriá-la ao reverter.
 
 ---
 
 ## 16. Problemas conhecidos e pendências
 
-1. **Sem migrações**: o esquema é criado por `synchronize`. Antes de produção, gere migrações e desligue `synchronize`.
+1. **Histórico sem migration-base**: as migrations versionadas existentes são incrementais e pressupõem que as tabelas centrais já foram criadas (historicamente via `synchronize`). Portanto, em um banco totalmente vazio, a sequência atual não constitui um bootstrap independente; bancos novos precisam primeiro do processo de provisionamento do schema-base. A padronização de nomes não usa `synchronize` e é aplicada pela migration de renomeação.
 2. **Módulo de locações ausente**: reservas não modelam check-in/check-out, contrato, devolução, multas ou cobranças. `Car.status = "alugado"` representa uma locação em andamento, mas não há vínculo com uma entidade de Locação; por isso, uma retirada futura é permitida para esse carro e o calendário de reservas é a fonte de verdade para o período.
 3. **Remoção de veículo é física**: permitida apenas para veículos `disponivel` e sem reservas. Com histórico de reservas, a remoção retorna `409`; uma futura desativação lógica de veículos pode ser avaliada.
 4. **Cobertura de testes parcial**: a suíte tem testes unitários de `UserController`/`UserService` e da entidade `Reservation`, além de 27 testes e2e (health check, fluxo principal de usuários/clientes/endereços/veículos e 12 cenários de reservas). Cenários de erro menos comuns e integrações com MySQL real ainda não têm cobertura dedicada.

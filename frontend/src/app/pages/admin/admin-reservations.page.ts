@@ -49,7 +49,7 @@ export class AdminReservationsPage {
   private readonly alerts = inject(AlertController);
   private readonly toast = inject(ToastService);
 
-  readonly tabs: AdminReservationTab[] = ['Todas', 'Pendentes', 'Confirmadas', 'Efetivadas', 'Em andamento', 'Concluídas', 'Canceladas'];
+  readonly tabs: AdminReservationTab[] = ['Todas', 'Pendentes', 'Confirmadas', 'Em andamento', 'Concluídas', 'Canceladas'];
   tab: AdminReservationTab = 'Todas';
   vehicleFilter: number | null = null;
 

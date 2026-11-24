@@ -8,7 +8,7 @@ import { CustomerPaymentsPage } from './customer-payments.page';
 
 describe('CustomerPaymentsPage', () => {
   const items: CustomerPaymentApi[] = [
-    { id: 'approved-1', valor: '125.50', metodo: 'pix', status: 'aprovado', data: '2026-11-20T10:00:00Z', locacao_id: 'loc-1' },
+    { id: 'approved-1', valor: '125.50', metodo: 'pix', status: 'aprovado', data: '2026-11-20T10:00:00Z', locacao_id: 'loc-1', locacao: { id: 'loc-1', created_at: '2026-11-20T10:00:00Z', reservation: { id: 'internal-uuid', codigo: 'RES-000001' } } },
     { id: 'pending-1', valor: '50', metodo: 'pix', status: 'pendente', data: '2026-11-21T10:00:00Z', locacao_id: 'loc-2' },
     { id: 'refused-1', valor: '99', metodo: 'pix', status: 'recusado', data: '2026-11-21T11:00:00Z', locacao_id: 'loc-3' },
     { id: 'cancelled-1', valor: '75', metodo: 'pix', status: 'cancelado', data: '2026-11-21T12:00:00Z', locacao_id: 'loc-4' },
@@ -57,6 +57,8 @@ describe('CustomerPaymentsPage', () => {
     expect(text).not.toContain('Total pendente');
     expect(text).toContain('Pagamentos realizados');
     expect(text).toContain('Pagamentos pendentes');
+    expect(text).toContain('RES-000001');
+    expect(text).not.toContain('internal-uuid');
     expect(text).toContain('125,50');
     expect(text).toContain('50,00');
   });

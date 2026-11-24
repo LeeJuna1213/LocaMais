@@ -7,7 +7,6 @@ import { ConfiguracaoModule } from '../configuracao/configuracao.module.js';
 import { Loja } from '../loja/entities/loja.entity.js';
 
 import { Reserva } from './entities/reserva.entity.js';
-import { ReservationPublicCodeSequence } from './entities/reservation-public-code-sequence.entity.js';
 import { ReservaController } from './reserva.controller.js';
 import { ReservaService } from './reserva.service.js';
 
@@ -24,7 +23,7 @@ import { ReservaService } from './reserva.service.js';
  * reaproveitar as regras de disponibilidade e cancelamento.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([Reserva, ReservationPublicCodeSequence, Loja]), ClienteModule, CarroModule, ConfiguracaoModule],
+  imports: [TypeOrmModule.forFeature([Reserva, Loja]), ClienteModule, CarroModule, ConfiguracaoModule],
   controllers: [ReservaController],
   providers: [ReservaService],
   exports: [ReservaService],

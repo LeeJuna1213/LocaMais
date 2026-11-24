@@ -34,7 +34,7 @@ import { AppShellComponent } from '../../shared/components/app-shell.component';
           <div class="card empty" role="alert">Esta locação não está ativa e não pode ser devolvida.</div>
         } @else {
         <div class="card">
-          <h2>Locação #{{ r.id }}</h2>
+          <h2>Locação · Reserva {{ r.publicCode || '—' }}</h2>
           <div class="kv"><span>Cliente</span><b>{{ r.clientName }}</b></div>
           <div class="kv"><span>Veículo</span><b>{{ vehicle?.name }}</b></div>
 
@@ -99,7 +99,7 @@ export class RegisterReturnPage {
   }
 
   get reservation(): Reservation | undefined {
-    return this.reservationService.reservations().find((r) => r.id === this.id);
+    return this.reservationService.reservations().find((r) => r.id === this.id || r.publicCode?.toUpperCase() === this.id.toUpperCase());
   }
 
   get vehicle(): Vehicle | undefined {
@@ -124,7 +124,7 @@ export class RegisterReturnPage {
 
   async confirm(): Promise<void> {
     try {
-      await this.reservationService.registerReturn(this.id, this.extraDays, this.fines, this.damageDescription);
+      await this.reservationService.registerReturn(this.reservation?.id ?? this.id, this.extraDays, this.fines, this.damageDescription);
       await this.toast.show('Devolução finalizada');
       await this.router.navigate(['/admin/reservas'], { queryParams: { tab: 'Todas' } });
     } catch (error) {

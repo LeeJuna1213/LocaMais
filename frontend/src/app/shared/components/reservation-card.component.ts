@@ -71,7 +71,6 @@ export class ReservationCardComponent {
   }
 
   get friendlyCode(): string {
-    const digits = this.reservation.publicCode?.match(/(\d+)$/)?.[1];
-    return digits ? digits.padStart(3, '0') : '—';
+    return this.reservation.publicCode ?? '—';
   }
 }

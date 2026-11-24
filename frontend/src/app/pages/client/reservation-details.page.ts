@@ -128,7 +128,7 @@ export class ReservationDetailsPage {
   async savePickupShop(): Promise<void> {
     if (!this.selectedPickupShopId) return;
     try {
-      await this.reservationService.updatePickupShop(this.id, this.selectedPickupShopId);
+      await this.reservationService.updatePickupShop(this.reservation?.id ?? this.id, this.selectedPickupShopId);
       await this.toast.show('Loja de retirada atualizada.');
     } catch (error) {
       await this.toast.show(error instanceof Error ? error.message : 'Não foi possível alterar a loja.');
@@ -151,12 +151,11 @@ export class ReservationDetailsPage {
   }
 
   get reservation(): Reservation | undefined {
-    return this.reservationService.reservations().find((r) => r.id === this.id);
+    return this.reservationService.reservations().find((r) => r.id === this.id || r.publicCode?.toUpperCase() === this.id.toUpperCase());
   }
 
   get friendlyCode(): string {
-    const code = this.reservation?.publicCode?.match(/(\d+)$/)?.[1];
-    return code ? code.padStart(3, '0') : '—';
+    return this.reservation?.publicCode ?? '—';
   }
 
   canCancelAsClient(reservation: Reservation): boolean {

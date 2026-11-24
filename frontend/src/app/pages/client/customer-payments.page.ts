@@ -52,7 +52,7 @@ registerLocaleData(localePtBr);
             <div class="kv"><span>Data do pagamento</span><b>{{ item.data | date:'dd/MM/yyyy HH:mm' }}</b></div>
             <div class="kv"><span>Forma</span><b>{{ methodLabel(item.metodo) }}</b></div>
             <div class="kv"><span>Locação</span><b>{{ item.locacao_id }}</b></div>
-            @if (item.locacao?.reservation?.id) { <div class="kv"><span>Reserva</span><b>{{ item.locacao.reservation.id }}</b></div> }
+            @if (item.locacao?.reservation?.codigo) { <div class="kv"><span>Reserva</span><b>{{ item.locacao.reservation.codigo }}</b></div> }
             <button class="btn receipt-action" type="button" (click)="openReceipt(item)"><ion-icon name="receipt-outline"></ion-icon>Visualizar comprovante</button>
           </article>
         } @empty { <div class="card empty">Você ainda não possui pagamentos concluídos.</div> }
@@ -65,7 +65,7 @@ registerLocaleData(localePtBr);
             <div class="kv"><span>Valor aguardando pagamento</span><b>{{ +item.valor | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}</b></div>
             <div class="kv"><span>Registrado em</span><b>{{ item.data | date:'dd/MM/yyyy HH:mm' }}</b></div>
             <div class="kv"><span>Locação</span><b>{{ item.locacao_id }}</b></div>
-            @if (item.locacao?.reservation?.id) { <div class="kv"><span>Reserva</span><b>{{ item.locacao.reservation.id }}</b></div> }
+            @if (item.locacao?.reservation?.codigo) { <div class="kv"><span>Reserva</span><b>{{ item.locacao.reservation.codigo }}</b></div> }
             <p class="small muted">A confirmação é realizada pela equipe da LocaMais. Este pagamento ainda não foi concluído.</p>
           </article>
         } @empty { <div class="card empty">Você não possui pagamentos pendentes.</div> }
@@ -87,6 +87,7 @@ registerLocaleData(localePtBr);
             <div class="line"><span>Pagamento</span><b>{{ r.pagamentoId }}</b></div>
             <div class="line"><span>Data e hora</span><b>{{ r.dataConfirmacao | date:'dd/MM/yyyy HH:mm' }}</b></div>
             @if (r.cliente) { <div class="line"><span>Cliente</span><b>{{ r.cliente }}</b></div> }
+            @if (r.codigoReserva) { <div class="line"><span>Reserva</span><b>{{ r.codigoReserva }}</b></div> }
             <div class="line"><span>Locação</span><b>{{ r.locacaoId }}</b></div>
             @if (r.veiculo) { <div class="line"><span>Veículo</span><b>{{ r.veiculo }}{{ r.placa ? ' · ' + r.placa : '' }}</b></div> }
             <div class="line"><span>Valor pago</span><b>{{ r.valorPago | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}</b></div>

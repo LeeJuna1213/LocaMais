@@ -1,6 +1,6 @@
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
-@Entity('password_reset_tokens')
+@Entity('tokens_redefinicao_senha')
 @Index('IDX_password_reset_tokens_user_id', ['userId'])
 export class PasswordResetToken {
   @PrimaryGeneratedColumn()
