@@ -1,5 +1,6 @@
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { ChangeDetectorRef, Component, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { AlertController } from '@ionic/angular';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -22,7 +23,11 @@ import { ReservationAvailability, ReservationQuote, ReservationService } from '.
   imports: [FormsModule, AppShellComponent, CarComponent, CurrencyPipe, DatePipe],
   styles: [`
     .reservation-photo { display:block;width:104px;height:76px;object-fit:cover;border-radius:12px;flex:none }
-    .pickup-shop-select { display:block;width:100%;max-width:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    .pickup-shop-list { display:grid;gap:8px;width:100%;margin:8px 0 12px; }
+    .pickup-shop-option { box-sizing:border-box;display:flex;align-items:center;gap:10px;width:100%;margin:0;padding:10px;border:1px solid #eadfd5;border-radius:10px;background:#fff;cursor:pointer; }
+    .pickup-shop-option input { flex:none;width:18px;height:18px;margin:0;padding:0;background-color:#fff;color-scheme:light;appearance:auto;-webkit-appearance:checkbox;accent-color:#e86f12; }
+    .pickup-shop-option span { min-width:0; }
+    .pickup-shop-option small { display:block;margin-top:3px;color:#7a5a40; }
     .availability { margin:12px 0; padding:12px; border:1px solid #e8d8c8; border-radius:12px; overflow-wrap:anywhere; }
     .availability[ data-state="available"] { background:#f1f8f2; border-color:#c7dfca; }
     .availability[ data-state="unavailable"] { background:#fff6ef; border-color:#edc9ad; }
@@ -96,20 +101,25 @@ import { ReservationAvailability, ReservationQuote, ReservationService } from '.
             </section>
           }
 
-           @if (shops.loading()) { <div class="small muted" role="status">Carregando lojas...</div> }
-           @else if (shops.error(); as shopError) { <div class="small" role="alert">{{ shopError }}</div><button class="lnk dark" type="button" (click)="loadShops()">Tentar novamente</button> }
-           @else {
-             <label for="pickup-shop">Loja de retirada *</label>
-              <select id="pickup-shop" class="pickup-shop-select" [ngModel]="selectedShopId" (ngModelChange)="selectShop($event)" required>
-                <option [ngValue]="null" disabled>Selecione uma loja</option>
-                @for (shop of shops.shops(); track shop.id) { <option [ngValue]="shop.id">{{ shop.nome }} — {{ shop.cidade }}/{{ shop.uf }}</option> }
-             </select>
+            @if (shops.loading()) { <div class="small muted" role="status">Carregando lojas...</div> }
+            @else if (shops.error(); as shopError) { <div class="small" role="alert">{{ shopError }}</div><button class="lnk dark" type="button" (click)="loadShops()">Tentar novamente</button> }
+            @else {
+              @if (!shops.shops().length) { <div class="small" role="alert">Este veículo ainda não está associado a nenhuma loja disponível. Entre em contato com a equipe LocaMais.</div> }
+              <div id="pickup-shop-label">Loja de retirada *</div>
+              <div class="pickup-shop-list" role="group" aria-labelledby="pickup-shop-label">
+                @for (shop of shops.shops(); track shop.id) {
+                  <label class="pickup-shop-option">
+                    <input type="checkbox" [checked]="selectedShopId === shop.id" [disabled]="shops.loading()" [attr.aria-label]="'Retirar em ' + shop.nome" (change)="togglePickupShop(shop.id, $event)" />
+                    <span><b>{{ shop.nome }}</b><small>{{ shop.cidade }}/{{ shop.uf }}</small></span>
+                  </label>
+                }
+              </div>
            }
 
           <div class="kv"><span>Período</span><b>{{ days }} diárias</b></div>
           <div class="kv"><span>Valor total estimado</span><b>{{ availability?.disponivel === false ? '—' : (estimate?.valorTotal ?? total | currency: 'BRL') }}</b></div>
 
-          <button class="btn" type="button" [disabled]="availabilityLoading || availabilityError !== null || availability?.disponivel === false" (click)="continueBooking()">Continuar</button>
+          <button class="btn" type="button" [disabled]="availabilityLoading || shops.loading() || !shops.shops().length || availabilityError !== null || availability?.disponivel === false" (click)="continueBooking()">Continuar</button>
         </div>
       } @else {
         <div class="card empty">Veículo não encontrado</div>
@@ -149,22 +159,13 @@ export class ReservationFormPage {
   estimate: ReservationQuote | null = null;
   private availabilityTimer: ReturnType<typeof setTimeout> | null = null;
   private availabilityRequest = 0;
+  private shopRequest = 0;
 
   constructor() {
     if (this.isStaff) void this.loadClients();
-    void this.loadShops();
-
-    const id = Number(this.route.snapshot.paramMap.get('id') ?? 0);
-    if (this.booking.vehicleId() !== id) {
-      this.booking.selectVehicle(id);
-    }
-    if (id > 0 && !this.booking.vehicle()) {
-      void this.vehicleService.loadOne(id).then(() => {
-        this.scheduleAvailability();
-      }).catch(async (error: unknown) => {
-        await this.toast.show(error instanceof Error ? error.message : 'Não foi possível carregar o veículo');
-      });
-    }
+    this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      void this.loadVehicleForRoute(Number(params.get('id') ?? 0));
+    });
     this.start = this.booking.start();
     this.end = this.booking.end();
     this.pickupTime = this.booking.pickupTime();
@@ -176,14 +177,35 @@ export class ReservationFormPage {
     this.scheduleAvailability();
   }
 
+  private async loadVehicleForRoute(id: number): Promise<void> {
+    if (id <= 0) return;
+    if (this.booking.vehicleId() !== id) {
+      this.booking.selectVehicle(id);
+      this.selectedShopId = this.booking.pickupShopId();
+      this.location = this.booking.location();
+    }
+    try {
+      if (!this.booking.vehicle()) await this.vehicleService.loadOne(id);
+      this.scheduleAvailability();
+      await this.loadShops(id);
+    } catch (error) {
+      await this.toast.show(error instanceof Error ? error.message : 'Não foi possível carregar o veículo');
+    }
+  }
+
   async load(): Promise<void> {
     await this.loadClients();
   }
 
-  async loadShops(): Promise<void> {
-    await this.shops.loadActive();
-    const current = this.shops.shops().find((shop) => shop.id === this.booking.pickupShopId());
+  async loadShops(carId = this.vehicle?.id): Promise<void> {
+    const request = ++this.shopRequest;
+    if (!carId) return;
+    await this.shops.loadForVehicle(carId);
+    if (request !== this.shopRequest) return;
+    const current = this.shops.shops().find((shop) => shop.id === this.selectedShopId && shop.ativa);
     if (current) this.selectShop(current.id);
+    else this.selectShop(null);
+    this.changeDetector.markForCheck();
   }
 
   selectShop(id: number | null): void {
@@ -191,6 +213,13 @@ export class ReservationFormPage {
     const shop = this.shops.shops().find((item) => item.id === id);
     this.location = shop ? `${shop.nome} — ${shop.logradouro}, ${shop.numero}, ${shop.cidade}/${shop.uf}` : '';
     this.booking.setPickupShop(shop?.id ?? null, this.location);
+  }
+
+  togglePickupShop(id: number, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (checked) this.selectShop(id);
+    else if (this.selectedShopId === id) this.selectShop(null);
+    this.changeDetector.markForCheck();
   }
 
   private async loadClients(): Promise<void> {
@@ -301,8 +330,12 @@ export class ReservationFormPage {
       await this.toast.show('Selecione um cliente ativo para a reserva.');
       return;
     }
+    if (!this.shops.shops().length) {
+      await this.toast.show('Este veículo ainda não está associado a nenhuma loja disponível.');
+      return;
+    }
     if (!this.shops.shops().some((shop) => shop.id === this.selectedShopId && shop.ativa)) {
-      await this.toast.show('Selecione uma loja ativa para retirada.');
+      await this.toast.show('Selecione uma loja ativa associada a este veículo.');
       return;
     }
     if (this.toLocalDateTime(this.end, this.returnTime) <= this.toLocalDateTime(this.start, this.pickupTime)) {

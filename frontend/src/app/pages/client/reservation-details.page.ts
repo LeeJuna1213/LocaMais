@@ -1,5 +1,5 @@
 import { CurrencyPipe, DatePipe } from '@angular/common';
-import { Component, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { PaymentReceipt, Reservation, UserRole, Vehicle } from '../../core/models';
@@ -10,11 +10,12 @@ import { CustomerPaymentService } from '../../core/services/customer-payment.ser
 import { ShopService } from '../../core/services/shop.service';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
 import { BadgeComponent } from '../../shared/components/badge.component';
+import { PaymentReceiptViewerComponent } from '../../shared/components/payment-receipt-viewer.component';
 
 @Component({
   selector: 'app-reservation-details',
   standalone: true,
-  imports: [AppShellComponent, BadgeComponent, CurrencyPipe, DatePipe, FormsModule],
+  imports: [AppShellComponent, BadgeComponent, CurrencyPipe, DatePipe, FormsModule, PaymentReceiptViewerComponent],
   template: `
     <app-shell
       [title]="'Reserva ' + friendlyCode"
@@ -68,7 +69,7 @@ import { BadgeComponent } from '../../shared/components/badge.component';
           @if (isStaff && r.status === 'Em andamento') {
             <button class="btn" type="button" (click)="registerReturn(r)">Registrar devolução</button>
           }
-          @if (receipt; as receiptData) { <div class="card" role="status"><b>Recibo LocaMais — {{ receiptData.codigoReserva }}</b><div class="kv"><span>Cliente</span><b>{{ receiptData.cliente }}</b></div><div class="kv"><span>Veículo</span><b>{{ receiptData.veiculo }}</b></div><div class="kv"><span>Forma de pagamento</span><b>{{ receiptData.metodoPagamento }}</b></div><div class="kv"><span>Valor pago</span><b>{{ receiptData.valorPago | currency:'BRL' }}</b></div><div class="kv"><span>Data</span><b>{{ receiptData.dataConfirmacao | date:'dd/MM/yyyy HH:mm' }}</b></div></div> }
+          <app-payment-receipt-viewer [receipt]="receipt" (closed)="closeReceipt()" />
         </div>
       } @else {
         <div class="card empty">Reserva não encontrada</div>
@@ -176,10 +177,20 @@ export class ReservationDetailsPage {
   }
 
   async openReceipt(reservation: Reservation): Promise<void> {
-    if (!reservation.paymentId) return;
-    try { this.receipt = await this.payments.receipt(reservation.paymentId); }
+    const paymentId = reservation.paymentId;
+    if (reservation.payment !== 'Pago' || !paymentId) return;
+    try {
+      const receipt = await this.payments.receipt(paymentId);
+      if (receipt.pagamentoId !== paymentId || receipt.status !== 'aprovado') {
+        throw new Error('O recibo disponível não corresponde a um pagamento aprovado desta reserva.');
+      }
+      this.receipt = receipt;
+    }
     catch (error) { await this.toast.show(error instanceof Error ? error.message : 'Não foi possível carregar o recibo.'); }
+    finally { this.changeDetector.markForCheck(); }
   }
+
+  closeReceipt(): void { this.receipt = null; }
 
   async registerPickup(reservation: Reservation): Promise<void> {
     await this.router.navigate(['/admin/retirada', reservation.id]);
