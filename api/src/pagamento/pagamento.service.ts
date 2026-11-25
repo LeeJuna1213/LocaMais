@@ -249,7 +249,7 @@ export class PagamentoService {
   async findOne(id: string): Promise<Pagamento> {
     const pagamento = await this.pagamentosRepository.findOne({
       where: { id },
-      relations: { locacao: { reservation: { client: { user: true }, car: true } }, reservation: { client: { user: true }, car: true, lojaRetirada: true }, gateway: true, estorno: true },
+      relations: { locacao: { reservation: { client: { user: true }, car: true } }, reservation: { client: { user: true }, car: true, lojaRetirada: true, locacao: true }, gateway: true, estorno: true },
     });
 
     if (!pagamento) {
@@ -501,6 +501,7 @@ export class PagamentoService {
     };
     return {
       ...snapshot,
+      locacaoId: snapshot.locacaoId || pagamento.locacao_id || pagamento.locacao?.id || pagamento.reservation?.locacao?.id || '',
       codigoReserva: snapshot.codigoReserva ?? pagamento.reservation?.codigo ?? pagamento.locacao?.reservation?.codigo ?? undefined,
     };
   }

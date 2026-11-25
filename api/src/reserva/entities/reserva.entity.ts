@@ -239,6 +239,11 @@ export class Reserva {
       dataRetirada,
       dataDevolucao,
       status,
+      diarias: locacao?.dataRetirada && locacao.dataDevolucao
+        ? Reserva.calcularDiarias(locacao.dataRetirada, locacao.dataDevolucao)
+        : dataRetirada && dataDevolucao
+          ? Reserva.calcularDiarias(dataRetirada, dataDevolucao)
+          : undefined,
       valorTotal: Number(valorTotal),
       valorSubtotal: Number(valorSubtotal),
       taxaServico: Number(taxaServico),

@@ -84,6 +84,7 @@ export class ReservationDetailsPage {
   readonly reservationService = inject(ReservationService);
   private readonly toast = inject(ToastService);
   private readonly payments = inject(CustomerPaymentService);
+  private readonly changeDetector = inject(ChangeDetectorRef);
 
   readonly id = this.route.snapshot.paramMap.get('id') ?? '';
   readonly isStaff = this.auth.role() === 'admin' || this.auth.role() === 'funcionario';
@@ -106,12 +107,22 @@ export class ReservationDetailsPage {
 
   constructor() {
     if (!this.isStaff) void this.payments.load();
-    if (this.isStaff) void this.shopService.loadActive();
     if (this.id) {
       void this.reservationService.getById(this.id).catch(async (error: unknown) => {
         await this.toast.show(error instanceof Error ? error.message : 'Não foi possível carregar a reserva');
-      }).then(() => { this.selectedPickupShopId = this.reservation?.pickupShopId ?? null; });
+      }).then(() => {
+        this.selectedPickupShopId = this.reservation?.pickupShopId ?? null;
+        if (this.isStaff && this.reservation) void this.loadPickupShops(this.reservation.vehicleId);
+      });
     }
+  }
+
+  private async loadPickupShops(vehicleId: number): Promise<void> {
+    await this.shopService.loadForVehicle(vehicleId);
+    if (!this.shopService.shops().some((shop) => shop.id === this.selectedPickupShopId && shop.ativa)) {
+      this.selectedPickupShopId = null;
+    }
+    this.changeDetector.markForCheck();
   }
 
   get canChangePickupShop(): boolean {

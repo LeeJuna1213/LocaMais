@@ -1,7 +1,7 @@
 import { Component, OnDestroy, inject } from '@angular/core';
 import { ActionSheetController, AlertController } from '@ionic/angular';
 import { addIcons } from 'ionicons';
-import { cameraOutline, createOutline, trashOutline } from 'ionicons/icons';
+import { buildOutline, cameraOutline, clipboardOutline, createOutline, trashOutline } from 'ionicons/icons';
 import { Router } from '@angular/router';
 
 import { Vehicle } from '../../core/models';
@@ -83,7 +83,7 @@ export class AdminVehiclesPage implements OnDestroy {
   previewUrl: string | null = null;
 
   constructor() {
-    addIcons({ cameraOutline, createOutline, trashOutline });
+    addIcons({ buildOutline, cameraOutline, clipboardOutline, createOutline, trashOutline });
     void this.vehicleService.load();
   }
 
@@ -95,8 +95,8 @@ export class AdminVehiclesPage implements OnDestroy {
     const actionSheet = await this.actionSheets.create({
       header: vehicle.name,
       buttons: [
-        { text: 'Revisão e Status', handler: () => { void this.router.navigate(['/admin/veiculos', vehicle.id, 'revisoes']); } },
-        { text: 'Vistorias', handler: () => { void this.router.navigate(['/admin/veiculos', vehicle.id, 'vistorias']); } },
+        { text: 'Revisão e Status', icon: 'build-outline', handler: () => { void this.router.navigate(['/admin/veiculos', vehicle.id, 'revisoes']); } },
+        { text: 'Vistorias', icon: 'clipboard-outline', handler: () => { void this.router.navigate(['/admin/veiculos', vehicle.id, 'vistorias']); } },
         { text: 'Cancelar', role: 'cancel' },
       ],
     });

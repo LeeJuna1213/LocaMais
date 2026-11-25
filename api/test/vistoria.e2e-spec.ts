@@ -22,6 +22,10 @@ interface CarroBody {
   valorDiaria: number;
 }
 
+interface LojaBody {
+  id: number;
+}
+
 interface ReservaBody {
   id: string;
   dataRetirada: string;
@@ -89,6 +93,7 @@ describe('Vistorias (e2e)', () => {
   let clientId: number;
   let otherClientId: number;
   let carId: number;
+  let shopId: number;
 
   let reservationId: string;
   let locacaoId: string;
@@ -160,6 +165,23 @@ describe('Vistorias (e2e)', () => {
       cnh_validade: '2030-12-31',
     }, otherClientToken);
 
+    const shop = await post<LojaBody>(app, '/lojas', {
+      codigo: 'VST-E2E',
+      nome: 'Loja de teste vistoria',
+      telefone: '+551133334445',
+      email: 'vistoria.loja@locamais.test',
+      logradouro: 'Rua de Teste',
+      numero: '101',
+      bairro: 'Centro',
+      cidade: 'São Paulo',
+      uf: 'SP',
+      cep: '01001000',
+    }, adminToken);
+    if (shop.status !== 201) {
+      throw new Error(`nao foi possivel criar a loja: ${JSON.stringify(shop.body)}`);
+    }
+    shopId = shop.body.id;
+
     const car = await post<CarroBody>(
       app,
       '/carros',
@@ -170,6 +192,7 @@ describe('Vistorias (e2e)', () => {
         categoria: 'Hatch',
         ano: 2024,
         valorDiaria: 80,
+        lojas_ids: [shopId],
       },
       adminToken,
     );
@@ -184,7 +207,7 @@ describe('Vistorias (e2e)', () => {
     const created = await post<ReservaBody>(
       app,
       '/reservas',
-      { dataRetirada: start, dataDevolucao: end, client_id: clientId, car_id: carId },
+      { dataRetirada: start, dataDevolucao: end, client_id: clientId, car_id: carId, loja_retirada_id: shopId },
       clientToken,
     );
     if (created.status !== 201) {
@@ -273,7 +296,7 @@ describe('Vistorias (e2e)', () => {
     const res2 = await post<ReservaBody>(
       app,
       '/reservas',
-      { dataRetirada: start2, dataDevolucao: end2, client_id: otherClientId, car_id: carId },
+      { dataRetirada: start2, dataDevolucao: end2, client_id: otherClientId, car_id: carId, loja_retirada_id: shopId },
       otherClientToken,
     );
     expect(res2.status).toBe(201);
@@ -355,12 +378,18 @@ describe('Vistorias (e2e)', () => {
 
   it('não cria vistoria de devolução quando locação não está em andamento (409)', async () => {
     // Cria uma locação ainda aguardando retirada.
+    const isolatedCar = await post<CarroBody>(app, '/carros', {
+      placa: 'VST2A23', modelo: 'Civic', marca: 'Honda', categoria: 'Sedan',
+      ano: 2024, valorDiaria: 100,
+      lojas_ids: [shopId],
+    }, adminToken);
+    expect(isolatedCar.status).toBe(201);
     const start3 = futureIso(30);
     const end3 = addHours(start3, 24);
     const res3 = await post<ReservaBody>(
       app,
       '/reservas',
-      { dataRetirada: start3, dataDevolucao: end3, client_id: clientId, car_id: carId },
+      { dataRetirada: start3, dataDevolucao: end3, client_id: clientId, car_id: isolatedCar.body.id, loja_retirada_id: shopId },
       clientToken,
     );
     expect(res3.status).toBe(201);

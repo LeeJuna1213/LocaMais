@@ -10,6 +10,7 @@ describe('CarroService', () => {
   let redisService: any;
   let cacheInvalidation: any;
   let fotoStorage: any;
+  let lojasRepository: any;
 
   const mockCarro = {
     id: 1,
@@ -55,6 +56,7 @@ describe('CarroService', () => {
       salvar: vi.fn().mockResolvedValue('/uploads/carros/novo.jpg'),
       remover: vi.fn().mockResolvedValue(undefined),
     };
+    lojasRepository = { find: vi.fn().mockResolvedValue([{ id: 4, nome: 'Loja Centro', ativa: true }]) };
 
     service = new CarroService(
       carrosRepository,
@@ -62,6 +64,8 @@ describe('CarroService', () => {
       redisService,
       cacheInvalidation,
       fotoStorage,
+      { resolveForVehicle: vi.fn().mockResolvedValue({ id: 1, nome: 'Economico' }) } as any,
+      lojasRepository,
     );
   });
 
@@ -145,6 +149,30 @@ describe('CarroService', () => {
     expect(service).toBeDefined();
   });
 
+  it('creates a vehicle with multiple active shop associations', async () => {
+    lojasRepository.find.mockResolvedValue([
+      { id: 4, nome: 'Loja Centro', ativa: true },
+      { id: 5, nome: 'Loja Norte', ativa: true },
+    ]);
+    const payload = {
+      placa: 'ABC1234', modelo: 'Sedan', marca: 'Marca', categoria: 'Economico',
+      ano: 2025, valorDiaria: 100, lojas_ids: [4, 5],
+    };
+    await service.create(payload as any);
+    expect(lojasRepository.find).toHaveBeenCalled();
+    expect(carrosRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      lojas: [{ id: 4, nome: 'Loja Centro', ativa: true }, { id: 5, nome: 'Loja Norte', ativa: true }],
+    }));
+  });
+
+  it('rejects assigning a missing or inactive shop', async () => {
+    lojasRepository.find.mockResolvedValue([]);
+    await expect(service.create({
+      placa: 'ABC1234', modelo: 'Sedan', marca: 'Marca', categoria: 'Economico',
+      ano: 2025, valorDiaria: 100, lojas_ids: [4],
+    } as any)).rejects.toThrow('uma ou mais lojas selecionadas não existem ou estão inativas');
+  });
+
   /**
    * Cache HIT / MISS no metodo `findOne` (GET /carros/:id, TTL 60s).
    * Estes testes explicam o contrato: HIT evita MySQL; MISS busca no MySQL e
@@ -179,7 +207,7 @@ describe('CarroService', () => {
       expect(redisService.get).toHaveBeenCalledWith('locamais:carro:1');
       expect(carrosRepository.findOne).toHaveBeenCalledWith({
         where: { id: 1 },
-        relations: { categoriaEntity: true },
+        relations: { categoriaEntity: true, lojas: true },
       });
       expect(redisService.set).toHaveBeenCalledWith(
         'locamais:carro:1',
@@ -251,7 +279,7 @@ describe('CarroService', () => {
       expect(redisService.get).toHaveBeenCalledWith('locamais:carro:999');
       expect(carrosRepository.findOne).toHaveBeenCalledWith({
         where: { id: 999 },
-        relations: { categoriaEntity: true },
+        relations: { categoriaEntity: true, lojas: true },
       });
     });
   });

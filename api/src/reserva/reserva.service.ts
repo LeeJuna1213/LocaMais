@@ -148,8 +148,12 @@ export class ReservaService {
       const shop = dto.loja_retirada_id
         ? await manager.findOne(Loja, { where: { id: dto.loja_retirada_id } })
         : null;
+      if (!dto.loja_retirada_id) throw new BadRequestException('selecione uma loja de retirada para a reserva');
       if (dto.loja_retirada_id && !shop) throw new NotFoundException(`loja ${dto.loja_retirada_id} não encontrada`);
       if (shop && !shop.ativa) throw new ConflictException('a loja selecionada está inativa');
+      if (shop && !(car.lojas ?? []).some((item) => item.id === shop.id)) {
+        throw new ConflictException('o veículo não está disponível para retirada na loja selecionada');
+      }
 
       await this.assertAvailable(repository, car, dataRetirada, dataDevolucao);
 
@@ -487,6 +491,23 @@ export class ReservaService {
         }
       }
 
+      // Validate the pickup location whenever booking terms change. Status-only
+      // transitions keep legacy reservations (created before shop assignment)
+      // manageable without rewriting their historical pickup data.
+      if (changesPickupShop || changesCar || changesDates) {
+        const nextShopId = dto.loja_retirada_id ?? current.loja_retirada_id;
+        if (nextShopId) {
+          const shop = await manager.findOne(Loja, { where: { id: nextShopId } });
+          if (!shop) throw new NotFoundException(`loja ${nextShopId} não encontrada`);
+          if (!shop.ativa) throw new ConflictException('a loja selecionada está inativa');
+          if (!(car.lojas ?? []).some((item) => item.id === shop.id)) {
+            throw new ConflictException('o veículo não está disponível para retirada na loja selecionada');
+          }
+        } else {
+          throw new BadRequestException('selecione uma loja de retirada para a reserva');
+        }
+      }
+
       return repository.save(reservation);
     });
 
@@ -796,6 +817,9 @@ export class ReservaService {
     if (!car) {
       throw new NotFoundException(`veiculo de ID ${carId} nao encontrado`);
     }
+
+    const current = await manager.getRepository(Carro).findOne({ where: { id: carId }, relations: { lojas: true } });
+    car.lojas = current?.lojas ?? [];
 
     return car;
   }

@@ -1,10 +1,15 @@
 import { Injectable } from '@angular/core';
 import { environment } from '../../../environments/environment';
 
+export function imageServerOrigin(apiUrl: string): string {
+  const parsedUrl = new URL(apiUrl);
+  const pathname = parsedUrl.pathname.replace(/\/+$/, '').replace(/\/api$/i, '');
+  return `${parsedUrl.origin}${pathname}`;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ImageUrlService {
-  private readonly apiUrl = new URL(environment.apiUrl);
-  private readonly apiRoot = this.buildApiRoot();
+  private readonly apiRoot = imageServerOrigin(environment.apiUrl);
 
   resolve(path: string | null | undefined): string | null {
     if (!path?.trim()) return null;
@@ -14,8 +19,4 @@ export class ImageUrlService {
     return `${this.apiRoot}${relativePath}`;
   }
 
-  private buildApiRoot(): string {
-    const pathname = this.apiUrl.pathname.replace(/\/+$/, '').replace(/\/api$/i, '');
-    return `${this.apiUrl.origin}${pathname}`;
-  }
 }

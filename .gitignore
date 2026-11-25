@@ -32,12 +32,31 @@ api/uploads/carros/*
 coverage/
 .nyc_output/
 
+# Capturas locais de navegador/testes ----------------------------------------
+.playwright-mcp/
+artifacts/
+locamais-*.png
+
 # Caches e temporarios ------------------------------------------------------
 .cache/
 .vite/
 .parcel-cache/
 .tmp/
 .temp/
+
+# Certificados locais e chaves privadas --------------------------------------
+local-certs/
+certificates/
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+rootCA-key.pem
+rootCA.pem
 
 # IDEs e editores -----------------------------------------------------------
 .idea/

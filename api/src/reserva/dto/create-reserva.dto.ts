@@ -55,8 +55,7 @@ export class CreateReservaDto {
   @Min(1, { message: 'car_id deve ser maior que zero' })
   car_id: number;
 
-  @ApiProperty({ example: 1, required: false, description: 'ID da loja ativa de retirada.' })
-  @IsOptional()
+  @ApiProperty({ example: 1, description: 'ID da loja ativa associada ao veículo para retirada.' })
   @Type(() => Number)
   @IsInt({ message: 'loja_retirada_id deve ser um número inteiro' })
   @Min(1, { message: 'loja_retirada_id deve ser maior que zero' })

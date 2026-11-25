@@ -70,6 +70,9 @@ describe('CustomerPaymentsPage', () => {
     await page.openReceipt(items[0]);
     expect(service.receipt).toHaveBeenCalledWith('approved-1');
     expect(page.receipt?.status).toBe('aprovado');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Código da locação');
+    expect(fixture.nativeElement.textContent).toContain('loc-1');
   });
 
   it('matches the compact car-filter pattern for expanding date filters and clearing criteria', async () => {

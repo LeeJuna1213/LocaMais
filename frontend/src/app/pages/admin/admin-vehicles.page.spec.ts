@@ -87,6 +87,7 @@ describe('AdminVehiclesPage vehicle management', () => {
   it('offers both revision/status and inspection history when a vehicle is selected', async () => {
     await fixture.componentInstance.open(vehicle);
     expect(options?.buttons.map((button) => button.text)).toEqual(['Revisão e Status', 'Vistorias', 'Cancelar']);
+    expect(options?.buttons.map((button) => (button as { icon?: string }).icon ?? null)).toEqual(['build-outline', 'clipboard-outline', null]);
     options?.buttons[1]?.handler?.();
     expect(router.navigate).toHaveBeenCalledWith(['/admin/veiculos', vehicle.id, 'vistorias']);
   });

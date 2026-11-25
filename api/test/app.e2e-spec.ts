@@ -21,6 +21,18 @@ describe('AppController (e2e)', () => {
       .expect('Hello World!');
   });
 
+  it('permite as origens locais de navegador e Capacitor sem refletir origens arbitrárias', async () => {
+    const nativeOrigin = await request(app.getHttpServer())
+      .get('/api')
+      .set('Origin', 'http://localhost');
+    expect(nativeOrigin.headers['access-control-allow-origin']).toBe('http://localhost');
+
+    const untrustedOrigin = await request(app.getHttpServer())
+      .get('/api')
+      .set('Origin', 'https://untrusted.example');
+    expect(untrustedOrigin.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
   it('gera o documento OpenAPI sem referencias circulares', () => {
     const config = new DocumentBuilder()
       .setTitle('locaMais API')

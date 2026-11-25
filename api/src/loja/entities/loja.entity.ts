@@ -1,4 +1,5 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, ManyToMany, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import type { Carro } from '../../carro/entities/carro.entity.js';
 
 @Entity('lojas')
 export class Loja {
@@ -40,6 +41,9 @@ export class Loja {
 
   @Column({ type: 'boolean', default: true })
   ativa: boolean;
+
+  @ManyToMany('Carro', 'lojas')
+  carros?: Carro[];
 
   @CreateDateColumn()
   created_at: Date;

@@ -8,6 +8,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { VehicleService } from '../../core/services/vehicle.service';
 import { ImageUrlService } from '../../core/services/image-url.service';
 import { CategoryService } from '../../core/services/category.service';
+import { ShopService } from '../../core/services/shop.service';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
 import { NewVehiclePage } from './new-vehicle.page';
 
@@ -17,6 +18,7 @@ const vehicle: Vehicle = {
   revisions: [], favorite: false, plate: 'ABC1D23', photo: '/uploads/carros/current.jpg',
   make: 'Hyundai', model: 'HB20', year: 2024, lugares: 5, descricao: 'Descrição existente',
   nextInspectionKm: 50000,
+  shopIds: [1],
 };
 
 describe('NewVehiclePage create/edit form', () => {
@@ -31,6 +33,7 @@ describe('NewVehiclePage create/edit form', () => {
   const vehicleService = { load, loadOne, create, update, uploadPhoto, removePhoto, vehicles: () => [vehicle] };
   const categories = [{ id: 1, nome: 'Economico' }];
   const categoryService = { categories: () => categories, load: vi.fn(async () => undefined), create: vi.fn(async (nome: string) => ({ id: 2, nome })) };
+  const shopService = { shops: () => [{ id: 1, nome: 'Loja Centro', cidade: 'Niterói', uf: 'RJ', ativa: true }], loading: () => false, error: () => null, loadActive: vi.fn(async () => undefined) };
   const toast = { show: vi.fn(async () => undefined) };
   const router = { navigateByUrl: vi.fn(async () => true) };
   let fixture: ComponentFixture<NewVehiclePage>;
@@ -45,6 +48,7 @@ describe('NewVehiclePage create/edit form', () => {
     update.mockReset().mockResolvedValue(vehicle);
     uploadPhoto.mockReset().mockResolvedValue(vehicle);
     load.mockReset().mockResolvedValue(undefined);
+    shopService.loadActive.mockClear();
     removePhoto.mockReset().mockResolvedValue(vehicle);
     toast.show.mockClear();
     router.navigateByUrl.mockClear();
@@ -57,6 +61,7 @@ describe('NewVehiclePage create/edit form', () => {
         { provide: Router, useValue: router },
         { provide: VehicleService, useValue: vehicleService },
         { provide: CategoryService, useValue: categoryService },
+        { provide: ShopService, useValue: shopService },
         { provide: ImageUrlService, useValue: { resolve: (path: string | null) => path ? `https://api.test${path}` : null } },
         { provide: ToastService, useValue: toast },
       ],
@@ -102,6 +107,7 @@ describe('NewVehiclePage create/edit form', () => {
     page.valorDiaria = 125.5;
     page.transmission = 'Manual';
     page.lugares = 5;
+    page.selectedShopIds = [1];
   }
 
   it('does not submit blank or invalid fields and shows nearby validation errors', async () => {
@@ -148,6 +154,31 @@ describe('NewVehiclePage create/edit form', () => {
 
     expect(create).not.toHaveBeenCalled();
     expect(page.fieldError('placa')).toContain('ABC-1234, ABC1234 ou ABC1D23');
+  });
+
+  it('requires at least one active pickup shop before creating a vehicle', async () => {
+    await render();
+    const page = fixture.componentInstance;
+    fillValidForm(page);
+    page.selectedShopIds = [];
+    await page.save();
+    expect(create).not.toHaveBeenCalled();
+    expect(toast.show).toHaveBeenCalledWith('Selecione pelo menos uma loja para disponibilizar o veículo.');
+  });
+
+  it('allows selecting and unselecting a shop from its checkbox', async () => {
+    await render();
+    const checkbox = fixture.nativeElement.querySelector('.shop-options input[type="checkbox"]') as HTMLInputElement;
+
+    checkbox.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.selectedShopIds).toEqual([1]);
+    expect(checkbox.checked).toBe(true);
+
+    checkbox.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.selectedShopIds).toEqual([]);
+    expect(checkbox.checked).toBe(false);
   });
 
   it('does not submit plate changes in edit mode when the format is invalid', async () => {
@@ -200,6 +231,7 @@ describe('NewVehiclePage create/edit form', () => {
       placa: 'ABC1D23', marca: 'Hyundai', modelo: 'HB20', categoriaId: 1,
        ano: 2024, valorDiaria: 125.5, status: 'disponivel', cambio: 'Manual', lugares: 5, descricao: null,
        proximaVistoriaKm: null,
+       lojas_ids: [1],
     });
     expect(router.navigateByUrl).toHaveBeenCalledWith('/admin/veiculos');
   });

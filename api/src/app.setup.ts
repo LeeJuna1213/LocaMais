@@ -30,7 +30,32 @@ export function configureApp(app: INestApplication): INestApplication {
     }),
   );
 
-  app.enableCors({ origin: true, credentials: true });
+  const configuredOrigins = (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  const allowedOrigins = new Set(configuredOrigins.length ? configuredOrigins : [
+    'http://localhost:4200',
+    'http://127.0.0.1:4200',
+    'http://localhost:8100',
+    'http://127.0.0.1:8100',
+    'http://localhost',
+    'https://localhost',
+    'capacitor://localhost',
+    'ionic://localhost',
+  ]);
+
+  app.enableCors({
+    origin: (
+      origin: string | undefined,
+      callback: (error: Error | null, allow?: boolean) => void,
+    ) => {
+      callback(null, !origin || allowedOrigins.has(origin));
+    },
+    credentials: false,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  });
 
   return app;
 }

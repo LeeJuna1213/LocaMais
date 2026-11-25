@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Vehicle } from '../../core/models';
 import { AuthService } from '../../core/services/auth.service';
 import { VehicleService } from '../../core/services/vehicle.service';
+import { CategoryService } from '../../core/services/category.service';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
 import { VehicleCardComponent } from '../../shared/components/vehicle-card.component';
 import { VehicleListPage } from './vehicle-list.page';
@@ -31,6 +32,10 @@ describe('VehicleListPage dynamic filters', () => {
   const vehicleService = { load: vi.fn(async () => undefined), vehicles: () => fleet, loading: () => false, error: () => null };
   const auth = { role: () => 'client' };
   const router = { navigate: vi.fn(async () => true) };
+  const categoryService = {
+    load: vi.fn(async () => undefined),
+    categories: () => [{ id: 2, nome: 'Hatch' }, { id: 1, nome: 'Sedan' }],
+  };
   let fixture: ComponentFixture<VehicleListPage>;
 
   beforeEach(async () => {
@@ -39,6 +44,7 @@ describe('VehicleListPage dynamic filters', () => {
       providers: [
         { provide: VehicleService, useValue: vehicleService },
         { provide: AuthService, useValue: auth },
+        { provide: CategoryService, useValue: categoryService },
         { provide: Router, useValue: router },
       ],
     });

@@ -3,10 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule, ObserveInstrument } from './app.module.js';
 import { configureApp } from './app.setup.js';
+import { loadHttpsOptions } from './https-options.js';
 
 async function bootstrap() {
+  const httpsOptions = loadHttpsOptions(process.env);
   const app = await NestFactory.create(AppModule, {
     instrument: ObserveInstrument,
+    ...(httpsOptions ? { httpsOptions } : {}),
   });
 
   configureApp(app);
@@ -27,10 +30,13 @@ async function bootstrap() {
     SwaggerModule.createDocument(app, swaggerConfig),
   );
 
-  const port = app.get(ConfigService).get<string>('PORT') ?? 3000;
-  await app.listen(Number(port));
+  const config = app.get(ConfigService);
+  const port = Number(config.get<string>('PORT') ?? 3000);
+  const host = config.get<string>('HOST') ?? '127.0.0.1';
+  await app.listen(port, host);
 
-  console.log(`API em http://localhost:${port}/api — docs em /docs`);
+  const scheme = httpsOptions ? 'https' : 'http';
+  console.log(`API escutando em ${scheme}://${host}:${port} — prefixo /api — documentação em /docs`);
 }
 
 await bootstrap();

@@ -9,7 +9,7 @@ import {
   login,
   makeCpf,
   patch,
-  post,
+  post as postRequest,
 } from './helpers.js';
 
 interface ClienteBody {
@@ -107,11 +107,19 @@ describe('Reservas (e2e)', () => {
   let carId: number;
   let pickupShopId: number;
   let inactiveShopId: number;
+  let unrelatedActiveShopId: number;
 
   let firstReservationId: string;
   let firstReservationCode: string;
   let firstStart: string;
   let firstEnd: string;
+
+  async function post<T = unknown>(application: INestApplication, path: string, body: unknown, token?: string) {
+    const payload = path === '/reservas' && token && typeof body === 'object' && body !== null
+      ? { ...(body as Record<string, unknown>), loja_retirada_id: (body as Record<string, unknown>).loja_retirada_id ?? pickupShopId }
+      : body;
+    return postRequest<T>(application, path, payload, token);
+  }
 
   beforeAll(async () => {
     const adminEmail = 'admin.reservas@locamais.test';
@@ -132,10 +140,16 @@ describe('Reservas (e2e)', () => {
       codigo: 'RESERVA-INATIVA', nome: 'Loja Inativa', telefone: '+5521999990001', email: 'loja.inativa@exemplo.com',
       logradouro: 'Rua Antiga', numero: '20', bairro: 'Centro', cidade: 'Belford Roxo', uf: 'RJ', cep: '26130001', ativa: false,
     }, adminToken);
+    const unrelatedActiveShop = await post<{ id: number }>(app, '/lojas', {
+      codigo: 'RESERVA-OUTRA', nome: 'Loja não associada', telefone: '+5521999990002', email: 'loja.outra@exemplo.com',
+      logradouro: 'Rua Outra', numero: '30', bairro: 'Centro', cidade: 'Belford Roxo', uf: 'RJ', cep: '26130002', ativa: true,
+    }, adminToken);
     expect(activeShop.status).toBe(201);
     expect(inactiveShop.status).toBe(201);
+    expect(unrelatedActiveShop.status).toBe(201);
     pickupShopId = activeShop.body.id;
     inactiveShopId = inactiveShop.body.id;
+    unrelatedActiveShopId = unrelatedActiveShop.body.id;
 
     const client = await post<ClienteBody>(
       app,
@@ -249,6 +263,7 @@ describe('Reservas (e2e)', () => {
         descricao: 'Sedan de teste da frota',
         ano: 2024,
         valorDiaria: 100.5,
+        lojas_ids: [pickupShopId],
       },
       adminToken,
     );
@@ -446,6 +461,70 @@ describe('Reservas (e2e)', () => {
     expect(attempt.status).toBe(409);
   });
 
+  it('retorna as lojas ativas associadas ao veículo e bloqueia loja ativa não associada', async () => {
+    const shops = await get<Array<{ id: number; ativa: boolean }>>(app, `/carros/${carId}/lojas`, clientToken);
+    expect(shops.status).toBe(200);
+    expect(shops.body.map((shop) => shop.id)).toEqual([pickupShopId]);
+    expect(shops.body.every((shop) => shop.ativa)).toBe(true);
+
+    const start = futureIso(230);
+    const attempt = await post(app, '/reservas', {
+      dataRetirada: start, dataDevolucao: addHours(start, 24), client_id: clientId,
+      car_id: carId, loja_retirada_id: unrelatedActiveShopId,
+    }, clientToken);
+    expect(attempt.status).toBe(409);
+    expect(attempt.body.message).toContain('não está disponível para retirada');
+  });
+
+  it('bloqueia atualização de reserva quando a loja não pertence ao veículo', async () => {
+    const changed = await patch<{ message: string }>(app, `/reservas/${firstReservationId}`, {
+      loja_retirada_id: unrelatedActiveShopId,
+    }, adminToken);
+    expect(changed.status).toBe(409);
+    expect(changed.body.message).toContain('não está disponível para retirada');
+  });
+
+  it('permite editar as lojas associadas sem substituir os demais dados do veículo', async () => {
+    const created = await post<CarroBody>(app, '/carros', {
+      placa: 'SHP1A23', modelo: 'Kicks', marca: 'Nissan', categoria: 'SUV', ano: 2025,
+      valorDiaria: 150, lojas_ids: [pickupShopId],
+    }, adminToken);
+    expect(created.status).toBe(201);
+    const updated = await patch<CarroBody>(app, `/carros/${created.body.id}`, {
+      lojas_ids: [pickupShopId, unrelatedActiveShopId],
+    }, adminToken);
+    expect(updated.status).toBe(200);
+    expect(updated.body).toMatchObject({ placa: 'SHP1A23', modelo: 'Kicks', marca: 'Nissan' });
+    const shops = await get<Array<{ id: number }>>(app, `/carros/${created.body.id}/lojas`, clientToken);
+    expect(shops.body.map((shop) => shop.id)).toEqual([pickupShopId, unrelatedActiveShopId]);
+  });
+
+  it('oculta lojas desativadas na consulta por veículo e rejeita reserva para elas', async () => {
+    const shop = await post<{ id: number }>(app, '/lojas', {
+      codigo: 'RESERVA-DESAT', nome: 'Loja a desativar', telefone: '+5521999990003', email: 'loja.desativar@exemplo.com',
+      logradouro: 'Rua Sul', numero: '40', bairro: 'Centro', cidade: 'Belford Roxo', uf: 'RJ', cep: '26130003', ativa: true,
+    }, adminToken);
+    expect(shop.status).toBe(201);
+    const car = await post<CarroBody>(app, '/carros', {
+      placa: 'INA1A23', modelo: 'Versa', marca: 'Nissan', categoria: 'Sedan', ano: 2025,
+      valorDiaria: 120, lojas_ids: [shop.body.id],
+    }, adminToken);
+    expect(car.status).toBe(201);
+    const deactivated = await patch(app, `/lojas/${shop.body.id}`, { ativa: false }, adminToken);
+    expect(deactivated.status).toBe(200);
+
+    const availableShops = await get<Array<{ id: number }>>(app, `/carros/${car.body.id}/lojas`, clientToken);
+    expect(availableShops.status).toBe(200);
+    expect(availableShops.body).toEqual([]);
+    const start = futureIso(280);
+    const attempt = await post<{ message: string }>(app, '/reservas', {
+      dataRetirada: start, dataDevolucao: addHours(start, 24), client_id: clientId,
+      car_id: car.body.id, loja_retirada_id: shop.body.id,
+    }, clientToken);
+    expect(attempt.status).toBe(409);
+    expect(attempt.body.message).toContain('inativa');
+  });
+
   it('cota valores no backend com diária, subtotal e taxa de serviço vigentes', async () => {
     const start = futureIso(240);
     const quote = await get<{ valorDiaria: number; diarias: number; valorSubtotal: number; taxaServico: number; valorTotal: number }>(
@@ -551,7 +630,7 @@ describe('Reservas (e2e)', () => {
   it('does not offer or accept future dates while a rental is still open, even if the car status is available', async () => {
     const isolatedCar = await post<CarroBody>(app, '/carros', {
       placa: 'OPN1A23', modelo: 'Corolla', marca: 'Toyota', categoria: 'Sedan',
-      lugares: 5, ano: 2024, valorDiaria: 100,
+      lugares: 5, ano: 2024, valorDiaria: 100, lojas_ids: [pickupShopId],
     }, adminToken);
     expect(isolatedCar.status).toBe(201);
     const start = futureIso(150);
@@ -629,7 +708,7 @@ describe('Reservas (e2e)', () => {
   it('keeps maintenance as an independent operational availability blocker', async () => {
     const isolatedCar = await post<CarroBody>(app, '/carros', {
       placa: 'MNT1A23', modelo: 'Civic', marca: 'Honda', categoria: 'Sedan',
-      lugares: 5, ano: 2024, valorDiaria: 100,
+      lugares: 5, ano: 2024, valorDiaria: 100, lojas_ids: [pickupShopId],
     }, adminToken);
     expect(isolatedCar.status).toBe(201);
     const maintenance = await patch(app, `/carros/${isolatedCar.body.id}`, { status: 'em manutenção' }, adminToken);
@@ -769,7 +848,7 @@ describe('Reservas (e2e)', () => {
 
   it('cliente cancela a própria reserva e ela deixa de bloquear o período', async () => {
     const car = await post<CarroBody>(app, '/carros', {
-      placa: 'RSV2A23', modelo: 'Yaris', marca: 'Toyota', categoria: 'Hatch', ano: 2024, valorDiaria: 42,
+      placa: 'RSV2A23', modelo: 'Yaris', marca: 'Toyota', categoria: 'Hatch', ano: 2024, valorDiaria: 42, lojas_ids: [pickupShopId],
     }, adminToken);
     expect(car.status).toBe(201);
     const pickup = futureIso(45);

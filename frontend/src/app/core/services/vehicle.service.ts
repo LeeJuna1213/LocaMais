@@ -18,6 +18,7 @@ export interface VehicleWriteInput {
   lugares?: number | null;
   descricao?: string | null;
   proximaVistoriaKm?: number | null;
+  lojas_ids?: number[];
 }
 
 @Injectable({ providedIn: 'root' })

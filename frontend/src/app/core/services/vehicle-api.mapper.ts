@@ -17,6 +17,7 @@ export interface CarroApi {
   descricao?: string | null;
   proximaVistoriaKm?: number | null;
   vistoriaPendente?: boolean;
+  lojas?: Array<{ id: number }>;
   created_at: string;
   updated_at: string;
 }
@@ -55,5 +56,6 @@ export function mapCarroApi(carro: CarroApi): Vehicle {
       carro.proximaVistoriaKm !== null && carro.proximaVistoriaKm !== undefined
       && carro.quilometragem >= carro.proximaVistoriaKm
     ),
+    shopIds: carro.lojas?.map((shop) => shop.id) ?? [],
   };
 }

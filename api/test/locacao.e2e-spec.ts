@@ -22,6 +22,10 @@ interface CarroBody {
   valorDiaria: number;
 }
 
+interface LojaBody {
+  id: number;
+}
+
 interface ReservaBody {
   id: string;
   codigo: string;
@@ -83,8 +87,10 @@ describe('Locações (e2e)', () => {
   let clientToken: string;
   let clientId: number;
   let carId: number;
+  let shopId: number;
   let reservationId: string;
   let reservationCode: string;
+  let reservationPaymentId: string;
   let pendingReservationId: string;
   let locacaoId: string;
 
@@ -127,6 +133,23 @@ describe('Locações (e2e)', () => {
       cnh_validade: '2030-12-31',
     }, clientToken);
 
+    const shop = await post<LojaBody>(app, '/lojas', {
+      codigo: 'LOC-E2E',
+      nome: 'Loja de teste locação',
+      telefone: '+551133334444',
+      email: 'locacao.loja@locamais.test',
+      logradouro: 'Rua de Teste',
+      numero: '100',
+      bairro: 'Centro',
+      cidade: 'São Paulo',
+      uf: 'SP',
+      cep: '01001000',
+    }, adminToken);
+    if (shop.status !== 201) {
+      throw new Error(`nao foi possivel criar a loja: ${JSON.stringify(shop.body)}`);
+    }
+    shopId = shop.body.id;
+
     const car = await post<CarroBody>(
       app,
       '/carros',
@@ -137,6 +160,7 @@ describe('Locações (e2e)', () => {
         categoria: 'Sedan',
         ano: 2024,
         valorDiaria: 100,
+        lojas_ids: [shopId],
       },
       adminToken,
     );
@@ -152,7 +176,7 @@ describe('Locações (e2e)', () => {
     const created = await post<ReservaBody>(
       app,
       '/reservas',
-      { dataRetirada: start, dataDevolucao: end, client_id: clientId, car_id: carId },
+      { dataRetirada: start, dataDevolucao: end, client_id: clientId, car_id: carId, loja_retirada_id: shopId },
       clientToken,
     );
     if (created.status !== 201) {
@@ -162,8 +186,9 @@ describe('Locações (e2e)', () => {
     reservationCode = created.body.codigo;
     expect(reservationCode).toMatch(/^LOC-\d{6,}$/);
 
-    const payment = await post(app, '/pagamentos/meus', { reservation_id: reservationId, metodo: 'pix' }, clientToken);
+    const payment = await post<{ id: string; status: string }>(app, '/pagamentos/meus', { reservation_id: reservationId, metodo: 'pix' }, clientToken);
     if (payment.status !== 201) throw new Error(`nao foi possivel pagar a reserva: ${JSON.stringify(payment.body)}`);
+    reservationPaymentId = payment.body.id;
 
     const confirmed = await patch<ReservaBody>(
       app,
@@ -183,6 +208,16 @@ describe('Locações (e2e)', () => {
     delete process.env.ADMIN_NAME;
   });
 
+  it('inclui o pagamento aprovado da reserva na lista do cliente', async () => {
+    const reservations = await get<Array<{ id: string; pagamentos?: Array<{ id: string; status: string }> }>>(
+      app,
+      '/reservas',
+      clientToken,
+    );
+    const listed = reservations.body.find((reservation) => reservation.id === reservationId);
+    expect(listed?.pagamentos).toContainEqual(expect.objectContaining({ id: reservationPaymentId, status: 'aprovado' }));
+  });
+
   it('não cria locação para reserva inexistente (404)', async () => {
     const { status } = await post(
       app,
@@ -200,8 +235,9 @@ describe('Locações (e2e)', () => {
       {
         dataRetirada: futureIso(20),
         dataDevolucao: addHours(futureIso(20), 24),
-        client_id: clientId,
-        car_id: carId,
+          client_id: clientId,
+          car_id: carId,
+          loja_retirada_id: shopId,
       },
       clientToken,
     );
@@ -224,8 +260,9 @@ describe('Locações (e2e)', () => {
       {
         dataRetirada: futureIso(25),
         dataDevolucao: addHours(futureIso(25), 24),
-        client_id: clientId,
-        car_id: carId,
+          client_id: clientId,
+          car_id: carId,
+          loja_retirada_id: shopId,
       },
       clientToken,
     );
@@ -265,6 +302,9 @@ describe('Locações (e2e)', () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
     locacaoId = body.id;
+    const receipt = await get<{ locacaoId?: string }>(app, `/pagamentos/${reservationPaymentId}/comprovante`, clientToken);
+    expect(receipt.status).toBe(200);
+    expect(receipt.body.locacaoId).toBe(locacaoId);
     const reservations = await get<Array<{ id: string; locacao?: { id: string } | null }>>(
       app,
       '/reservas',
@@ -336,6 +376,7 @@ describe('Locações (e2e)', () => {
         dataDevolucao: addHours(futureIso(30), 24),
         client_id: clientId,
         car_id: carId,
+        loja_retirada_id: shopId,
       },
       adminToken,
     );
@@ -527,6 +568,7 @@ describe('Locações (e2e)', () => {
       dataDevolucao: addHours(start, 24),
       client_id: clientId,
       car_id: carId,
+      loja_retirada_id: shopId,
     }, clientToken);
     expect(createdReservation.status).toBe(201);
     const payment = await post(app, '/pagamentos/meus', { reservation_id: createdReservation.body.id, metodo: 'pix' }, clientToken);

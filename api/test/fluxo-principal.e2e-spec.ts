@@ -118,17 +118,13 @@ describe('Fluxo principal (e2e)', () => {
     expect(body.password).toBeUndefined();
   });
 
-  it('persiste somente uma forma de pagamento preferencial suportada', async () => {
+  it('rejeita campo de preferência de pagamento removido do perfil', async () => {
     const changed = await patch(app, '/clientes/me', { metodo_pagamento_preferido: 'pix' }, clienteToken);
-    expect(changed.status).toBe(200);
-    const profile = await get<{ client: { metodo_pagamento_preferido: string } }>(app, '/autenticacao/me', clienteToken);
-    expect(profile.body.client.metodo_pagamento_preferido).toBe('pix');
-    const invalid = await patch(app, '/clientes/me', { metodo_pagamento_preferido: 'cartao_fake' }, clienteToken);
-    expect(invalid.status).toBe(400);
-    const cleared = await patch(app, '/clientes/me', { metodo_pagamento_preferido: null }, clienteToken);
-    expect(cleared.status).toBe(200);
-    const refreshed = await get<{ client: { metodo_pagamento_preferido: string | null } }>(app, '/autenticacao/me', clienteToken);
-    expect(refreshed.body.client.metodo_pagamento_preferido).toBeNull();
+    expect(changed.status).toBe(400);
+    expect(changed.body).toMatchObject({ statusCode: 400 });
+    const profile = await get<{ client: Record<string, unknown> }>(app, '/autenticacao/me', clienteToken);
+    expect(profile.status).toBe(200);
+    expect(profile.body.client).not.toHaveProperty('metodo_pagamento_preferido');
   });
 
   it('bloqueia cliente em rotas administrativas (403)', async () => {

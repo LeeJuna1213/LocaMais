@@ -10,6 +10,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { ImageUrlService } from '../../core/services/image-url.service';
 import { VehicleService, VehicleWriteInput } from '../../core/services/vehicle.service';
 import { CategoryService } from '../../core/services/category.service';
+import { ShopService } from '../../core/services/shop.service';
 import { vehiclePhotoError } from '../../core/utils/photo.validation';
 import { AppShellComponent } from '../../shared/components/app-shell.component';
 
@@ -58,6 +59,9 @@ type VehicleField = 'placa' | 'marca' | 'modelo' | 'categoria' | 'ano' | 'valorD
     input[type="number"]::-webkit-inner-spin-button,
     input[type="number"]::-webkit-outer-spin-button { opacity: 1; background: transparent; filter: grayscale(1); }
     .photo-file-name { font-size: 11px; color: #7a5a40; overflow-wrap: anywhere; }
+    .shop-options { display: grid; gap: 8px; width: 100%; margin: 8px 0 12px; }
+    .shop-options label { box-sizing: border-box; display: flex; align-items: center; gap: 10px; width: 100%; margin: 0; padding: 10px; border: 1px solid #eadfd5; border-radius: 10px; background: #fff; cursor: pointer; }
+    .shop-options input[type="checkbox"] { flex: none; width: 18px; height: 18px; margin: 0; padding: 0; background-color: #fff; color-scheme: light; appearance: auto; -webkit-appearance: checkbox; accent-color: #e86f12; }
   `],
   template: `
     <app-shell
@@ -170,6 +174,19 @@ type VehicleField = 'placa' | 'marca' | 'modelo' | 'categoria' | 'ano' | 'valorD
           <small class="muted">Informe a quilometragem em que este veículo deverá realizar a próxima vistoria. Deixe em branco para não configurar um limite.</small>
           @if (fieldError('proximaVistoriaKm'); as error) { <div class="field-error" role="alert">{{ error }}</div> }
 
+          <label for="vehicle-shops">Lojas disponíveis para retirada *</label>
+          @if (shopService.loading()) { <small class="muted" role="status">Carregando lojas ativas...</small> }
+          @else if (shopService.error(); as error) { <div class="field-error" role="alert">{{ error }}</div><button class="lnk dark" type="button" (click)="shopService.loadActive()">Tentar novamente</button> }
+          @else {
+            <div id="vehicle-shops" class="shop-options">
+              @for (shop of shopService.shops(); track shop.id) {
+                <label><input type="checkbox" [checked]="selectedShopIds.includes(shop.id)" (change)="toggleShop(shop.id, $event)" />{{ shop.nome }} — {{ shop.cidade }}/{{ shop.uf }}</label>
+              }
+              @if (!shopService.shops().length) { <small class="muted">Não há lojas ativas cadastradas.</small> }
+            </div>
+          }
+          @if (submitted && !selectedShopIds.length) { <div class="field-error" role="alert">Selecione pelo menos uma loja para disponibilizar o veículo.</div> }
+
           <label for="vehicle-description">Descrição</label>
           <textarea id="vehicle-description" class="vehicle-description" name="descricao" [(ngModel)]="descricao" maxlength="1000" rows="4" placeholder="Descrição opcional do veículo"></textarea>
 
@@ -189,6 +206,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly vehicleService = inject(VehicleService);
   readonly categoryService = inject(CategoryService);
+  readonly shopService = inject(ShopService);
   private readonly toast = inject(ToastService);
   private readonly imageUrls = inject(ImageUrlService);
   // O app roda sem zone.js: estados alterados depois de um `await` precisam
@@ -212,6 +230,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
   lugares: number | null = null;
   descricao = '';
   proximaVistoriaKm: number | null = null;
+  selectedShopIds: number[] = [];
   currentPhoto: string | null = null;
   removeCurrentPhoto = false;
   ready = !this.editing;
@@ -232,6 +251,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
   ngOnInit(): void {
     void this.vehicleService.load();
     void this.loadCategories();
+    void this.shopService.loadActive();
     if (this.editing) void this.loadVehicle();
   }
 
@@ -260,6 +280,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
       this.lugares = vehicle.lugares ?? null;
       this.descricao = vehicle.descricao ?? '';
       this.proximaVistoriaKm = vehicle.nextInspectionKm ?? null;
+      this.selectedShopIds = [...(vehicle.shopIds ?? [])];
       this.currentPhoto = vehicle.photo ?? null;
       this.baselinePhoto = this.currentPhoto;
       this.baseline = this.payload();
@@ -288,6 +309,13 @@ export class NewVehiclePage implements OnInit, OnDestroy {
 
   onPlateInput(value: string): void {
     this.placa = value.toUpperCase();
+  }
+
+  toggleShop(id: number, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.selectedShopIds = checked
+      ? [...new Set([...this.selectedShopIds, id])]
+      : this.selectedShopIds.filter((shopId) => shopId !== id);
   }
 
   async addCategory(): Promise<void> {
@@ -385,6 +413,11 @@ export class NewVehiclePage implements OnInit, OnDestroy {
       await this.toast.show('Selecione o câmbio do veículo.');
       return;
     }
+    if (!this.selectedShopIds.length) {
+      this.changeDetector.markForCheck();
+      await this.toast.show('Selecione pelo menos uma loja para disponibilizar o veículo.');
+      return;
+    }
 
     this.saving = true;
     this.changeDetector.markForCheck();
@@ -395,7 +428,10 @@ export class NewVehiclePage implements OnInit, OnDestroy {
         const current = this.payload();
         const changes: Partial<VehicleWriteInput> = {};
         for (const key of Object.keys(current) as (keyof VehicleWriteInput)[]) {
-          if (current[key] !== this.baseline?.[key]) Object.assign(changes, { [key]: current[key] });
+          const differs = key === 'lojas_ids'
+            ? JSON.stringify(current[key]) !== JSON.stringify(this.baseline?.[key])
+            : current[key] !== this.baseline?.[key];
+          if (differs) Object.assign(changes, { [key]: current[key] });
         }
         if (Object.keys(changes).length > 0) await this.vehicleService.update(this.vehicleId, changes);
         let photoChanged = false;
@@ -451,6 +487,7 @@ export class NewVehiclePage implements OnInit, OnDestroy {
       lugares: Number(this.lugares),
       descricao: this.descricao.trim() || null,
       proximaVistoriaKm: this.proximaVistoriaKm === null ? null : Number(this.proximaVistoriaKm),
+      lojas_ids: [...this.selectedShopIds],
     };
   }
 

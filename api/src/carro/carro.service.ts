@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { In, QueryFailedError, Repository } from 'typeorm';
 
 import { Carro } from './entities/carro.entity.js';
 import { StatusVeiculo } from './enums/status-veiculo.enum.js';
@@ -16,6 +16,7 @@ import { RedisService } from '../redis/redis.service.js';
 import { CacheInvalidationService } from '../redis/cache-invalidation.service.js';
 import { CarroFotoStorage } from './carro-foto.storage.js';
 import { CategoriaVeiculoService } from './categoria.service.js';
+import { Loja } from '../loja/entities/loja.entity.js';
 
 /**
  * Regras de negócio do veículo.
@@ -38,6 +39,7 @@ export class CarroService {
     private readonly cacheInvalidation: CacheInvalidationService,
     private readonly fotoStorage: CarroFotoStorage,
     private readonly categorias: CategoriaVeiculoService,
+    @InjectRepository(Loja) private readonly lojasRepository?: Repository<Loja>,
   ) {}
 
   async create(dto: CreateCarroDto): Promise<Carro> {
@@ -51,6 +53,7 @@ export class CarroService {
     }
 
     const categoria = await this.categorias.resolveForVehicle(dto.categoria_id, dto.categoria);
+    const lojas = dto.lojas_ids === undefined ? [] : await this.resolveActiveShops(dto.lojas_ids);
 
     const saved = await this.carrosRepository.save(
       this.carrosRepository.create({
@@ -67,6 +70,7 @@ export class CarroService {
         status: dto.status ?? StatusVeiculo.DISPONIVEL,
         valorDiaria: dto.valorDiaria,
         proximaVistoriaKm: dto.proximaVistoriaKm ?? null,
+        lojas,
       }),
     );
 
@@ -75,9 +79,15 @@ export class CarroService {
 
   findAll(): Promise<Carro[]> {
     return this.carrosRepository.find({
-      relations: { categoriaEntity: true },
+      relations: { categoriaEntity: true, lojas: true },
       order: { id: 'DESC' },
     });
+  }
+
+  async findActiveShops(id: number): Promise<Loja[]> {
+    const car = await this.carrosRepository.findOne({ where: { id }, relations: { lojas: true } });
+    if (!car) throw new NotFoundException(`veiculo com ID ${id} nao encontrado`);
+    return (car.lojas ?? []).filter((shop) => shop.ativa).sort((a, b) => a.nome.localeCompare(b.nome));
   }
 
   async findOne(id: number): Promise<Carro> {
@@ -101,6 +111,8 @@ export class CarroService {
         throw new NotFoundException(`veiculo com ID ${id} nao encontrado`);
       }
       // Nunca confiar em `foto` presente em uma chave antiga do Redis.
+      const fresh = await this.carrosRepository.findOne({ where: { id }, relations: { lojas: true } });
+      if (!fresh) throw new NotFoundException(`veiculo com ID ${id} nao encontrado`);
       return {
         ...cached,
         categoria: fotoCarro.categoria,
@@ -109,13 +121,14 @@ export class CarroService {
         quilometragem: fotoCarro.quilometragem,
         proximaVistoriaKm: fotoCarro.proximaVistoriaKm,
         vistoriaPendente: fotoCarro.proximaVistoriaKm !== null && fotoCarro.quilometragem >= fotoCarro.proximaVistoriaKm,
+        lojas: fresh.lojas,
       } as Carro;
     }
 
     // Cache MISS (ou Redis indisponível): consulta o MySQL.
     const carro = await this.carrosRepository.findOne({
       where: { id },
-      relations: { categoriaEntity: true },
+      relations: { categoriaEntity: true, lojas: true },
     });
 
     if (!carro) {
@@ -179,6 +192,7 @@ export class CarroService {
     const categoria = dto.categoria_id !== undefined || dto.categoria !== undefined
       ? await this.categorias.resolveForVehicle(dto.categoria_id, dto.categoria)
       : undefined;
+    const lojas = dto.lojas_ids === undefined ? undefined : await this.resolveActiveShops(dto.lojas_ids);
 
     const changes: Partial<Carro> = {};
 
@@ -200,10 +214,13 @@ export class CarroService {
     if (Object.keys(changes).length > 0) {
       await this.carrosRepository.update({ id }, changes);
     }
+    if (lojas) {
+      await this.carrosRepository.save({ id, lojas });
+    }
 
     // Invalida o cache de status de revisao somente quando a placa realmente
     // mudou e a atualizacao foi confirmada no MySQL.
-    if (Object.keys(changes).length > 0) {
+    if (Object.keys(changes).length > 0 || lojas) {
       if (placaMudou) {
         await this.invalidarCacheStatusRevisao(id);
       }
@@ -212,9 +229,19 @@ export class CarroService {
       await this.cacheInvalidation.invalidateCarDependents(id);
     }
 
-    const updated = await this.carrosRepository.findOne({ where: { id }, relations: { categoriaEntity: true } });
+    const updated = await this.carrosRepository.findOne({ where: { id }, relations: { categoriaEntity: true, lojas: true } });
     if (!updated) throw new NotFoundException(`veiculo com ID ${id} nao encontrado`);
     return updated;
+  }
+
+  private async resolveActiveShops(ids: number[]): Promise<Loja[]> {
+    if (!ids?.length) throw new ConflictException('selecione ao menos uma loja ativa para disponibilizar o veículo');
+    if (!this.lojasRepository) throw new Error('Repositório de lojas indisponível');
+    const shops = await this.lojasRepository.find({ where: { id: In(ids), ativa: true } });
+    if (shops.length !== new Set(ids).size) {
+      throw new ConflictException('uma ou mais lojas selecionadas não existem ou estão inativas');
+    }
+    return shops;
   }
 
   async remove(id: number): Promise<void> {

@@ -6,6 +6,9 @@ import {
   IsOptional,
   IsPositive,
   IsIn,
+  IsArray,
+  ArrayNotEmpty,
+  ArrayUnique,
   IsString,
   Matches,
   Max,
@@ -91,6 +94,15 @@ export class CreateCarroDto {
   @IsInt({ message: 'proximaVistoriaKm deve ser um número inteiro' })
   @Min(0, { message: 'proximaVistoriaKm não pode ser negativa' })
   proximaVistoriaKm?: number | null;
+
+  @IsOptional()
+  @IsArray({ message: 'Selecione ao menos uma loja para o veículo' })
+  @ArrayNotEmpty({ message: 'Selecione ao menos uma loja para o veículo' })
+  @ArrayUnique({ message: 'Não repita lojas selecionadas' })
+  @Type(() => Number)
+  @IsInt({ each: true, message: 'Cada loja deve ter um identificador válido' })
+  @Min(1, { each: true })
+  lojas_ids?: number[];
 
   // `foto` é administrada exclusivamente pelos endpoints específicos.
 }

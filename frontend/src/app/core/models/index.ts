@@ -30,6 +30,7 @@ export interface Vehicle {
   descricao?: string | null;
   nextInspectionKm?: number | null;
   inspectionDue?: boolean;
+  shopIds?: number[];
 }
 
 export type ClientType = 'PF' | 'PJ';

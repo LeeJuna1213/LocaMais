@@ -75,6 +75,12 @@ export class CarroController {
     return this.carroService.findAll();
   }
 
+  @Get(':id/lojas')
+  @Roles(TipoUsuario.CLIENTE, TipoUsuario.FUNCIONARIO, TipoUsuario.ADMIN)
+  findActiveShops(@Param('id', ParseIntPipe) id: number) {
+    return this.carroService.findActiveShops(id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Consulta um veiculo pelo identificador' })
   @ApiParam({

@@ -26,7 +26,8 @@
     "migration:show": "node --env-file=.env ./node_modules/typeorm/cli.js migration:show --dataSource src/database/data-source.ts",
     "migration:run": "node --env-file=.env ./node_modules/typeorm/cli.js migration:run --dataSource src/database/data-source.ts",
     "migration:revert": "node --env-file=.env ./node_modules/typeorm/cli.js migration:revert --dataSource src/database/data-source.ts",
-    "migration:create": "npx typeorm migration:create -n"
+    "migration:create": "npx typeorm migration:create -n",
+    "seed:demo-vehicles": "npm run build && node --env-file=.env dist/database/seed-demo-vehicles.js"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

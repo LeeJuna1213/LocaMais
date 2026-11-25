@@ -16,10 +16,10 @@ import { SegmentTabsComponent } from '../../shared/components/segment-tabs.compo
   imports: [IonContent, FormsModule, IonIcon, LogoComponent, SegmentTabsComponent],
   template: `
     <ion-content class="app-content">
-      <div class="page">
-        <div style="margin: 6px 0 22px"><app-logo size="lg" /></div>
+      <div class="page login-layout">
+        <div class="login-logo"><app-logo size="lg" /></div>
 
-        <div class="card">
+        <div class="card login-card">
           <h2 style="text-align: center; margin-bottom: 10px">
             {{ mode === 'admin' ? 'Acesso do funcionário' : 'Login' }}
           </h2>
@@ -45,16 +45,41 @@ import { SegmentTabsComponent } from '../../shared/components/segment-tabs.compo
         </div>
 
         @if (mode === 'admin') {
-          <div style="text-align: center; font-size: 12px; color: #f9a45c; margin-top: 12px">
+          <div class="login-notice">
             Acesso restrito a funcionários cadastrados
           </div>
         } @else {
-          <button class="lnk" type="button" (click)="goToRegister()">Não tem uma conta? Cadastre-se</button>
+          <button class="lnk login-register" type="button" (click)="goToRegister()">Não tem uma conta? Cadastre-se</button>
         }
       </div>
     </ion-content>
   `,
   styles: [`
+    .login-layout {
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      min-height: 100%;
+      padding: 16px 0;
+    }
+    .login-logo,
+    .login-card,
+    .login-notice,
+    .login-register {
+      width: 100%;
+      max-width: 420px;
+    }
+    .login-logo { flex: 0 0 auto; }
+    .login-card { margin-bottom: 0; }
+    .login-notice {
+      color: #f9a45c;
+      font-size: 12px;
+      text-align: center;
+    }
+    .login-register { margin: 0; }
     form { margin: 0; }
     .password-field { position: relative; margin-bottom: 8px; }
     .password-field .login-password { padding-right: 52px; margin-bottom: 0; }

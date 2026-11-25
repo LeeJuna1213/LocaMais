@@ -3,7 +3,9 @@ import {
   CreateDateColumn,
   Entity,
   JoinColumn,
+  JoinTable,
   ManyToOne,
+  ManyToMany,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -14,6 +16,7 @@ import {
 import type { Reserva } from '../../reserva/entities/reserva.entity.js';
 import type { Revisao } from '../../revisao/entities/revisao.entity.js';
 import type { CategoriaVeiculo } from './categoria-veiculo.entity.js';
+import type { Loja } from '../../loja/entities/loja.entity.js';
 import { StatusVeiculo } from '../enums/status-veiculo.enum.js';
 
 /**
@@ -121,6 +124,14 @@ export class Carro {
   @OneToMany('Revisao', 'carro')
   revisoes?: Revisao[];
 
+  @ManyToMany('Loja', 'carros')
+  @JoinTable({
+    name: 'carros_lojas',
+    joinColumn: { name: 'carro_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'loja_id', referencedColumnName: 'id' },
+  })
+  lojas?: Loja[];
+
   @CreateDateColumn()
   created_at: Date;
 
@@ -145,6 +156,7 @@ export class Carro {
       quilometragem,
       proximaVistoriaKm,
       foto,
+      lojas,
       created_at,
       updated_at,
     } = this;
@@ -166,6 +178,7 @@ export class Carro {
       proximaVistoriaKm,
       vistoriaPendente: proximaVistoriaKm !== null && proximaVistoriaKm !== undefined && quilometragem >= proximaVistoriaKm,
       foto,
+      lojas,
       created_at,
       updated_at,
     };

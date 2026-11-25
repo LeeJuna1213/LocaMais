@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ImageUrlService } from './image-url.service';
+import { ImageUrlService, imageServerOrigin } from './image-url.service';
 
 describe('ImageUrlService', () => {
   const images = new ImageUrlService();
@@ -15,5 +15,11 @@ describe('ImageUrlService', () => {
 
   it('preserves an already absolute HTTP image URL', () => {
     expect(images.resolve('https://cdn.example.test/a.webp')).toBe('https://cdn.example.test/a.webp');
+  });
+
+  it('derives image origins from HTTP or HTTPS API bases without retaining /api', () => {
+    expect(imageServerOrigin('https://192.0.2.10:3000/api')).toBe('https://192.0.2.10:3000');
+    expect(imageServerOrigin('https://192.0.2.10:3000')).toBe('https://192.0.2.10:3000');
+    expect(imageServerOrigin('http://localhost:3000/api')).toBe('http://localhost:3000');
   });
 });

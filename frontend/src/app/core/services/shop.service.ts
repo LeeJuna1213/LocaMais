@@ -42,6 +42,13 @@ export class ShopService {
     finally { this.loading.set(false); }
   }
 
+  async loadForVehicle(carId: number): Promise<void> {
+    this.loading.set(true); this.error.set(null);
+    try { this._shops.set(await firstValueFrom(this.http.get<Shop[]>(`${environment.apiUrl.replace(/\/+$/, '')}/carros/${carId}/lojas`))); }
+    catch (error) { this._shops.set([]); this.error.set(this.errors.message(error, 'Não foi possível carregar as lojas disponíveis para este veículo.')); }
+    finally { this.loading.set(false); }
+  }
+
   async save(input: Partial<ShopInput>, id?: number): Promise<Shop> {
     // Never forward API response fields (id/audit timestamps) into the strict
     // CreateLojaDto / UpdateLojaDto contract, even if a caller passes a Shop.

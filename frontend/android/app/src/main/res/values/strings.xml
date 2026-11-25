@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">LocaMais</string>
+    <string name="title_activity_main">LocaMais</string>
+    <string name="package_name">com.locamais.app</string>
+    <string name="custom_url_scheme">com.locamais.app</string>
+</resources>

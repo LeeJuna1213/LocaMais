@@ -1,4 +1,4 @@
-import { Directive, ElementRef, forwardRef, HostListener, Input, Renderer2 } from '@angular/core';
+import { Directive, ElementRef, forwardRef, HostListener, inject, Input, Renderer2 } from '@angular/core';
 import { AbstractControl, ControlValueAccessor, NG_VALIDATORS, NG_VALUE_ACCESSOR, ValidationErrors, Validator } from '@angular/forms';
 
 import { ClientType } from '../../core/models';
@@ -20,8 +20,10 @@ export class DocumentInputDirective implements ControlValueAccessor, Validator {
   private onChange: (value: string) => void = () => undefined;
   private onTouched: () => void = () => undefined;
 
-  constructor(elementRef: ElementRef<HTMLInputElement>, private readonly renderer: Renderer2) {
-    this.element = elementRef.nativeElement;
+  private readonly renderer = inject(Renderer2);
+
+  constructor() {
+    this.element = inject(ElementRef<HTMLInputElement>).nativeElement;
   }
 
   @Input() set appDocumentInput(value: ClientType) {
